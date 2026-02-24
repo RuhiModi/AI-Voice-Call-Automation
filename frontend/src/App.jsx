@@ -18,7 +18,7 @@ export default function App() {
     <BrowserRouter>
       <Toaster position="top-right" />
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<Layout><Dashboard /></Layout>} />
         <Route path="/" element={<Dashboard />} />  
           <Route index element={<Dashboard />} />
           <Route path="campaigns" element={<Campaigns />} />
@@ -26,7 +26,6 @@ export default function App() {
           <Route path="campaigns/:id" element={<CampaignDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
-      </Routes>
     </BrowserRouter>
   )
 }
