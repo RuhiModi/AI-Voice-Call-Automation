@@ -19,7 +19,7 @@ export default function App() {
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route path="/" element={<Dashboard />} />  
           <Route index element={<Dashboard />} />
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="campaigns/new" element={<CreateCampaign />} />
