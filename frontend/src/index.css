@@ -77,4 +77,3 @@ input:focus, textarea:focus, select:focus {
   50% { opacity: 0.5; }
 }
 .status-active { animation: statusPulse 2s ease-in-out infinite; }
-
