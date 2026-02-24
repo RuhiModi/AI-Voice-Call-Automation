@@ -30,17 +30,15 @@ export default function App() {
           error: { iconTheme: { primary: '#f97316', secondary: '#fff' } },
         }}
       />
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route index element={<Dashboard />} />
-          <Route path="campaigns" element={<Campaigns />} />
-          <Route path="campaigns/new" element={<CreateCampaign />} />
-          <Route path="campaigns/:id" element={<CampaignDetail />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/campaigns/:id" element={<CampaignDetail />} />
+          <Route path="/create-campaign" element={<CreateCampaign />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Layout>
     </BrowserRouter>
   )
 }
