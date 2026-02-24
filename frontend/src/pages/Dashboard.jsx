@@ -7,9 +7,6 @@ import {
   TrendingUp, Activity, Zap, ChevronRight
 } from 'lucide-react'
 
-// Megaphone not in this version of lucide — use Phone as fallback
-function Megaphone(props) { return <Phone {...props} /> }
-
 const DEMO = localStorage.getItem('demo_mode')
 
 function StatCard({ label, value, icon: Icon, color, change, delay }) {
@@ -196,3 +193,6 @@ export default function Dashboard() {
     </div>
   )
 }
+
+// Missing import fix
+function Megaphone(props) { return <Phone {...props} /> }
