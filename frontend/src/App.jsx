@@ -26,6 +26,7 @@ export default function App() {
           <Route path="campaigns/:id" element={<CampaignDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
+      </Route>
     </BrowserRouter>
   )
 }
