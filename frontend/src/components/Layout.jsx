@@ -1,78 +1,145 @@
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import { authApi } from '../hooks/useApi'
-import { Phone } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Settings, LogOut, Phone, ChevronRight, Menu, Zap, Plus } from 'lucide-react'
 
-export default function Login() {
-  const [mode, setMode] = useState('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [company, setCompany] = useState('')
-  const [loading, setLoading] = useState(false)
+const NAV = [
+  { to: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard',    end: true  },
+  { to: '/dashboard/campaigns',  icon: Megaphone,       label: 'Campaigns',    end: false },
+  { to: '/dashboard/settings',   icon: Settings,        label: 'Settings',     end: true  },
+]
+
+export default function Layout() {
   const navigate = useNavigate()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const user = JSON.parse(localStorage.getItem('user') || '{"company_name":"Demo Co","email":"demo@voiceai.in"}')
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      const res = mode === 'login'
-        ? await authApi.login(email, password)
-        : await authApi.signup(email, password, company)
-      localStorage.setItem('token', res.data.token)
-      localStorage.setItem('user', JSON.stringify(res.data.user))
-      navigate('/')
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Something went wrong')
-    } finally {
-      setLoading(false)
-    }
+  function logout() {
+    localStorage.clear()
+    navigate('/')
   }
 
+  const initial = (user.company_name || user.email || 'D')[0].toUpperCase()
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="bg-blue-600 p-2 rounded-xl">
-            <Phone className="text-white" size={24} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">VoiceAI India</h1>
-            <p className="text-sm text-gray-500">AI Voice Call Automation</p>
+    <div className="flex h-screen overflow-hidden bg-slate-50">
+
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* ── SIDEBAR ─────────────────────────────── */}
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-30 w-[252px] flex flex-col
+        bg-navy-900 transition-transform duration-300
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+
+        {/* Logo */}
+        <div className="px-5 py-6 border-b border-white/8">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
+            <div className="w-9 h-9 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/30 flex-shrink-0">
+              <Phone size={16} className="text-white" />
+            </div>
+            <div>
+              <div className="font-display font-800 text-[15px] text-white leading-none">
+                VoiceAI<span className="text-orange-500"> India</span>
+              </div>
+              <div className="text-[10px] text-white/30 mt-0.5 tracking-wider uppercase font-medium">by Rise Ascend</div>
+            </div>
           </div>
         </div>
 
-        <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-lg">
-          {['login', 'signup'].map(m => (
-            <button key={m} onClick={() => setMode(m)}
-              className={`flex-1 py-2 rounded-md text-sm font-medium capitalize transition-all
-                ${mode === m ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-              {m === 'login' ? 'Login' : 'Sign Up'}
-            </button>
+        {/* User chip */}
+        <div className="px-4 py-3 border-b border-white/8">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/6">
+            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-700 rounded-lg flex items-center justify-center font-display font-800 text-[13px] text-white flex-shrink-0">
+              {initial}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-600 text-white truncate">{user.company_name || 'My Company'}</p>
+              <p className="text-[11px] text-white/35 truncate">{user.email}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          <p className="text-[9px] font-700 text-white/25 uppercase tracking-[1.5px] px-3 mb-3">Main Menu</p>
+
+          {NAV.map(({ to, icon: Icon, label, end }) => (
+            <NavLink key={to} to={to} end={end}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) => `
+                flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-500 transition-all duration-150
+                ${isActive
+                  ? 'bg-orange-500/15 text-white border border-orange-500/20'
+                  : 'text-white/45 hover:bg-white/5 hover:text-white/80'}
+              `}>
+              {({ isActive }) => (
+                <>
+                  <Icon size={16} className={isActive ? 'text-orange-400' : 'text-white/40'} />
+                  <span>{label}</span>
+                  {isActive && <ChevronRight size={13} className="ml-auto text-orange-400/50" />}
+                </>
+              )}
+            </NavLink>
           ))}
+
+          {/* Quick action */}
+          <div className="pt-4">
+            <p className="text-[9px] font-700 text-white/25 uppercase tracking-[1.5px] px-3 mb-3">Quick Actions</p>
+            <button
+              onClick={() => { navigate('/dashboard/campaigns/new'); setSidebarOpen(false) }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-600 text-orange-400 hover:bg-orange-500/10 transition-all border border-dashed border-orange-500/20 hover:border-orange-500/40">
+              <Plus size={15} />
+              New Campaign
+            </button>
+          </div>
+        </nav>
+
+        {/* Plan */}
+        <div className="px-3 pb-2">
+          <div className="flex items-center gap-2.5 px-3 py-3 rounded-xl bg-white/4 border border-white/8">
+            <Zap size={14} className="text-orange-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-700 text-white">Free Plan</p>
+              <p className="text-[10px] text-white/35">~₹1/call · 500 calls/mo</p>
+            </div>
+            <button className="text-[10px] font-700 text-orange-400 hover:text-orange-300 whitespace-nowrap transition-colors">
+              Upgrade
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'signup' && (
-            <input value={company} onChange={e => setCompany(e.target.value)}
-              placeholder="Company Name"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          )}
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="Email" required
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="Password" required minLength={6}
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <button type="submit" disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition-colors">
-            {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create Account'}
+        {/* Logout */}
+        <div className="px-3 pb-5 pt-1">
+          <button onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-white/35 hover:bg-white/5 hover:text-white/70 transition-all">
+            <LogOut size={15} />
+            <span>Logout</span>
           </button>
-        </form>
+        </div>
+      </aside>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Gujarati · Hindi · English · AI-Powered Voice Calls
-        </p>
+      {/* ── MAIN ────────────────────────────────── */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {/* Mobile topbar */}
+        <header className="lg:hidden flex items-center justify-between px-5 py-4 bg-white border-b border-slate-200">
+          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-slate-100 text-navy-900">
+            <Menu size={20} />
+          </button>
+          <span className="font-display font-800 text-navy-900 text-[15px]">
+            VoiceAI<span className="text-orange-500"> India</span>
+          </span>
+          <div className="w-9" />
+        </header>
+
+        {/* Page outlet */}
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
       </div>
     </div>
   )
