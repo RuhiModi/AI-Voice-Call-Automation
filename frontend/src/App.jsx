@@ -9,24 +9,38 @@ import Settings from './pages/Settings'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }) {
-  const token = localStorage.getItem('token')
+  const token = localStorage.getItem('token') || localStorage.getItem('demo_mode')
   return token ? children : <Navigate to="/login" replace />
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Toaster position="top-right" />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            fontFamily: 'DM Sans, sans-serif',
+            borderRadius: '12px',
+            background: '#1e1b4b',
+            color: '#fff',
+            fontSize: '14px',
+          },
+          success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
+          error: { iconTheme: { primary: '#f97316', secondary: '#fff' } },
+        }}
+      />
       <Routes>
-        <Route path="/" element={<Layout><Dashboard /></Layout>} />
-        <Route path="/" element={<Dashboard />} />  
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="campaigns/new" element={<CreateCampaign />} />
           <Route path="campaigns/:id" element={<CampaignDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
-      </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   )
 }
