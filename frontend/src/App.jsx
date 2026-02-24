@@ -33,11 +33,9 @@ export default function App() {
         }}
       />
       <Routes>
-        {/* Public routes */}
-        <Route path="/"       element={<LandingPage />} />
-        <Route path="/login"  element={<Login />} />
+        <Route path="/"      element={<LandingPage />} />
+        <Route path="/login" element={<Login />} />
 
-        {/* Protected app */}
         <Route path="/dashboard" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="campaigns"     element={<Campaigns />} />
@@ -46,7 +44,6 @@ export default function App() {
           <Route path="settings"      element={<Settings />} />
         </Route>
 
-        {/* Catch all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
