@@ -4,16 +4,31 @@
 const OpenAI = require('openai')
 const config = require('../../config')
 
-const openai = new OpenAI({ apiKey: config.openaiApiKey })
+// Lazy init — client only created when first used, NOT at import time.
+// This prevents a crash on startup when OPENAI_API_KEY is not set
+// (e.g. when running in Groq-only mode with LLM_PROVIDER=groq).
+let _client = null
+function getClient() {
+  if (!_client) {
+    if (!config.openaiApiKey) {
+      throw new Error(
+        'OPENAI_API_KEY is not set. ' +
+        'Add it in Render → Environment, ' +
+        'or set LLM_PROVIDER=groq to skip OpenAI entirely.'
+      )
+    }
+    _client = new OpenAI({ apiKey: config.openaiApiKey })
+  }
+  return _client
+}
 
 async function getOpenAIResponse(systemPrompt, history, userText) {
-  const trimmedHistory = history.slice(-10)
-
+  const openai = getClient()
   const completion = await openai.chat.completions.create({
     model: config.openaiModel,
     messages: [
       { role: 'system', content: systemPrompt },
-      ...trimmedHistory,
+      ...history.slice(-10),
       { role: 'user', content: userText },
     ],
     response_format: { type: 'json_object' },
@@ -21,9 +36,7 @@ async function getOpenAIResponse(systemPrompt, history, userText) {
     temperature: 0.7,
   })
 
-  const raw    = completion.choices[0].message.content
-  const parsed = JSON.parse(raw)
-
+  const parsed = JSON.parse(completion.choices[0].message.content)
   return {
     text:              parsed.text              || 'Sorry, please hold on.',
     action:            parsed.action            || 'continue',
@@ -36,13 +49,12 @@ async function getOpenAIResponse(systemPrompt, history, userText) {
 
 async function parseRescheduleTimeOpenAI(naturalText) {
   if (!naturalText) return null
+  const openai = getClient()
   const completion = await openai.chat.completions.create({
     model: config.openaiModel,
     messages: [{
       role: 'user',
-      content: `Current time: ${new Date().toISOString()}
-Parse "${naturalText}" into ISO datetime.
-Return ONLY: { "datetime": "<ISO 8601 or null>" }`,
+      content: `Current time: ${new Date().toISOString()}\nParse "${naturalText}" into ISO datetime.\nReturn ONLY: { "datetime": "<ISO 8601 or null>" }`,
     }],
     response_format: { type: 'json_object' },
     max_tokens: 60,
@@ -53,4 +65,3 @@ Return ONLY: { "datetime": "<ISO 8601 or null>" }`,
 }
 
 module.exports = { getOpenAIResponse, parseRescheduleTimeOpenAI }
-
