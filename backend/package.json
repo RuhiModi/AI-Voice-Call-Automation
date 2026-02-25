@@ -1,1 +1,38 @@
+{
+  "name": "voiceai-india-backend",
+  "version": "2.0.0",
+  "description": "VoiceAI India — Gujarati/Hindi/English AI Voice Call Automation by Rise Ascend Technologies",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "lint": "echo 'No linter configured yet'"
+  },
+  "dependencies": {
+    "@google-cloud/speech": "^6.0.0",
+    "@google-cloud/text-to-speech": "^5.0.0",
+    "axios": "^1.6.0",
+    "bcryptjs": "^2.4.3",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "csv-parser": "^3.0.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "express-rate-limit": "^7.1.0",
+    "googleapis": "^140.0.0",
+    "groq-sdk": "^0.3.0",
+    "jsonwebtoken": "^9.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5",
+    "node-cron": "^3.0.3",
+    "openai": "^4.0.0",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.11.0",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
 
