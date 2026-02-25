@@ -23,7 +23,7 @@
     "groq-sdk": "^0.3.0",
     "jsonwebtoken": "^9.0.0",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5",
+    "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "openai": "^4.0.0",
     "pdf-parse": "^1.1.1",
@@ -35,4 +35,3 @@
     "nodemon": "^3.0.0"
   }
 }
-
