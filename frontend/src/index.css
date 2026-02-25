@@ -2,78 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── RISE ASCEND TECH BRAND ──────────────────────────
+   Navy:   #0D1B2A  (header, hero, footer, dark sections)
+   Orange: #E8451C  (CTA buttons, accents, highlights)
+   White:  #FFFFFF  (main content bg — clean enterprise look)
+   Gray:   #F5F7FA  (alternate section bg)
+   ───────────────────────────────────────────────────── */
+
 :root {
+  --brand-navy:    #0D1B2A;
+  --brand-orange:  #E8451C;
   --sidebar-width: 260px;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'DM Sans', sans-serif;
-  background: #f8f7ff;
-  color: #1e1b4b;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: #ffffff;
+  color: #0D1B2A;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
 }
 
-/* Custom scrollbar */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #c7d7fe; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #818cf8; }
+::-webkit-scrollbar-thumb { background: #DDE3EC; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #E8451C; }
 
-/* Waveform animation for active calls */
+/* Waveform animation */
 @keyframes wave {
   0%, 100% { transform: scaleY(0.4); }
-  50% { transform: scaleY(1); }
+  50%       { transform: scaleY(1); }
 }
-
 .wave-bar {
   display: inline-block;
-  width: 3px;
-  height: 16px;
+  width: 3px; height: 16px;
   background: currentColor;
   border-radius: 2px;
   animation: wave 1.2s ease-in-out infinite;
 }
 .wave-bar:nth-child(2) { animation-delay: 0.15s; }
-.wave-bar:nth-child(3) { animation-delay: 0.3s; }
+.wave-bar:nth-child(3) { animation-delay: 0.30s; }
 .wave-bar:nth-child(4) { animation-delay: 0.45s; }
-.wave-bar:nth-child(5) { animation-delay: 0.6s; }
+.wave-bar:nth-child(5) { animation-delay: 0.60s; }
 
-/* Card hover effect */
+/* Card hover */
 .card-hover {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .card-hover:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(99, 102, 241, 0.12);
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #6366f1, #f97316);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  box-shadow: 0 12px 40px rgba(232, 69, 28, 0.10);
 }
 
 /* Input focus ring */
 input:focus, textarea:focus, select:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 3px rgba(232, 69, 28, 0.15);
 }
 
-/* Status badge pulse */
+/* Status pulse */
 @keyframes statusPulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50%       { opacity: 0.5; }
 }
 .status-active { animation: statusPulse 2s ease-in-out infinite; }
