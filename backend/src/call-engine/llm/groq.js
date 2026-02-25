@@ -5,25 +5,30 @@
 const Groq   = require('groq-sdk')
 const config = require('../../config')
 
-const groq = new Groq({ apiKey: config.groqApiKey })
+// Lazy init — prevents crash at startup when GROQ_API_KEY is not set
+// (e.g. when running OpenAI-only mode with LLM_PROVIDER=openai).
+let _client = null
+function getClient() {
+  if (!_client) {
+    if (!config.groqApiKey) {
+      throw new Error(
+        'GROQ_API_KEY is not set. ' +
+        'Add it in Render → Environment, ' +
+        'or set LLM_PROVIDER=openai to use OpenAI instead.'
+      )
+    }
+    _client = new Groq({ apiKey: config.groqApiKey })
+  }
+  return _client
+}
 
-/**
- * Get AI response via Groq (Llama 3.1).
- * Groq's latency is 100–200ms — ideal for live phone calls.
- *
- * @param {string} systemPrompt
- * @param {Array}  history  - [{role, content}]
- * @param {string} userText
- * @returns {Object} { text, action, reschedule_time, collected_data, detected_language }
- */
 async function getGroqResponse(systemPrompt, history, userText) {
-  const trimmedHistory = history.slice(-10)
-
+  const groq = getClient()
   const completion = await groq.chat.completions.create({
     model:       config.groqModel,
     messages: [
       { role: 'system', content: systemPrompt },
-      ...trimmedHistory,
+      ...history.slice(-10),
       { role: 'user', content: userText },
     ],
     response_format: { type: 'json_object' },
@@ -31,9 +36,7 @@ async function getGroqResponse(systemPrompt, history, userText) {
     temperature: 0.7,
   })
 
-  const raw    = completion.choices[0].message.content
-  const parsed = JSON.parse(raw)
-
+  const parsed = JSON.parse(completion.choices[0].message.content)
   return {
     text:               parsed.text               || 'માફ કરો, ફરી પ્રયાસ કરો.',
     action:             parsed.action             || 'continue',
@@ -44,20 +47,14 @@ async function getGroqResponse(systemPrompt, history, userText) {
   }
 }
 
-/**
- * Parse natural language reschedule time → ISO datetime via Groq.
- * e.g. "tomorrow 3pm" → "2025-01-16T09:30:00.000Z"
- */
 async function parseRescheduleTimeGroq(naturalText) {
   if (!naturalText) return null
+  const groq = getClient()
   const completion = await groq.chat.completions.create({
     model: config.groqModel,
     messages: [{
       role: 'user',
-      content: `Parse this reschedule request into ISO datetime.
-Current time: ${new Date().toISOString()}
-User said: "${naturalText}"
-Return ONLY valid JSON: { "datetime": "<ISO 8601 string or null>" }`,
+      content: `Parse this reschedule request into ISO datetime.\nCurrent time: ${new Date().toISOString()}\nUser said: "${naturalText}"\nReturn ONLY valid JSON: { "datetime": "<ISO 8601 string or null>" }`,
     }],
     response_format: { type: 'json_object' },
     max_tokens:  60,
@@ -68,4 +65,3 @@ Return ONLY valid JSON: { "datetime": "<ISO 8601 string or null>" }`,
 }
 
 module.exports = { getGroqResponse, parseRescheduleTimeGroq }
-
