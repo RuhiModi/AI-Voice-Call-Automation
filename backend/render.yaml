@@ -1,1 +1,35 @@
+services:
+  - type: web
+    name: voiceai-india-backend
+    env: node
+    region: singapore        # Closest to India — lowest latency
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: JWT_SECRET
+        generateValue: true
+      # ── Set these manually in Render dashboard ──────────────
+      # DATABASE_URL
+      # SUPABASE_URL
+      # SUPABASE_SERVICE_KEY
+      # LLM_PROVIDER          (groq or openai)
+      # GROQ_API_KEY
+      # OPENAI_API_KEY
+      # STT_PROVIDER          (sarvam or google)
+      # SARVAM_API_KEY
+      # TTS_PROVIDER          (sarvam or google)
+      # GOOGLE_APPLICATION_CREDENTIALS_JSON
+      # VOBIZ_API_KEY
+      # EXOTEL_SID / EXOTEL_TOKEN / EXOTEL_SUBDOMAIN
+      # GOOGLE_SHEETS_CLIENT_ID / GOOGLE_SHEETS_CLIENT_SECRET
+      # SERVER_URL            (your-app.onrender.com — no https://)
+      # FRONTEND_URL          (https://your-app.vercel.app)
+      # HUMAN_AGENT_NUMBER
 
