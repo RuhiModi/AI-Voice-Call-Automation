@@ -20,6 +20,7 @@ const authRoutes     = require('./routes/auth.routes')
 const campaignRoutes = require('./routes/campaigns.routes')
 const callRoutes     = require('./routes/calls.routes')
 const webhookRoutes  = require('./routes/webhooks.routes')
+const billingRoutes  = require('./routes/billing.routes')
 
 // Integrations
 const { getOAuthUrl, exchangeCodeForToken } = require('./integrations/googleSheets')
@@ -93,6 +94,7 @@ app.use('/auth',      authRoutes)
 app.use('/campaigns', campaignRoutes)
 app.use('/calls',     callRoutes)
 app.use('/webhooks',  webhookRoutes)
+app.use('/billing',   billingRoutes)
 
 // ── Google Sheets OAuth ──────────────────────────────────────
 app.get('/auth/google/sheets', (req, res) => {
