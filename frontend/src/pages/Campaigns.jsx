@@ -1,23 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { campaignApi } from '../hooks/api'
-import { Plus, Search, Phone, ChevronRight, Clock, CheckCircle, PauseCircle, FileEdit } from 'lucide-react'
+import { Plus, Search, Phone, ChevronRight } from 'lucide-react'
 
 const STATUS_FILTERS = ['all', 'active', 'completed', 'paused', 'draft']
 const TYPE_FILTERS   = ['all', 'reminder', 'survey', 'political', 'custom']
 
-const statusMeta = {
-  active:    { label: 'Active',    dot: 'bg-jade-400',   text: 'text-jade-700',   bg: 'bg-jade-50',   pulse: true  },
-  completed: { label: 'Completed', dot: 'bg-navy-400',   text: 'text-navy-600',   bg: 'bg-navy-50',   pulse: false },
-  paused:    { label: 'Paused',    dot: 'bg-orange-400', text: 'text-orange-700', bg: 'bg-orange-50', pulse: false },
-  draft:     { label: 'Draft',     dot: 'bg-gray-300',   text: 'text-gray-500',   bg: 'bg-gray-50',   pulse: false },
+const statusStyle = {
+  active:    { badge: 'badge-active',    dot: '#52b87c', label: 'Active',    pulse: true  },
+  completed: { badge: 'badge-completed', dot: '#a8a8a8', label: 'Completed', pulse: false },
+  paused:    { badge: 'badge-paused',    dot: '#f9bc30', label: 'Paused',    pulse: false },
+  draft:     { badge: 'badge-draft',     dot: '#dcdcdc', label: 'Draft',     pulse: false },
 }
 const langLabel = { gu: 'ગુજ', hi: 'हिं', en: 'EN' }
-const langColor = {
-  gu: 'bg-orange-100 text-orange-700 border-orange-200',
-  hi: 'bg-navy-100 text-navy-700 border-navy-200',
-  en: 'bg-jade-100 text-jade-700 border-jade-200',
-}
 
 export default function Campaigns() {
   const [campaigns,    setCampaigns]    = useState([])
@@ -34,10 +29,12 @@ export default function Campaigns() {
   }, [])
 
   const filtered = campaigns.filter(c => {
-    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || (c.description || '').toLowerCase().includes(search.toLowerCase())
-    const matchStatus = statusFilter === 'all' || c.status === statusFilter
-    const matchType   = typeFilter   === 'all' || c.campaign_type === typeFilter
-    return matchSearch && matchStatus && matchType
+    const q = search.toLowerCase()
+    return (
+      (c.name.toLowerCase().includes(q) || (c.description||'').toLowerCase().includes(q)) &&
+      (statusFilter === 'all' || c.status === statusFilter) &&
+      (typeFilter   === 'all' || c.campaign_type === typeFilter)
+    )
   })
 
   const counts = STATUS_FILTERS.reduce((acc, s) => {
@@ -46,29 +43,29 @@ export default function Campaigns() {
   }, {})
 
   return (
-    <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+    <div className="p-6 lg:p-10 max-w-6xl mx-auto">
 
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 animate-fade-in">
         <div>
-          <h1 className="font-display font-bold text-3xl text-navy-900">Campaigns</h1>
-          <p className="text-navy-400 text-sm mt-1">{campaigns.length} total · {counts.active || 0} active</p>
+          <h1 className="text-3xl" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>Campaigns</h1>
+          <p className="text-sm mt-1" style={{ color: '#8a8a8a' }}>{campaigns.length} total · {counts.active || 0} active</p>
         </div>
-        <Link to="/dashboard/campaigns/new"
-          className="inline-flex items-center gap-2 bg-navy-900 hover:bg-navy-800 text-white px-5 py-3 rounded-2xl font-semibold text-sm transition-all hover:shadow-lg group">
-          <Plus size={16} className="group-hover:rotate-90 transition-transform" />
-          New Campaign
+        <Link to="/dashboard/campaigns/new" className="btn-primary flex-shrink-0">
+          <Plus size={15} /> New Campaign
         </Link>
       </div>
 
-      {/* Search + Type */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1">
-          <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy-300" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search campaigns..."
-            className="w-full bg-white border border-navy-100 rounded-2xl pl-10 pr-4 py-3 text-sm text-navy-800 placeholder-navy-300 focus:border-navy-300 focus:outline-none transition-all" />
+          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: '#c4c4c4' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search campaigns..."
+            className="input-field pl-10" />
         </div>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="bg-white border border-navy-100 rounded-2xl px-4 py-3 text-sm text-navy-700 cursor-pointer focus:border-navy-300 focus:outline-none">
+          className="input-field" style={{ width: 'auto', cursor: 'pointer' }}>
           {TYPE_FILTERS.map(t => (
             <option key={t} value={t}>{t === 'all' ? 'All Types' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
           ))}
@@ -79,10 +76,13 @@ export default function Campaigns() {
       <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
         {STATUS_FILTERS.map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all
-              ${statusFilter === s ? 'bg-navy-900 text-white shadow-sm' : 'bg-white border border-navy-100 text-navy-500 hover:border-navy-200 hover:text-navy-700'}`}>
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-medium whitespace-nowrap transition-all"
+            style={statusFilter === s
+              ? { background: '#1a1a1a', color: '#fff' }
+              : { background: '#fff', border: '1px solid #e8e3db', color: '#6b6b6b' }}>
             {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-            <span className={`text-xs px-1.5 py-0.5 rounded-lg font-semibold ${statusFilter === s ? 'bg-white/20 text-white' : 'bg-navy-50 text-navy-500'}`}>
+            <span className="text-[11px] px-1.5 py-0.5 rounded-md font-semibold"
+              style={statusFilter === s ? { background: 'rgba(255,255,255,0.2)', color: '#fff' } : { background: '#f5f1ea', color: '#8a8a8a' }}>
               {counts[s] || 0}
             </span>
           </button>
@@ -91,73 +91,71 @@ export default function Campaigns() {
 
       {/* Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[1,2,3,4].map(i => (
-            <div key={i} className="bg-white rounded-2xl border border-navy-100 p-6 animate-pulse">
-              <div className="h-4 bg-navy-100 rounded mb-3 w-3/4" />
-              <div className="h-3 bg-navy-50 rounded mb-6 w-1/2" />
-              <div className="h-2 bg-navy-50 rounded w-full" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1,2,3,4,5,6].map(i => (
+            <div key={i} className="card p-5">
+              <div className="skeleton h-3 w-3/4 mb-3" />
+              <div className="skeleton h-3 w-1/2 mb-6" />
+              <div className="skeleton h-1.5 w-full" />
             </div>
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-navy-100 p-16 text-center">
-          <div className="w-16 h-16 bg-navy-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Search size={28} className="text-navy-300" />
+        <div className="card p-14 text-center">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: '#faf8f4' }}>
+            <Search size={24} style={{ color: '#d0c9be' }} />
           </div>
-          <p className="font-display font-bold text-navy-600 text-lg mb-2">No campaigns found</p>
-          <p className="text-navy-400 text-sm mb-6">
-            {search ? `No results for "${search}"` : 'Create your first campaign'}
+          <p className="font-semibold mb-1" style={{ color: '#3d3d3d', fontFamily: '"DM Serif Display",serif' }}>
+            {search ? `No results for "${search}"` : 'No campaigns yet'}
           </p>
-          <Link to="/dashboard/campaigns/new"
-            className="inline-flex items-center gap-2 bg-navy-900 text-white px-5 py-2.5 rounded-2xl text-sm font-semibold hover:bg-navy-800 transition-colors">
-            <Plus size={15} /> Create Campaign
+          <p className="text-sm mb-5" style={{ color: '#a8a8a8' }}>Create your first campaign to get started</p>
+          <Link to="/dashboard/campaigns/new" className="btn-primary inline-flex">
+            <Plus size={14} /> Create Campaign
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((c, i) => {
             const total = c.total_contacts  || 0
             const done  = c.completed_calls || 0
             const pct   = total > 0 ? Math.round((done / total) * 100) : 0
-            const meta  = statusMeta[c.status] || statusMeta.draft
+            const st    = statusStyle[c.status] || statusStyle.draft
             return (
               <Link key={c.id} to={`/dashboard/campaigns/${c.id}`}
-                className="bg-white rounded-2xl border border-navy-100 p-6 card-hover group animate-slide-up transition-all"
-                style={{ animationDelay: `${i * 50}ms` }}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${meta.bg}`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${meta.dot} ${meta.pulse ? 'status-active' : ''}`} />
-                      <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
-                    </div>
-                    <span className={`text-[11px] font-bold px-2 py-1 rounded-lg border ${langColor[c.language_priority] || langColor.gu}`}>
+                className="card card-lift p-5 group animate-fade-up"
+                style={{ animationDelay: `${i*40}ms`, textDecoration: 'none' }}>
+
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg ${st.badge}`}>{st.label}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: '#fef3d0', color: '#b86f0e' }}>
                       {langLabel[c.language_priority] || 'gu'}
                     </span>
-                  </div>
-                  <ChevronRight size={16} className="text-navy-300 group-hover:text-navy-600 group-hover:translate-x-1 transition-all mt-1" />
-                </div>
-
-                <h3 className="font-display font-bold text-navy-900 text-[15px] mb-1 leading-snug">{c.name}</h3>
-                {c.description && <p className="text-navy-400 text-xs mb-4 line-clamp-1">{c.description}</p>}
-
-                <div className="mt-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-navy-400">{done} / {total} calls</span>
-                    <span className="text-xs font-semibold text-navy-600">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 bg-navy-50 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-navy-500 to-orange-400 rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+                    <ChevronRight size={14} className="transition-transform group-hover:translate-x-1" style={{ color: '#d0c9be' }} />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-navy-50">
-                  <div className="w-7 h-7 bg-gradient-to-br from-navy-100 to-orange-100 rounded-lg flex items-center justify-center text-xs font-display font-bold text-navy-600">
+                <p className="font-semibold text-[14px] leading-snug mb-1" style={{ color: '#1a1a1a' }}>{c.name}</p>
+                {c.description && <p className="text-[12px] mb-4 line-clamp-1" style={{ color: '#a8a8a8' }}>{c.description}</p>}
+
+                <div className="mt-auto pt-4" style={{ borderTop: '1px solid #f5f1ea' }}>
+                  <div className="flex justify-between text-[11px] mb-2" style={{ color: '#a8a8a8' }}>
+                    <span>{done} / {total} calls</span>
+                    <span className="font-semibold" style={{ color: '#6b6b6b' }}>{pct}%</span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
+                    style={{ background: 'linear-gradient(135deg, #f5a623, #e08c10)' }}>
                     {(c.persona_name || 'P')[0]}
                   </div>
-                  <span className="text-xs text-navy-400">Agent: {c.persona_name || 'Priya'}</span>
-                  <span className="text-navy-200 text-xs">·</span>
-                  <span className="text-xs text-navy-400 capitalize">{c.campaign_type || 'custom'}</span>
+                  <span className="text-[11px]" style={{ color: '#a8a8a8' }}>
+                    {c.persona_name || 'Priya'} · <span className="capitalize">{c.campaign_type || 'custom'}</span>
+                  </span>
                 </div>
               </Link>
             )
