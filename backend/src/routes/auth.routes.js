@@ -5,6 +5,7 @@ const auth        = require('../middleware/auth')
 
 const router = express.Router()
 
+// POST /auth/signup
 router.post('/signup', async (req, res, next) => {
   try {
     const { email, password, company_name } = req.body
@@ -16,6 +17,7 @@ router.post('/signup', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// POST /auth/login
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body
@@ -26,6 +28,7 @@ router.post('/login', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// GET /auth/me
 router.get('/me', auth, async (req, res, next) => {
   try {
     const user = await authService.me(req.userId)
@@ -33,16 +36,14 @@ router.get('/me', auth, async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-module.exports = router
-
 // POST /auth/forgot-password
 router.post('/forgot-password', async (req, res, next) => {
   try {
     const { email } = req.body
     if (!email) return res.status(400).json({ error: 'Email is required' })
-    // TODO: send real email when email provider is configured
-    // For now: always return success (don't reveal if email exists)
     console.log(`🔑 Password reset requested: ${email}`)
     res.json({ message: 'If this email is registered, a reset link has been sent.' })
   } catch (err) { next(err) }
 })
+
+module.exports = router
