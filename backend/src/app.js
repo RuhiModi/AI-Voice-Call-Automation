@@ -27,6 +27,7 @@ const { getOAuthUrl, exchangeCodeForToken } = require('./integrations/googleShee
 const userRepo = require('./repositories/user.repo')
 
 const app = express()
+app.set('trust proxy', 1)  // Required on Render for rate limiting
 
 // ── Ensure uploads folder exists ────────────────────────────
 const uploadsDir = path.join(__dirname, '..', 'uploads')
