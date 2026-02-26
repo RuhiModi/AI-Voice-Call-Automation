@@ -32,12 +32,29 @@ const uploadsDir = path.join(__dirname, '..', 'uploads')
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
 
 // ── CORS ─────────────────────────────────────────────────────
+// Allows: any localhost port (dev), any *.vercel.app, and the
+// explicit FRONTEND_URL set in Render env vars.
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+]
+if (config.frontendUrl) allowedOrigins.push(config.frontendUrl)
+
 app.use(cors({
-  origin: [
-    config.frontendUrl,
-    'http://localhost:5173',
-    /\.vercel\.app$/,
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true)
+    // Allow any vercel.app subdomain
+    if (/\.vercel\.app$/.test(origin)) return callback(null, true)
+    // Allow any localhost
+    if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true)
+    // Allow exact matches
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+    // Allow all in development
+    if (config.nodeEnv !== 'production') return callback(null, true)
+    callback(new Error(`CORS: ${origin} not allowed`))
+  },
   credentials: true,
 }))
 
@@ -106,4 +123,3 @@ app.use((req, res) => {
 app.use(errorHandler)
 
 module.exports = app
-
