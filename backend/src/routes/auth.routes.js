@@ -35,3 +35,14 @@ router.get('/me', auth, async (req, res, next) => {
 
 module.exports = router
 
+// POST /auth/forgot-password
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = req.body
+    if (!email) return res.status(400).json({ error: 'Email is required' })
+    // TODO: send real email when email provider is configured
+    // For now: always return success (don't reveal if email exists)
+    console.log(`🔑 Password reset requested: ${email}`)
+    res.json({ message: 'If this email is registered, a reset link has been sent.' })
+  } catch (err) { next(err) }
+})
