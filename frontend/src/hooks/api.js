@@ -62,3 +62,17 @@ export const campaignApi = {
   extractFromURL: (id, url) =>
     api.post(`/campaigns/${id}/script/url`, { url }),
 }
+
+// Add forgot password
+export const passwordApi = {
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+}
+
+// ── Billing ───────────────────────────────────────────────────
+export const billingApi = {
+  summary:  (month) => api.get('/billing/summary' + (month ? `?month=${month}` : '')),
+  monthly:  ()      => api.get('/billing/monthly'),
+  activity: ()      => api.get('/billing/activity'),
+  invoices: ()      => api.get('/billing/invoices'),
+  invoice:  (id)    => api.get(`/billing/invoices/${id}`),
+}
