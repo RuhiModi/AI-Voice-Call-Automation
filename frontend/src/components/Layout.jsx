@@ -1,142 +1,123 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, Megaphone, Settings, LogOut, Phone, ChevronRight, Menu, Zap, Plus } from 'lucide-react'
+import { LayoutDashboard, Radio, Settings, LogOut, Mic2, Plus, Menu, X, ChevronRight, IndianRupee } from 'lucide-react'
 
 const NAV = [
-  { to: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard',    end: true  },
-  { to: '/dashboard/campaigns',  icon: Megaphone,       label: 'Campaigns',    end: false },
-  { to: '/dashboard/settings',   icon: Settings,        label: 'Settings',     end: true  },
+  { to: '/dashboard',           icon: LayoutDashboard, label: 'Dashboard', end: true  },
+  { to: '/dashboard/campaigns', icon: Radio,           label: 'Campaigns', end: false },
+  { to: '/dashboard/billing',   icon: IndianRupee,     label: 'Billing',   end: true  },
+  { to: '/dashboard/settings',  icon: Settings,        label: 'Settings',  end: true  },
 ]
 
 export default function Layout() {
   const navigate = useNavigate()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const user = JSON.parse(localStorage.getItem('user') || '{"company_name":"Demo Co","email":"demo@voiceai.in"}')
+  const [open, setOpen] = useState(false)
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const initial = (user.company_name || user.email || 'U')[0].toUpperCase()
 
   function logout() {
-    localStorage.clear()
-    navigate('/')
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    navigate('/login')
   }
 
-  const initial = (user.company_name || user.email || 'D')[0].toUpperCase()
+  const Sidebar = () => (
+    <aside className="flex flex-col h-full" style={{ background: '#ffffff', borderRight: '1px solid #ede7dc', width: '220px' }}>
+
+      {/* Logo */}
+      <div className="flex items-center gap-2.5 px-5 py-5 cursor-pointer border-b" style={{ borderColor: '#ede7dc' }} onClick={() => navigate('/')}>
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#f5a623' }}>
+          <Mic2 size={15} className="text-white" />
+        </div>
+        <div>
+          <p className="font-semibold text-[13px] leading-none" style={{ color: '#2c2c2c' }}>VoiceAI India</p>
+          <p className="text-[10px] mt-0.5" style={{ color: '#a8a8a8' }}>Rise Ascend Tech</p>
+        </div>
+      </div>
+
+      {/* User chip */}
+      <div className="px-4 py-4 border-b" style={{ borderColor: '#ede7dc' }}>
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: '#faf8f4' }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-bold text-white flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #f5a623, #e08c10)' }}>
+            {initial}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-semibold truncate" style={{ color: '#2c2c2c' }}>{user.company_name || 'My Company'}</p>
+            <p className="text-[10px] truncate" style={{ color: '#a8a8a8' }}>{user.email}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <p className="text-[9px] font-bold uppercase tracking-[1.5px] px-3 mb-3" style={{ color: '#c4c4c4' }}>Menu</p>
+        {NAV.map(({ to, icon: Icon, label, end }) => (
+          <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            {({ isActive }) => (
+              <>
+                <Icon size={15} style={{ color: isActive ? '#f5a623' : '#a8a8a8' }} />
+                <span>{label}</span>
+                {isActive && <ChevronRight size={12} className="ml-auto" style={{ color: '#d0c9be' }} />}
+              </>
+            )}
+          </NavLink>
+        ))}
+
+        <div className="pt-5">
+          <p className="text-[9px] font-bold uppercase tracking-[1.5px] px-3 mb-3" style={{ color: '#c4c4c4' }}>Quick Actions</p>
+          <button onClick={() => { navigate('/dashboard/campaigns/new'); setOpen(false) }}
+            className="w-full nav-link border border-dashed justify-start gap-2"
+            style={{ borderColor: '#e8e3db', color: '#f5a623', fontWeight: '600' }}>
+            <Plus size={14} />
+            New Campaign
+          </button>
+        </div>
+      </nav>
+
+      {/* Logout */}
+      <div className="px-3 pb-5 pt-2 border-t" style={{ borderColor: '#ede7dc' }}>
+        <button onClick={logout}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] transition-all hover:bg-[#faf8f4]"
+          style={{ color: '#a8a8a8' }}>
+          <LogOut size={14} />
+          <span>Logout</span>
+        </button>
+      </div>
+    </aside>
+  )
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden" style={{ background: '#fdfcfa' }}>
 
       {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      {open && (
+        <div className="fixed inset-0 z-30 lg:hidden" style={{ background: 'rgba(0,0,0,0.3)' }}
+          onClick={() => setOpen(false)} />
       )}
 
-      {/* ── SIDEBAR ─────────────────────────────── */}
-      <aside className={`
-        fixed lg:static inset-y-0 left-0 z-30 w-[252px] flex flex-col
-        bg-navy-900 transition-transform duration-300
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
+      {/* Desktop sidebar */}
+      <div className="hidden lg:flex flex-shrink-0">
+        <Sidebar />
+      </div>
 
-        {/* Logo */}
-        <div className="px-5 py-6 border-b border-white/8">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-9 h-9 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/30 flex-shrink-0">
-              <Phone size={16} className="text-white" />
-            </div>
-            <div>
-              <div className="font-display font-800 text-[15px] text-white leading-none">
-                VoiceAI<span className="text-orange-500"> India</span>
-              </div>
-              <div className="text-[10px] text-white/30 mt-0.5 tracking-wider uppercase font-medium">by Rise Ascend</div>
-            </div>
-          </div>
-        </div>
+      {/* Mobile sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-40 transition-transform duration-300 lg:hidden ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar />
+      </div>
 
-        {/* User chip */}
-        <div className="px-4 py-3 border-b border-white/8">
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 border border-white/6">
-            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-orange-700 rounded-lg flex items-center justify-center font-display font-800 text-[13px] text-white flex-shrink-0">
-              {initial}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-600 text-white truncate">{user.company_name || 'My Company'}</p>
-              <p className="text-[11px] text-white/35 truncate">{user.email}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          <p className="text-[9px] font-700 text-white/25 uppercase tracking-[1.5px] px-3 mb-3">Main Menu</p>
-
-          {NAV.map(({ to, icon: Icon, label, end }) => (
-            <NavLink key={to} to={to} end={end}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) => `
-                flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-500 transition-all duration-150
-                ${isActive
-                  ? 'bg-orange-500/15 text-white border border-orange-500/20'
-                  : 'text-white/45 hover:bg-white/5 hover:text-white/80'}
-              `}>
-              {({ isActive }) => (
-                <>
-                  <Icon size={16} className={isActive ? 'text-orange-400' : 'text-white/40'} />
-                  <span>{label}</span>
-                  {isActive && <ChevronRight size={13} className="ml-auto text-orange-400/50" />}
-                </>
-              )}
-            </NavLink>
-          ))}
-
-          {/* Quick action */}
-          <div className="pt-4">
-            <p className="text-[9px] font-700 text-white/25 uppercase tracking-[1.5px] px-3 mb-3">Quick Actions</p>
-            <button
-              onClick={() => { navigate('/dashboard/campaigns/new'); setSidebarOpen(false) }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-600 text-orange-400 hover:bg-orange-500/10 transition-all border border-dashed border-orange-500/20 hover:border-orange-500/40">
-              <Plus size={15} />
-              New Campaign
-            </button>
-          </div>
-        </nav>
-
-        {/* Plan */}
-        <div className="px-3 pb-2">
-          <div className="flex items-center gap-2.5 px-3 py-3 rounded-xl bg-white/4 border border-white/8">
-            <Zap size={14} className="text-orange-400 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-700 text-white">Free Plan</p>
-              <p className="text-[10px] text-white/35">~₹1/call · 500 calls/mo</p>
-            </div>
-            <button className="text-[10px] font-700 text-orange-400 hover:text-orange-300 whitespace-nowrap transition-colors">
-              Upgrade
-            </button>
-          </div>
-        </div>
-
-        {/* Logout */}
-        <div className="px-3 pb-5 pt-1">
-          <button onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] text-white/35 hover:bg-white/5 hover:text-white/70 transition-all">
-            <LogOut size={15} />
-            <span>Logout</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* ── MAIN ────────────────────────────────── */}
+      {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-
         {/* Mobile topbar */}
-        <header className="lg:hidden flex items-center justify-between px-5 py-4 bg-white border-b border-slate-200">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-slate-100 text-navy-900">
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b" style={{ borderColor: '#ede7dc' }}>
+          <button onClick={() => setOpen(true)} className="p-2 rounded-lg hover:bg-[#faf8f4]" style={{ color: '#3d3d3d' }}>
             <Menu size={20} />
           </button>
-          <span className="font-display font-800 text-navy-900 text-[15px]">
-            VoiceAI<span className="text-orange-500"> India</span>
-          </span>
+          <span className="font-semibold text-[14px]" style={{ color: '#2c2c2c', fontFamily: '"DM Serif Display",serif' }}>VoiceAI India</span>
           <div className="w-9" />
         </header>
 
-        {/* Page outlet */}
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
