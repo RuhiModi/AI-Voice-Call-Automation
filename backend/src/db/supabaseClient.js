@@ -1,21 +1,22 @@
 // src/db/supabaseClient.js
-// Single Postgres connection pool used by all repositories.
-// One place to change connection settings.
 const { Pool } = require('pg')
 const config   = require('../config')
 
+// Supabase gives IPv6 by default on port 5432
+// Use port 6543 (Session mode) which supports IPv4 on Render
+let connectionString = config.databaseUrl
+
 const pool = new Pool({
-  connectionString: config.databaseUrl,
-  ssl: { rejectUnauthorized: false },
-  max: 10,
-  idleTimeoutMillis:    30000,
-  connectionTimeoutMillis: 3000,
+  connectionString,
+  ssl:  { rejectUnauthorized: false },
+  max:  5,
+  idleTimeoutMillis:       30000,
+  connectionTimeoutMillis: 15000,
 })
 
 pool.connect((err, client, release) => {
   if (err) console.error('❌ Database connection error:', err.message)
-  else { console.log('✅ Database connected'); release() }
+  else     { console.log('✅ Database connected'); release() }
 })
 
 module.exports = pool
-
