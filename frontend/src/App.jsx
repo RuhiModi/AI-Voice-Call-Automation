@@ -1,18 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import LandingPage    from './pages/LandingPage'
 import Login          from './pages/Login'
 import Dashboard      from './pages/Dashboard'
 import Campaigns      from './pages/Campaigns'
+import Billing        from './pages/Billing'
 import CreateCampaign from './pages/CreateCampaign'
 import CampaignDetail from './pages/CampaignDetail'
 import Settings       from './pages/Settings'
 import Layout         from './components/Layout'
 
 function PrivateRoute({ children }) {
-  return localStorage.getItem('token')
-    ? children
-    : <Navigate to="/login" replace />
+  return localStorage.getItem('token') ? children : <Navigate to="/login" replace />
 }
 
 export default function App() {
@@ -22,19 +20,20 @@ export default function App() {
         position="top-right"
         toastOptions={{
           style: {
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            fontFamily: '"DM Sans", sans-serif',
             borderRadius: '12px',
-            background: '#0D1B2A',
+            background: '#1a1a1a',
             color: '#fff',
-            fontSize: '14px',
+            fontSize: '13px',
             border: '1px solid rgba(255,255,255,0.08)',
           },
-          success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
-          error:   { iconTheme: { primary: '#E8451C',  secondary: '#fff' } },
+          success: { iconTheme: { primary: '#52b87c', secondary: '#fff' } },
+          error:   { iconTheme: { primary: '#f43f5e', secondary: '#fff' } },
         }}
       />
       <Routes>
-        <Route path="/"      element={<LandingPage />} />
+        {/* Landing page redirects straight to login for now */}
+        <Route path="/"      element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
 
         <Route path="/dashboard" element={<PrivateRoute><Layout /></PrivateRoute>}>
@@ -42,10 +41,11 @@ export default function App() {
           <Route path="campaigns"     element={<Campaigns />} />
           <Route path="campaigns/new" element={<CreateCampaign />} />
           <Route path="campaigns/:id" element={<CampaignDetail />} />
+          <Route path="billing"       element={<Billing />} />
           <Route path="settings"      element={<Settings />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   )
