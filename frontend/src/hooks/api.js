@@ -76,3 +76,10 @@ export const billingApi = {
   invoices: ()      => api.get('/billing/invoices'),
   invoice:  (id)    => api.get(`/billing/invoices/${id}`),
 }
+
+// ── Simulator ─────────────────────────────────────────────────
+export const simulateApi = {
+  start:   (campaign_id, contact_phone) => api.post('/simulate/start', { campaign_id, contact_phone }),
+  message: (session_id, message)        => api.post('/simulate/message', { session_id, message }),
+  end:     (session_id, outcome)        => api.post('/simulate/end', { session_id, outcome }),
+}
