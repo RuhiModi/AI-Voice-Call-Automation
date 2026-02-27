@@ -79,8 +79,10 @@ export const billingApi = {
 
 // ── Simulator ─────────────────────────────────────────────────
 export const simulateApi = {
-  start:   (campaign_id, contact_phone) => api.post('/simulate/start', { campaign_id, contact_phone }),
-  message: (session_id, message)        => api.post('/simulate/message', { session_id, message }),
-  end:     (session_id, outcome)        => api.post('/simulate/end', { session_id, outcome }),
+  start:      (campaign_id, custom_script, custom_persona, language, contact_name) =>
+                api.post('/simulate/start', { campaign_id, custom_script, custom_persona, language, contact_name }),
+  message:    (session_id, message)  => api.post('/simulate/message', { session_id, message }),
+  end:        (session_id, outcome)  => api.post('/simulate/end', { session_id, outcome }),
+  extractUrl: (url)                  => api.post('/simulate/extract-url', { url }),
+  extractPdf: (formData)             => api.post('/simulate/extract-pdf', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 }
-  
