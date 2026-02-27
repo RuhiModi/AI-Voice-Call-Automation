@@ -50,7 +50,7 @@ const config = {
   // Set LLM_PROVIDER=openai → use OpenAI (paid)
   llmProvider:    process.env.LLM_PROVIDER || 'groq',
   groqApiKey:     process.env.GROQ_API_KEY,
-  groqModel:      process.env.LLM_MODEL_GROQ    || 'llama-3.1-70b-versatile',
+  groqModel:      process.env.LLM_MODEL_GROQ    || 'llama-3.3-70b-versatile',
   openaiApiKey:   process.env.OPENAI_API_KEY,
   openaiModel:    process.env.LLM_MODEL_OPENAI  || 'gpt-4o-mini',
 
@@ -88,4 +88,3 @@ const config = {
 }
 
 module.exports = config
-
