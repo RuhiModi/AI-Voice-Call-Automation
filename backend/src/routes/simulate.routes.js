@@ -30,10 +30,10 @@ router.post('/start', async (req, res, next) => {
     // Load a real contact or use a dummy
     let contact = null
     if (contact_phone) {
-      const contacts = await contactRepo.findByCampaign(campaign_id, 1, 0)
+      const contacts = await contactRepo.getPending(campaign_id, 1)
       contact = contacts.find(c => c.phone === contact_phone) || contacts[0]
     } else {
-      const contacts = await contactRepo.findByCampaign(campaign_id, 1, 0)
+      const contacts = await contactRepo.getPending(campaign_id, 1)
       contact = contacts[0]
     }
 
