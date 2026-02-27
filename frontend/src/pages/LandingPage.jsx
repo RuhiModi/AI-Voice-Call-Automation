@@ -1,472 +1,477 @@
 import { useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
-export default function LandingPage() {
-  const navigate = useNavigate()
-  const [scrolled, setScrolled] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-
-  useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 20)
-    window.addEventListener('scroll', fn)
-    return () => window.removeEventListener('scroll', fn)
-  }, [])
-
-  function goDemo() {
-    localStorage.setItem('demo_mode', 'true')
-    localStorage.setItem('user', JSON.stringify({
-      id: 'demo', email: 'demo@voiceai.in',
-      company_name: 'Rise Ascend Technologies',
-    }))
-    navigate('/dashboard')
-  }
-
+// ── Icons ────────────────────────────────────────────────────
+function MicIcon() {
   return (
-    <div className="font-body bg-white text-ink-900 overflow-x-hidden">
-
-      {/* ── NAV ── */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300
-        ${scrolled ? 'bg-brand-blue shadow-lg shadow-brand-blue/20' : 'bg-brand-blue'}`}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 h-[68px] flex items-center justify-between">
-
-          {/* Logo */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-9 h-9 bg-brand-orange rounded-xl flex items-center justify-center shadow-md">
-              <MicIcon className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="font-display font-800 text-[17px] text-white leading-none">
-                VoiceAI <span className="text-brand-orange">India</span>
-              </div>
-              <div className="text-[9px] text-white/40 mt-0.5 tracking-widest uppercase">by Rise Ascend Technologies</div>
-            </div>
-          </div>
-
-          {/* Desktop links */}
-          <div className="hidden lg:flex items-center gap-7">
-            {[['Product','#product'],['Use Cases','#use-cases'],['Pricing','#pricing'],['Company','https://riseascendtech.com']].map(([l,h]) => (
-              <a key={l} href={h}
-                className="text-[13.5px] font-500 text-white/65 hover:text-white transition-colors">{l}</a>
-            ))}
-          </div>
-
-          {/* CTA buttons */}
-          <div className="hidden lg:flex items-center gap-2.5">
-            <button onClick={() => navigate('/login')}
-              className="px-5 py-2 rounded-lg text-sm font-600 text-white/80 bg-white/10 hover:bg-white/18 transition-all border border-white/15">
-              Login
-            </button>
-            <button onClick={goDemo}
-              className="px-5 py-2 rounded-lg text-sm font-600 text-white/75 border border-dashed border-white/30 hover:border-brand-orange/70 hover:text-white hover:bg-brand-orange/10 transition-all">
-              👁 Demo
-            </button>
-            <button onClick={() => navigate('/login')}
-              className="px-5 py-2 rounded-lg text-sm font-700 text-white bg-brand-orange hover:bg-brand-orange-dk shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all">
-              Start Free →
-            </button>
-          </div>
-
-          {/* Mobile menu */}
-          <button className="lg:hidden text-white p-2" onClick={() => setMenuOpen(m => !m)}>
-            <div className="w-5 space-y-1.5">
-              <span className={`block h-0.5 bg-white transition-all ${menuOpen ? 'rotate-45 translate-y-2' : ''}`}/>
-              <span className={`block h-0.5 bg-white transition-all ${menuOpen ? 'opacity-0' : ''}`}/>
-              <span className={`block h-0.5 bg-white transition-all ${menuOpen ? '-rotate-45 -translate-y-2' : ''}`}/>
-            </div>
-          </button>
-        </div>
-
-        {menuOpen && (
-          <div className="lg:hidden bg-brand-blue-dk border-t border-white/10 px-6 py-4 flex flex-col gap-3">
-            {['Product','Use Cases','Pricing','Company'].map(l => (
-              <a key={l} href="#" className="text-sm text-white/60 hover:text-white py-1">{l}</a>
-            ))}
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => navigate('/login')} className="flex-1 py-2.5 rounded-lg text-sm font-600 text-white bg-white/10 border border-white/15">Login</button>
-              <button onClick={goDemo} className="flex-1 py-2.5 rounded-lg text-sm font-700 text-white bg-brand-orange">Try Demo</button>
-            </div>
-          </div>
-        )}
-      </nav>
-
-      {/* ── HERO ── */}
-      <section className="relative min-h-screen bg-brand-blue flex flex-col items-center justify-center text-center px-6 pt-24 pb-16 overflow-hidden">
-        {/* Subtle background pattern matching riseascendtech.com */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-32 -right-32 w-[600px] h-[600px] rounded-full bg-brand-blue-md/20 blur-[80px]" />
-          <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-full bg-brand-blue-dk/40 blur-[80px]" />
-          <div className="absolute inset-0"
-            style={{backgroundImage:'linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px)',backgroundSize:'60px 60px'}} />
-        </div>
-
-        {/* Badge */}
-        <div className="animate-fade-up relative z-10 flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-brand-orange/15 border border-brand-orange/30">
-          <span className="w-2 h-2 rounded-full bg-brand-orange animate-pulse-slow" />
-          <span className="text-[12.5px] font-600 text-brand-orange">GPT-4o mini · Google STT/TTS · TRAI Compliant</span>
-        </div>
-
-        {/* Heading */}
-        <h1 className="animate-fade-up relative z-10 font-display font-900 text-white leading-[1.06] tracking-tight mb-5"
-          style={{fontSize:'clamp(38px,6vw,78px)',animationDelay:'.1s'}}>
-          AI Voice Agents That Call<br/>
-          <span className="text-brand-orange">In Gujarati, Hindi & English</span>
-        </h1>
-
-        <p className="animate-fade-up relative z-10 text-white/55 text-lg leading-relaxed max-w-[540px] mb-8"
-          style={{animationDelay:'.2s'}}>
-          Automate thousands of outbound calls with real two-way AI conversations.
-          Campaigns, surveys, reminders — built for India at{' '}
-          <strong className="text-white/85">~₹1 per call.</strong>
-        </p>
-
-        {/* CTAs */}
-        <div className="animate-fade-up relative z-10 flex flex-wrap items-center justify-center gap-3 mb-10"
-          style={{animationDelay:'.3s'}}>
-          <button onClick={() => navigate('/login')}
-            className="flex items-center gap-2 px-7 py-3.5 rounded-xl font-700 text-white bg-brand-orange hover:bg-brand-orange-dk shadow-xl shadow-brand-orange/30 hover:-translate-y-0.5 transition-all text-[15px]">
-            🚀 Start Free Trial
-          </button>
-          <button onClick={goDemo}
-            className="flex items-center gap-2 px-7 py-3.5 rounded-xl font-600 text-white/80 bg-white/10 border border-white/20 hover:bg-white/16 hover:text-white transition-all text-[15px]">
-            👁 View Demo — No Signup
-          </button>
-        </div>
-
-        {/* Stats bar */}
-        <div className="animate-fade-up relative z-10 flex flex-wrap justify-center gap-0 max-w-[620px] w-full rounded-2xl border border-white/10 bg-white/6 overflow-hidden mb-14"
-          style={{animationDelay:'.4s'}}>
-          {[
-            {num:'10M+',label:'Calls Automated'},
-            {num:'~₹1',label:'Per Call'},
-            {num:'3',label:'Languages'},
-            {num:'99.9%',label:'Uptime'},
-          ].map((s,i) => (
-            <div key={i} className="flex-1 min-w-[120px] py-5 px-4 text-center border-r border-white/10 last:border-0">
-              <div className="font-display font-900 text-2xl text-white">{s.num}</div>
-              <div className="text-xs text-white/40 font-500 mt-1">{s.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Dashboard preview */}
-        <div className="animate-fade-up relative z-10 w-full max-w-[860px] rounded-2xl overflow-hidden border border-white/12 shadow-[0_32px_80px_rgba(0,0,0,0.5)]"
-          style={{animationDelay:'.5s'}}>
-          <div className="h-8 bg-brand-blue-dk flex items-center px-4 gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-[#FF5F57]" />
-            <span className="w-3 h-3 rounded-full bg-[#FEBC2E]" />
-            <span className="w-3 h-3 rounded-full bg-[#28C840]" />
-            <span className="ml-auto text-[10px] text-white/25">voiceai.riseascendtech.com/dashboard</span>
-          </div>
-          <DashboardPreview />
-        </div>
-      </section>
-
-      {/* ── TRUSTED BY ── */}
-      <section className="bg-surface-50 border-y border-surface-200 py-10 px-6">
-        <div className="max-w-5xl mx-auto text-center">
-          <p className="text-xs font-700 text-ink-300 uppercase tracking-widest mb-7">Trusted by businesses across India</p>
-          <div className="flex flex-wrap justify-center items-center gap-10">
-            {['GSRTC','PM Awas Yojana','IFFCO','Apollo Hospitals','Reliance Jio','Zomato'].map(b => (
-              <span key={b} className="font-display font-700 text-ink-400 text-sm">{b}</span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FEATURES ── */}
-      <section id="product" className="py-24 px-6 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 text-brand-orange font-700 text-xs uppercase tracking-widest mb-4">
-              <span className="w-5 h-0.5 bg-brand-orange rounded" /> Features
-            </div>
-            <h2 className="font-display font-900 text-ink-900 mb-4"
-              style={{fontSize:'clamp(26px,4vw,48px)',letterSpacing:'-1px',lineHeight:1.1}}>
-              Everything to Automate<br/>Voice Calls at Scale
-            </h2>
-            <p className="text-ink-400 text-lg max-w-[480px] mx-auto leading-relaxed">
-              From Gujarati bus driver reminders to political surveys — one platform.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              {icon:'🗣️',bg:'bg-brand-blue-lt border-brand-blue/10',title:'Gujarati-First AI',desc:'Auto-detects and switches between Gujarati, Hindi, and English mid-call. Starts in your chosen language.'},
-              {icon:'📞',bg:'bg-brand-orange-lt border-brand-orange/10',title:'Bulk Outbound Calling',desc:'Upload CSV with thousands of contacts and launch in one click. Concurrent calls, retries, scheduling.'},
-              {icon:'🔄',bg:'bg-jade-50 border-jade-400/15',title:'Auto-Rescheduling',desc:'User says "call me tomorrow at 3pm" — AI understands and reschedules. Works in any language.'},
-              {icon:'📊',bg:'bg-violet-50 border-violet-400/15',title:'Real-Time Analytics',desc:'Live call monitoring, full transcripts, outcome tracking and collected data — all visible instantly.'},
-              {icon:'📋',bg:'bg-amber-50 border-amber-400/15',title:'Google Sheets Sync',desc:'Every call result auto-appends to your Google Sheet. Share live data with your team effortlessly.'},
-              {icon:'👤',bg:'bg-rose-50 border-rose-400/15',title:'Human Handoff',desc:'User asks for a human? AI instantly transfers to your agent. Seamless, no gaps, no confusion.'},
-            ].map(f => (
-              <div key={f.title} className={`group p-7 rounded-2xl border ${f.bg} hover:shadow-lg hover:-translate-y-1 transition-all duration-300`}>
-                <div className="text-3xl mb-4">{f.icon}</div>
-                <h3 className="font-display font-700 text-ink-900 text-[17px] mb-2">{f.title}</h3>
-                <p className="text-ink-400 text-sm leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS ── */}
-      <section id="use-cases" className="py-24 px-6 bg-brand-blue">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 text-brand-orange font-700 text-xs uppercase tracking-widest mb-4">
-              <span className="w-5 h-0.5 bg-brand-orange rounded" /> How It Works
-            </div>
-            <h2 className="font-display font-900 text-white mb-4"
-              style={{fontSize:'clamp(26px,4vw,48px)',letterSpacing:'-1px',lineHeight:1.1}}>
-              Launch a Campaign in Minutes
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {[
-              {n:'01',icon:'📤',title:'Upload Contacts',desc:'Drop your CSV with phone numbers and custom variables like name, bus time, scheme ID.'},
-              {n:'02',icon:'✍️',title:'Write Script',desc:'Paste your script or upload PDF. Use {{name}}, {{time}} for personalization.'},
-              {n:'03',icon:'🤖',title:'Configure Agent',desc:'Choose language, agent name, tone, and what data to collect from each call.'},
-              {n:'04',icon:'🚀',title:'Launch & Monitor',desc:'Hit launch. Watch calls go out in real-time with live transcripts and outcomes.'},
-            ].map((s,i) => (
-              <div key={i} className="relative p-6 rounded-2xl bg-white/6 border border-white/10 hover:bg-white/10 hover:border-brand-orange/30 transition-all group">
-                <div className="font-display font-900 text-brand-orange/25 text-4xl mb-4 group-hover:text-brand-orange/50 transition-colors">{s.n}</div>
-                <div className="text-2xl mb-3">{s.icon}</div>
-                <h3 className="font-display font-700 text-white text-[16px] mb-2">{s.title}</h3>
-                <p className="text-white/45 text-sm leading-relaxed">{s.desc}</p>
-                {i < 3 && <div className="hidden lg:block absolute top-10 -right-3 text-white/20 text-xl z-10">→</div>}
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-5">
-            {[
-              {title:'🚌 GSRTC Bus Reminders',desc:'Departure time reminders to 248 drivers. Auto-confirm in Gujarati. 87% answer rate.'},
-              {title:'🏛️ PM Awas Yojana',desc:'Verify beneficiary status in Gujarati. 520 calls completed in 4 hours.'},
-              {title:'🏥 Hospital Appointments',desc:'Remind patients in Hindi. Auto-reschedule if busy. 34% fewer no-shows.'},
-            ].map(u => (
-              <div key={u.title} className="p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-brand-orange/30 transition-all">
-                <div className="font-display font-700 text-white mb-2">{u.title}</div>
-                <p className="text-white/45 text-sm leading-relaxed">{u.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── PRICING ── */}
-      <section id="pricing" className="py-24 px-6 bg-surface-50">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 text-brand-orange font-700 text-xs uppercase tracking-widest mb-4">
-              <span className="w-5 h-0.5 bg-brand-orange rounded" /> Pricing
-            </div>
-            <h2 className="font-display font-900 text-ink-900 mb-3"
-              style={{fontSize:'clamp(26px,4vw,48px)',letterSpacing:'-1px',lineHeight:1.1}}>
-              Simple, Honest Pricing
-            </h2>
-            <p className="text-ink-400 text-lg">~₹1 per call. No surprises. Scale as you grow.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              {name:'Starter',price:'₹0',period:'Free forever · Pay per call',popular:false,
-               features:['500 calls/month free','3 campaigns','Gujarati + Hindi + English','Google Sheets export','—Custom caller ID','—Priority support'],
-               cta:'Start Free',fn:() => navigate('/login')},
-              {name:'Growth',price:'₹4,999',period:'/month + ₹0.90/call',popular:true,
-               features:['Unlimited campaigns','10 concurrent calls','Custom AI personas','Human handoff','Analytics dashboard','Priority support'],
-               cta:'Start Trial',fn:() => navigate('/login')},
-              {name:'Enterprise',price:'Custom',period:'Volume pricing',popular:false,
-               features:['Unlimited everything','50+ concurrent calls','Dedicated infrastructure','SLA guarantee','TRAI compliance','Dedicated manager'],
-               cta:'Contact Sales',fn:() => {}},
-            ].map(p => (
-              <div key={p.name} className={`relative rounded-2xl p-8 border transition-all ${p.popular
-                ? 'bg-brand-blue border-brand-blue shadow-2xl shadow-brand-blue/20'
-                : 'bg-white border-surface-200 hover:border-brand-blue/20 hover:shadow-lg'}`}>
-                {p.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-orange text-white text-[11px] font-800 px-4 py-1.5 rounded-full tracking-wide uppercase">
-                    Most Popular
-                  </div>
-                )}
-                <div className={`text-sm font-600 mb-3 ${p.popular ? 'text-brand-orange' : 'text-ink-400'}`}>{p.name}</div>
-                <div className={`font-display font-900 text-4xl mb-1 ${p.popular ? 'text-white' : 'text-ink-900'}`}>{p.price}</div>
-                <div className={`text-sm mb-7 ${p.popular ? 'text-white/40' : 'text-ink-300'}`}>{p.period}</div>
-                <ul className="space-y-2.5 mb-8">
-                  {p.features.map(f => (
-                    <li key={f} className={`flex items-center gap-2.5 text-sm
-                      ${f.startsWith('—') ? 'opacity-35' : ''}
-                      ${p.popular ? 'text-white/80' : 'text-ink-600'}`}>
-                      <span className={`text-xs font-700 flex-shrink-0 ${f.startsWith('—') ? 'text-current' : 'text-jade-500'}`}>
-                        {f.startsWith('—') ? '—' : '✓'}
-                      </span>
-                      {f.startsWith('—') ? f.slice(1) : f}
-                    </li>
-                  ))}
-                </ul>
-                <button onClick={p.fn}
-                  className={`w-full py-3 rounded-xl font-700 text-sm transition-all ${p.popular
-                    ? 'bg-brand-orange text-white hover:bg-brand-orange-dk shadow-lg'
-                    : 'bg-brand-blue text-white hover:bg-brand-blue-dk'}`}>
-                  {p.cta} →
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {/* Cost breakdown */}
-          <div className="mt-10 p-6 rounded-2xl bg-white border border-surface-200 flex flex-wrap gap-6 items-center justify-between">
-            <div>
-              <div className="font-display font-700 text-ink-900 mb-1">What makes up ~₹1/call?</div>
-              <div className="text-sm text-ink-400">Fully transparent cost breakdown</div>
-            </div>
-            <div className="flex flex-wrap gap-5">
-              {[['Vobiz call (2min)','₹0.90'],['Google STT','₹0.06'],['GPT-4o mini','₹0.04'],['Google TTS','₹0.04']].map(([l,v]) => (
-                <div key={l} className="text-center">
-                  <div className="font-display font-800 text-ink-900 text-lg">{v}</div>
-                  <div className="text-xs text-ink-400">{l}</div>
-                </div>
-              ))}
-              <div className="text-center border-l border-surface-200 pl-5">
-                <div className="font-display font-900 text-brand-orange text-2xl">~₹1.05</div>
-                <div className="text-xs text-ink-400 font-700">Total / call</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA BANNER ── */}
-      <section className="py-24 px-6 bg-brand-blue relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] rounded-full bg-brand-orange/8 blur-[80px]" />
-        </div>
-        <div className="relative max-w-3xl mx-auto text-center">
-          <h2 className="font-display font-900 text-white mb-5"
-            style={{fontSize:'clamp(26px,4vw,48px)',letterSpacing:'-1px',lineHeight:1.1}}>
-            Ready to Automate Your<br/>Outbound Calls?
-          </h2>
-          <p className="text-white/50 text-lg mb-10 max-w-lg mx-auto">
-            Join 500+ businesses. Start free — first 500 calls on us. No credit card needed.
-          </p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <button onClick={() => navigate('/login')}
-              className="px-8 py-4 rounded-xl font-700 text-white bg-brand-orange hover:bg-brand-orange-dk shadow-xl shadow-brand-orange/30 hover:-translate-y-0.5 transition-all text-base">
-              🚀 Start Free — 500 Calls Free
-            </button>
-            <button onClick={goDemo}
-              className="px-8 py-4 rounded-xl font-700 text-white/75 bg-white/10 border border-white/20 hover:bg-white/16 hover:text-white transition-all text-base">
-              👁 Explore Demo First
-            </button>
-          </div>
-          <p className="text-white/25 text-xs mt-6">No credit card · TRAI Compliant · Made in India 🇮🇳</p>
-        </div>
-      </section>
-
-      {/* ── FOOTER ── */}
-      <footer className="bg-brand-blue-dk border-t border-white/8 pt-16 pb-8 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-            <div className="md:col-span-2">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-9 h-9 bg-brand-orange rounded-xl flex items-center justify-center">
-                  <MicIcon className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <span className="font-display font-800 text-lg text-white">VoiceAI</span>
-                  <span className="font-display font-800 text-lg text-brand-orange"> India</span>
-                </div>
-              </div>
-              <p className="text-white/35 text-sm leading-relaxed max-w-xs">
-                AI-powered voice call automation for India. Gujarati, Hindi & English. Built by Rise Ascend Technologies, Ahmedabad.
-              </p>
-              <div className="mt-5 flex gap-2">
-                <span className="px-3 py-1.5 rounded-lg bg-white/6 border border-white/10 text-xs text-white/40 font-600">TRAI Compliant</span>
-                <span className="px-3 py-1.5 rounded-lg bg-white/6 border border-white/10 text-xs text-white/40 font-600">Made in India 🇮🇳</span>
-              </div>
-            </div>
-            <div>
-              <h5 className="text-xs font-700 text-white/30 uppercase tracking-widest mb-5">Product</h5>
-              {['Features','Pricing','Changelog','API Docs','Status'].map(l => (
-                <div key={l} className="mb-3"><a href="#" className="text-sm text-white/40 hover:text-brand-orange transition-colors">{l}</a></div>
-              ))}
-            </div>
-            <div>
-              <h5 className="text-xs font-700 text-white/30 uppercase tracking-widest mb-5">Company</h5>
-              {[['Rise Ascend Tech','https://riseascendtech.com'],['About Us','#'],['Blog','#'],['Contact','#'],['Careers','#']].map(([l,h]) => (
-                <div key={l} className="mb-3">
-                  <a href={h} target={h.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer"
-                    className="text-sm text-white/40 hover:text-brand-orange transition-colors">{l}</a>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="border-t border-white/8 pt-8 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-xs text-white/25">© 2025 Rise Ascend Technologies Pvt. Ltd. · Ahmedabad, India</p>
-            <div className="flex gap-5">
-              {['Privacy Policy','Terms of Service'].map(l => (
-                <a key={l} href="#" className="text-xs text-white/25 hover:text-white/50 transition-colors">{l}</a>
-              ))}
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
-  )
-}
-
-function MicIcon({ className }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3zm6.9 8a1 1 0 00-2 .1A5 5 0 017 9.1 1 1 0 005 9a7 7 0 006 6.9V19H9a1 1 0 000 2h6a1 1 0 000-2h-2v-3.1A7 7 0 0018.9 9z"/>
     </svg>
   )
 }
 
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  )
+}
+
+function ArrowRight() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+    </svg>
+  )
+}
+
+// ── Animated wave bars ────────────────────────────────────────
+function WaveBars({ color = '#f5a623', size = 16 }) {
+  return (
+    <div className="flex items-end gap-[3px]" style={{ height: size }}>
+      {[0, 0.15, 0.30, 0.45, 0.60].map((delay, i) => (
+        <div key={i} className="wave-bar rounded-sm" style={{ background: color, width: 3, height: size, animationDelay: `${delay}s` }} />
+      ))}
+    </div>
+  )
+}
+
+// ── Use cases data ────────────────────────────────────────────
+const USE_CASES = [
+  { icon: '🚌', title: 'Bus & Transport Reminders', desc: 'Departure time confirmations, delay alerts, route changes — auto-called to drivers and passengers in Gujarati.' },
+  { icon: '🏛️', title: 'Government Scheme Surveys', desc: 'Verify beneficiary status, collect confirmations for PM Awas, ration cards, pension schemes at scale.' },
+  { icon: '🏥', title: 'Hospital Appointments', desc: 'Appointment reminders, prescription follow-ups, health camp notifications in Hindi and Gujarati.' },
+  { icon: '🏦', title: 'Banking & Finance', desc: 'Loan due date reminders, KYC verification calls, account update confirmations in regional languages.' },
+  { icon: '🛒', title: 'E-commerce & Retail', desc: 'Order confirmations, delivery status, feedback collection — personalised per customer in their language.' },
+  { icon: '🗳️', title: 'Political Campaigns', desc: 'Voter outreach, survey calls, event reminders — multi-lingual, personalised, high volume.' },
+]
+
+const FEATURES = [
+  { icon: '🗣️', title: 'Gujarati-First AI', desc: 'Auto-detects and switches between Gujarati, Hindi & English mid-conversation. Starts in your chosen language.' },
+  { icon: '📞', title: 'Bulk Outbound Calling', desc: 'Upload CSV with thousands of contacts and launch in one click. Concurrent calls, auto-retries, time scheduling.' },
+  { icon: '🔄', title: 'Smart Rescheduling', desc: '"Call me tomorrow at 3pm" — AI understands in any language and auto-schedules the callback.' },
+  { icon: '📊', title: 'Live Call Dashboard', desc: 'Watch calls happen in real-time. Full transcripts, outcomes, collected data — all visible instantly.' },
+  { icon: '📋', title: 'Google Sheets Sync', desc: 'Every call result auto-appends to your spreadsheet. Share live data with your team effortlessly.' },
+  { icon: '👤', title: 'Human Handoff', desc: 'Contact asks for a human? AI transfers instantly to your agent. No gaps, no confusion.' },
+]
+
+const STEPS = [
+  { n: '01', icon: '📤', title: 'Upload Contacts', desc: 'Drop your CSV with phone numbers and variables like name, route, scheme ID.' },
+  { n: '02', icon: '✍️', title: 'Write Your Script', desc: 'Paste your script. Use {{name}}, {{time}} for personalisation. Or upload a PDF.' },
+  { n: '03', icon: '🤖', title: 'Configure Agent', desc: 'Pick language, agent name, tone, and what data to collect from each call.' },
+  { n: '04', icon: '🚀', title: 'Launch & Monitor', desc: 'Hit launch. Watch live transcripts and outcomes as calls go out.' },
+]
+
+// ── Minimal dashboard preview ─────────────────────────────────
 function DashboardPreview() {
   return (
-    <div className="bg-[#0e2254] p-4 grid gap-3" style={{gridTemplateColumns:'170px 1fr',minHeight:'260px'}}>
-      <div className="bg-[#0a1a42] rounded-xl p-3 flex flex-col gap-1">
-        <div className="flex items-center gap-2 p-2 mb-2">
-          <div className="w-6 h-6 bg-[#F15A2B] rounded-lg flex items-center justify-center text-[10px]">🎙</div>
-          <span className="text-white text-[11px] font-700">VoiceAI</span>
+    <div style={{ background: '#fdfcfa', borderRadius: 12, overflow: 'hidden', border: '1px solid #e8e3db' }}>
+      {/* Fake browser bar */}
+      <div style={{ background: '#f5f1ea', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #e8e3db' }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {['#FF5F57','#FEBC2E','#28C840'].map(c => <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />)}
         </div>
-        {[['Dashboard',true],['Campaigns',false],['New Campaign',false],['Settings',false]].map(([l,a]) => (
-          <div key={l} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px] font-500 ${a ? 'bg-white/15 text-white' : 'text-white/40'}`}>
-            <div className={`w-3 h-3 rounded-sm ${a ? 'bg-[#F15A2B]' : 'bg-white/10'}`}/>
-            {l}
-          </div>
-        ))}
+        <div style={{ flex: 1, background: '#ede7dc', borderRadius: 6, padding: '3px 10px', fontSize: 10, color: '#a8a8a8', marginLeft: 8 }}>
+          ai-voice-call-automation.vercel.app/dashboard
+        </div>
       </div>
-      <div className="flex flex-col gap-3">
-        <div className="grid grid-cols-4 gap-2">
-          {[['1,284','Calls Today','↑23%'],['87%','Answer Rate','↑5%'],['4','Campaigns','Live'],['₹1,342','Cost Today','']].map(([n,l,b]) => (
-            <div key={l} className="bg-[#0a1a42] rounded-lg p-2.5 border border-white/6">
-              <div className="font-display font-900 text-white text-base leading-none">{n}</div>
-              <div className="text-white/35 text-[9px] mt-1">{l}</div>
-              {b && <div className="text-[#10B981] text-[8px] font-700 mt-1">{b}</div>}
-            </div>
+      {/* Dashboard content */}
+      <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 0, minHeight: 220 }}>
+        {/* Sidebar */}
+        <div style={{ background: '#fff', borderRight: '1px solid #ede7dc', padding: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, padding: '4px 0' }}>
+            <div style={{ width: 24, height: 24, background: '#f5a623', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>🎙</div>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#1a1a1a' }}>VoiceAI India</span>
+          </div>
+          {[['Dashboard', true], ['Campaigns', false], ['Simulator', false], ['Billing', false]].map(([l, a]) => (
+            <div key={l} style={{ padding: '6px 8px', borderRadius: 6, marginBottom: 2, background: a ? '#fef3d0' : 'transparent', fontSize: 10, color: a ? '#b86f0e' : '#8a8a8a', fontWeight: a ? 600 : 400 }}>{l}</div>
           ))}
         </div>
-        <div className="bg-[#0a1a42] rounded-lg border border-white/6 overflow-hidden flex-1">
-          <div className="grid px-3 py-2 border-b border-white/6" style={{gridTemplateColumns:'1fr 70px 60px 50px'}}>
-            {['Campaign','Progress','Status','Calls'].map(h => (
-              <span key={h} className="text-[8px] font-700 text-white/25 uppercase tracking-wider">{h}</span>
+        {/* Main */}
+        <div style={{ padding: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
+            {[['3', 'Campaigns'], ['1,284', 'Total Calls'], ['87%', 'Success Rate'], ['Active', 'Status']].map(([n, l]) => (
+              <div key={l} style={{ background: '#faf8f4', border: '1px solid #ede7dc', borderRadius: 8, padding: '8px 10px' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', fontFamily: '"DM Serif Display", serif' }}>{n}</div>
+                <div style={{ fontSize: 9, color: '#a8a8a8', marginTop: 2 }}>{l}</div>
+              </div>
             ))}
           </div>
-          {[
-            ['Bus Driver Reminder','75%','Live','186/248','active'],
-            ['PM Awas Survey','100%','Done','520/520','done'],
-            ['Hospital Reminder','49%','Paused','42/85','paused'],
-          ].map(([n,p,s,c,st]) => (
-            <div key={n} className="grid px-3 py-2 border-b border-white/4 items-center" style={{gridTemplateColumns:'1fr 70px 60px 50px'}}>
-              <span className="text-white/65 text-[9px] truncate">{n}</span>
-              <span className="text-[#F15A2B] text-[9px] font-700">{p}</span>
-              <span className={`text-[8px] font-700 px-1.5 py-0.5 rounded w-fit
-                ${st==='active'?'bg-green-500/15 text-green-400':st==='done'?'bg-purple-500/15 text-purple-400':'bg-yellow-500/15 text-yellow-400'}`}>{s}</span>
-              <span className="text-white/40 text-[9px]">{c}</span>
+          <div style={{ background: '#fff', border: '1px solid #ede7dc', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ padding: '8px 12px', borderBottom: '1px solid #f5f1ea', fontSize: 10, fontWeight: 600, color: '#3d3d3d' }}>Recent Campaigns</div>
+            {[
+              ['Bus Driver Reminder', '186/248', '75%', 'Active'],
+              ['PM Awas Survey', '520/520', '100%', 'Done'],
+              ['Hospital Follow-up', '42/85', '49%', 'Paused'],
+            ].map(([name, calls, pct, status]) => (
+              <div key={name} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 40px 45px', padding: '6px 12px', borderBottom: '1px solid #f5f1ea', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 9, color: '#525252', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                <span style={{ fontSize: 9, color: '#a8a8a8' }}>{calls}</span>
+                <span style={{ fontSize: 9, color: '#f5a623', fontWeight: 700 }}>{pct}</span>
+                <span style={{ fontSize: 8, fontWeight: 600, padding: '2px 4px', borderRadius: 4,
+                  background: status === 'Active' ? '#dcf3e5' : status === 'Done' ? '#f5f1ea' : '#fef3d0',
+                  color: status === 'Active' ? '#228248' : status === 'Done' ? '#6b6b6b' : '#b86f0e' }}>
+                  {status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────
+export default function LandingPage() {
+  const navigate   = useNavigate()
+  const [scrolled, setScrolled] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [activeCase, setActiveCase] = useState(0)
+
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 30)
+    window.addEventListener('scroll', fn)
+    return () => window.removeEventListener('scroll', fn)
+  }, [])
+
+  // Auto-cycle use cases
+  useEffect(() => {
+    const t = setInterval(() => setActiveCase(a => (a + 1) % USE_CASES.length), 3000)
+    return () => clearInterval(t)
+  }, [])
+
+  return (
+    <div style={{ fontFamily: '"DM Sans", sans-serif', background: '#fdfcfa', color: '#1a1a1a', overflowX: 'hidden' }}>
+
+      {/* ── NAV ─────────────────────────────────────────────── */}
+      <nav style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
+        background: scrolled ? 'rgba(253,252,250,0.95)' : 'transparent',
+        backdropFilter: scrolled ? 'blur(12px)' : 'none',
+        borderBottom: scrolled ? '1px solid #ede7dc' : '1px solid transparent',
+        transition: 'all 0.3s ease',
+      }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+
+          {/* Logo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => navigate('/')}>
+            <div style={{ width: 34, height: 34, background: '#f5a623', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+              <MicIcon />
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', fontFamily: '"DM Serif Display", serif', lineHeight: 1 }}>VoiceAI India</div>
+              <div style={{ fontSize: 9, color: '#a8a8a8', marginTop: 1, letterSpacing: '0.5px' }}>by Rise Ascend Tech</div>
+            </div>
+          </div>
+
+          {/* Desktop links */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 32 }} className="hidden lg:flex">
+            {[['Features', '#features'], ['How It Works', '#how-it-works'], ['Use Cases', '#use-cases']].map(([l, h]) => (
+              <a key={l} href={h} style={{ fontSize: 14, color: '#6b6b6b', textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}
+                onMouseEnter={e => e.target.style.color = '#1a1a1a'}
+                onMouseLeave={e => e.target.style.color = '#6b6b6b'}>{l}</a>
+            ))}
+          </div>
+
+          {/* CTA */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} className="hidden lg:flex">
+            <button onClick={() => navigate('/login')}
+              style={{ padding: '8px 18px', borderRadius: 10, fontSize: 13, fontWeight: 500, color: '#3d3d3d', background: 'transparent', border: '1.5px solid #e8e3db', cursor: 'pointer', transition: 'all 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#f5a623'; e.currentTarget.style.color = '#1a1a1a' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8e3db'; e.currentTarget.style.color = '#3d3d3d' }}>
+              Sign In
+            </button>
+            <button onClick={() => navigate('/login')}
+              style={{ padding: '8px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#fff', background: '#1a1a1a', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#333'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.transform = 'translateY(0)' }}>
+              Get Started <ArrowRight />
+            </button>
+          </div>
+
+          {/* Mobile hamburger */}
+          <button onClick={() => setMenuOpen(m => !m)} style={{ display: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 8 }} className="block lg:hidden">
+            <div style={{ width: 20, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <span style={{ display: 'block', height: 1.5, background: '#1a1a1a', borderRadius: 2, transition: 'all 0.2s', transform: menuOpen ? 'rotate(45deg) translateY(6.5px)' : 'none' }} />
+              <span style={{ display: 'block', height: 1.5, background: '#1a1a1a', borderRadius: 2, opacity: menuOpen ? 0 : 1, transition: 'all 0.2s' }} />
+              <span style={{ display: 'block', height: 1.5, background: '#1a1a1a', borderRadius: 2, transition: 'all 0.2s', transform: menuOpen ? 'rotate(-45deg) translateY(-6.5px)' : 'none' }} />
+            </div>
+          </button>
+        </div>
+
+        {/* Mobile menu */}
+        {menuOpen && (
+          <div style={{ background: '#fff', borderTop: '1px solid #ede7dc', padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {['Features', 'How It Works', 'Use Cases'].map(l => (
+              <a key={l} href={`#${l.toLowerCase().replace(' ', '-')}`} onClick={() => setMenuOpen(false)}
+                style={{ fontSize: 14, color: '#3d3d3d', textDecoration: 'none', fontWeight: 500, padding: '4px 0' }}>{l}</a>
+            ))}
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              <button onClick={() => navigate('/login')} style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: '#f5f1ea', color: '#1a1a1a', border: 'none', cursor: 'pointer' }}>Sign In</button>
+              <button onClick={() => navigate('/login')} style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, fontWeight: 600, background: '#1a1a1a', color: '#fff', border: 'none', cursor: 'pointer' }}>Get Started</button>
+            </div>
+          </div>
+        )}
+      </nav>
+
+      {/* ── HERO ────────────────────────────────────────────── */}
+      <section style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 24px 80px', position: 'relative', overflow: 'hidden' }}>
+
+        {/* Background blobs */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: '10%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,166,35,0.08) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+          <div style={{ position: 'absolute', bottom: '10%', left: '5%', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(47,160,92,0.07) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+          {/* Grid */}
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
+        </div>
+
+        {/* Live badge */}
+        <div className="animate-fade-up" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 99, background: '#fef3d0', border: '1px solid #fde59a', marginBottom: 28 }}>
+          <WaveBars color="#f5a623" size={12} />
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#b86f0e' }}>AI Voice Calls in Gujarati · Hindi · English</span>
+        </div>
+
+        {/* Headline */}
+        <h1 className="animate-fade-up" style={{ fontFamily: '"DM Serif Display", serif', fontSize: 'clamp(36px, 6vw, 72px)', lineHeight: 1.08, letterSpacing: '-1.5px', color: '#1a1a1a', maxWidth: 800, marginBottom: 24, animationDelay: '0.1s' }}>
+          Automate Outbound Calls<br />
+          <span style={{ color: '#f5a623' }}>Built for Indian Businesses</span>
+        </h1>
+
+        {/* Sub */}
+        <p className="animate-fade-up" style={{ fontSize: 18, color: '#6b6b6b', maxWidth: 520, lineHeight: 1.7, marginBottom: 36, animationDelay: '0.2s' }}>
+          Real two-way AI conversations at scale. Bus reminders, government surveys, hospital follow-ups — in the language your contacts speak.
+        </p>
+
+        {/* CTAs */}
+        <div className="animate-fade-up" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginBottom: 56, animationDelay: '0.3s' }}>
+          <button onClick={() => navigate('/login')}
+            style={{ padding: '13px 28px', borderRadius: 12, fontSize: 15, fontWeight: 700, color: '#fff', background: '#1a1a1a', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', transition: 'all 0.2s' }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.15)' }}>
+            Start Free Trial <ArrowRight />
+          </button>
+          <button onClick={() => { const el = document.getElementById('how-it-works'); el?.scrollIntoView({ behavior: 'smooth' }) }}
+            style={{ padding: '13px 28px', borderRadius: 12, fontSize: 15, fontWeight: 500, color: '#3d3d3d', background: '#fff', border: '1.5px solid #e8e3db', cursor: 'pointer', transition: 'all 0.2s' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f5a623'; e.currentTarget.style.background = '#fffbf0' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8e3db'; e.currentTarget.style.background = '#fff' }}>
+            See How It Works
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="animate-fade-up" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 0, background: '#fff', border: '1px solid #e8e3db', borderRadius: 16, overflow: 'hidden', maxWidth: 560, width: '100%', marginBottom: 64, animationDelay: '0.4s' }}>
+          {[['3', 'Languages'], ['Real-time', 'Transcripts'], ['Auto', 'Reschedule'], ['TRAI', 'Compliant']].map(([n, l], i) => (
+            <div key={l} style={{ flex: '1 1 120px', padding: '18px 12px', textAlign: 'center', borderRight: i < 3 ? '1px solid #f5f1ea' : 'none' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#1a1a1a', fontFamily: '"DM Serif Display", serif' }}>{n}</div>
+              <div style={{ fontSize: 11, color: '#a8a8a8', marginTop: 3 }}>{l}</div>
             </div>
           ))}
         </div>
-      </div>
+
+        {/* Dashboard preview */}
+        <div className="animate-fade-up" style={{ width: '100%', maxWidth: 860, animationDelay: '0.5s', boxShadow: '0 20px 60px rgba(0,0,0,0.1)', borderRadius: 14 }}>
+          <DashboardPreview />
+        </div>
+      </section>
+
+      {/* ── TRUSTED BY ──────────────────────────────────────── */}
+      <section style={{ background: '#fff', borderTop: '1px solid #f5f1ea', borderBottom: '1px solid #f5f1ea', padding: '28px 24px' }}>
+        <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#c4c4c4', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 20 }}>Built for businesses across India</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '8px 32px' }}>
+            {['GSRTC', 'PM Awas Yojana', 'IFFCO', 'Apollo Hospitals', 'Reliance Jio', 'Nykaa'].map(b => (
+              <span key={b} style={{ fontSize: 13, fontWeight: 600, color: '#c4c4c4', fontFamily: '"DM Serif Display", serif' }}>{b}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── USE CASES ────────────────────────────────────────── */}
+      <section id="use-cases" style={{ padding: '96px 24px', background: '#fdfcfa' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#f5a623', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 12 }}>
+              <span style={{ width: 20, height: 1.5, background: '#f5a623', display: 'inline-block' }} /> Use Cases
+            </div>
+            <h2 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 'clamp(26px, 4vw, 44px)', letterSpacing: '-1px', lineHeight: 1.1, color: '#1a1a1a', marginBottom: 12 }}>
+              Any Industry. Any Language.
+            </h2>
+            <p style={{ fontSize: 16, color: '#8a8a8a', maxWidth: 440, margin: '0 auto' }}>One platform handles every outbound call use case</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+            {USE_CASES.map((u, i) => (
+              <div key={u.title}
+                onClick={() => setActiveCase(i)}
+                style={{
+                  padding: '24px 28px', borderRadius: 16, cursor: 'pointer', transition: 'all 0.2s',
+                  background: activeCase === i ? '#fff' : '#fff',
+                  border: activeCase === i ? '1.5px solid #f5a623' : '1.5px solid #f5f1ea',
+                  boxShadow: activeCase === i ? '0 4px 20px rgba(245,166,35,0.12)' : '0 1px 3px rgba(0,0,0,0.04)',
+                }}
+                onMouseEnter={e => { if (activeCase !== i) { e.currentTarget.style.borderColor = '#e0d9ce'; e.currentTarget.style.transform = 'translateY(-2px)' }}}
+                onMouseLeave={e => { if (activeCase !== i) { e.currentTarget.style.borderColor = '#f5f1ea'; e.currentTarget.style.transform = 'translateY(0)' }}}>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>{u.icon}</div>
+                <h3 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 17, color: '#1a1a1a', marginBottom: 8 }}>{u.title}</h3>
+                <p style={{ fontSize: 13, color: '#8a8a8a', lineHeight: 1.7 }}>{u.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURES ─────────────────────────────────────────── */}
+      <section id="features" style={{ padding: '96px 24px', background: '#1a1a1a', position: 'relative', overflow: 'hidden' }}>
+        {/* Glow */}
+        <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translateX(-50%)', width: 600, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,166,35,0.08) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
+
+        <div style={{ maxWidth: 1100, margin: '0 auto', position: 'relative' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#f5a623', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 12 }}>
+              <span style={{ width: 20, height: 1.5, background: '#f5a623', display: 'inline-block' }} /> Features
+            </div>
+            <h2 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 'clamp(26px, 4vw, 44px)', letterSpacing: '-1px', lineHeight: 1.1, color: '#fff', marginBottom: 12 }}>
+              Everything You Need to Scale
+            </h2>
+            <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.4)', maxWidth: 440, margin: '0 auto' }}>From Gujarati reminders to political surveys — one platform.</p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+            {FEATURES.map(f => (
+              <div key={f.title}
+                style={{ padding: '24px 28px', borderRadius: 16, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = 'rgba(245,166,35,0.3)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.transform = 'translateY(0)' }}>
+                <div style={{ fontSize: 26, marginBottom: 12 }}>{f.icon}</div>
+                <h3 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 16, color: '#fff', marginBottom: 8 }}>{f.title}</h3>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.7 }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ─────────────────────────────────────── */}
+      <section id="how-it-works" style={{ padding: '96px 24px', background: '#fdfcfa' }}>
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#f5a623', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 12 }}>
+              <span style={{ width: 20, height: 1.5, background: '#f5a623', display: 'inline-block' }} /> How It Works
+            </div>
+            <h2 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 'clamp(26px, 4vw, 44px)', letterSpacing: '-1px', lineHeight: 1.1, color: '#1a1a1a' }}>
+              Launch a Campaign in Minutes
+            </h2>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, position: 'relative' }}>
+            {STEPS.map((s, i) => (
+              <div key={s.n} style={{ padding: '28px 24px', borderRadius: 16, background: '#fff', border: '1px solid #f5f1ea', position: 'relative' }}>
+                <div style={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, color: '#f5f1ea', lineHeight: 1, marginBottom: 12 }}>{s.n}</div>
+                <div style={{ fontSize: 26, marginBottom: 12 }}>{s.icon}</div>
+                <h3 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 16, color: '#1a1a1a', marginBottom: 8 }}>{s.title}</h3>
+                <p style={{ fontSize: 13, color: '#8a8a8a', lineHeight: 1.7 }}>{s.desc}</p>
+                {i < 3 && <div style={{ position: 'absolute', top: '40%', right: -12, fontSize: 16, color: '#e8e3db', display: 'none' }} className="hidden lg:block">→</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA SECTION ──────────────────────────────────────── */}
+      <section style={{ padding: '96px 24px', background: '#fff', borderTop: '1px solid #f5f1ea' }}>
+        <div style={{ maxWidth: 680, margin: '0 auto', textAlign: 'center' }}>
+          <div style={{ width: 56, height: 56, background: '#fef3d0', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: 26 }}>🚀</div>
+          <h2 style={{ fontFamily: '"DM Serif Display", serif', fontSize: 'clamp(26px, 4vw, 44px)', letterSpacing: '-1px', lineHeight: 1.1, color: '#1a1a1a', marginBottom: 16 }}>
+            Ready to Automate Your<br />Outbound Calls?
+          </h2>
+          <p style={{ fontSize: 16, color: '#8a8a8a', marginBottom: 36, lineHeight: 1.7 }}>
+            Set up your first campaign today. No technical knowledge needed.<br />
+            Works with your existing contacts — just upload a CSV.
+          </p>
+
+          {/* Feature checklist */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px 24px', marginBottom: 36 }}>
+            {['Gujarati, Hindi & English', 'No credit card needed', 'TRAI compliant', 'Live call dashboard', 'Auto-rescheduling', 'Google Sheets sync'].map(f => (
+              <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#525252' }}>
+                <span style={{ color: '#2fa05c', display: 'flex' }}><CheckIcon /></span> {f}
+              </div>
+            ))}
+          </div>
+
+          <button onClick={() => navigate('/login')}
+            style={{ padding: '14px 36px', borderRadius: 12, fontSize: 15, fontWeight: 700, color: '#fff', background: '#1a1a1a', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', transition: 'all 0.2s' }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.15)' }}>
+            Create Your Account <ArrowRight />
+          </button>
+          <p style={{ fontSize: 12, color: '#c4c4c4', marginTop: 14 }}>Made in India 🇮🇳 · TRAI Compliant</p>
+        </div>
+      </section>
+
+      {/* ── FOOTER ───────────────────────────────────────────── */}
+      <footer style={{ background: '#1a1a1a', padding: '56px 24px 32px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 40, marginBottom: 48 }}>
+
+            {/* Brand */}
+            <div style={{ gridColumn: 'span 2' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <div style={{ width: 32, height: 32, background: '#f5a623', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                  <MicIcon />
+                </div>
+                <span style={{ fontFamily: '"DM Serif Display", serif', fontSize: 16, color: '#fff', fontWeight: 400 }}>VoiceAI India</span>
+              </div>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', lineHeight: 1.8, maxWidth: 260 }}>
+                AI-powered voice call automation for Indian businesses. Built by Rise Ascend Technologies, Ahmedabad.
+              </p>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                {['TRAI Compliant', 'Made in India 🇮🇳'].map(t => (
+                  <span key={t} style={{ padding: '4px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{t}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Product links */}
+            <div>
+              <h5 style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 20 }}>Product</h5>
+              {['Features', 'Use Cases', 'How It Works', 'Simulator'].map(l => (
+                <div key={l} style={{ marginBottom: 10 }}>
+                  <a href="#" style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', textDecoration: 'none', transition: 'color 0.15s' }}
+                    onMouseEnter={e => e.target.style.color = '#f5a623'}
+                    onMouseLeave={e => e.target.style.color = 'rgba(255,255,255,0.35)'}>{l}</a>
+                </div>
+              ))}
+            </div>
+
+            {/* Company */}
+            <div>
+              <h5 style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: 20 }}>Company</h5>
+              {[['Rise Ascend Tech', 'https://riseascendtech.com'], ['About Us', '#'], ['Contact', '#'], ['Careers', '#']].map(([l, h]) => (
+                <div key={l} style={{ marginBottom: 10 }}>
+                  <a href={h} target={h.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer"
+                    style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', textDecoration: 'none', transition: 'color 0.15s' }}
+                    onMouseEnter={e => e.target.style.color = '#f5a623'}
+                    onMouseLeave={e => e.target.style.color = 'rgba(255,255,255,0.35)'}>{l}</a>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bottom bar */}
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 24, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>© 2026 Rise Ascend Technologies Pvt. Ltd. · Ahmedabad, India</p>
+            <div style={{ display: 'flex', gap: 24 }}>
+              {['Privacy Policy', 'Terms of Service'].map(l => (
+                <a key={l} href="#" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none', transition: 'color 0.15s' }}
+                  onMouseEnter={e => e.target.style.color = 'rgba(255,255,255,0.5)'}
+                  onMouseLeave={e => e.target.style.color = 'rgba(255,255,255,0.2)'}>{l}</a>
+              ))}
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
