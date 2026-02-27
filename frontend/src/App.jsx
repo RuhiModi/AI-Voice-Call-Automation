@@ -4,6 +4,7 @@ import Login          from './pages/Login'
 import Dashboard      from './pages/Dashboard'
 import Campaigns      from './pages/Campaigns'
 import Billing        from './pages/Billing'
+import Simulate      from './pages/Simulate'
 import CreateCampaign from './pages/CreateCampaign'
 import CampaignDetail from './pages/CampaignDetail'
 import Settings       from './pages/Settings'
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="campaigns"     element={<Campaigns />} />
           <Route path="campaigns/new" element={<CreateCampaign />} />
           <Route path="campaigns/:id" element={<CampaignDetail />} />
+          <Route path="simulate"      element={<Simulate />} />
           <Route path="billing"       element={<Billing />} />
           <Route path="settings"      element={<Settings />} />
         </Route>
