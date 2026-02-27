@@ -5,6 +5,7 @@ import Dashboard      from './pages/Dashboard'
 import Campaigns      from './pages/Campaigns'
 import Billing        from './pages/Billing'
 import Simulate      from './pages/Simulate'
+import LandingPage   from './pages/LandingPage'
 import CreateCampaign from './pages/CreateCampaign'
 import CampaignDetail from './pages/CampaignDetail'
 import Settings       from './pages/Settings'
@@ -33,8 +34,7 @@ export default function App() {
         }}
       />
       <Routes>
-        {/* Landing page redirects straight to login for now */}
-        <Route path="/"      element={<Navigate to="/login" replace />} />
+        <Route path="/"      element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
 
         <Route path="/dashboard" element={<PrivateRoute><Layout /></PrivateRoute>}>
