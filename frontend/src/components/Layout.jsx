@@ -1,10 +1,11 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { LayoutDashboard, Radio, Settings, LogOut, Mic2, Plus, Menu, X, ChevronRight, IndianRupee } from 'lucide-react'
+import { LayoutDashboard, Radio, Settings, LogOut, Mic2, Plus, Menu, X, ChevronRight, IndianRupee, FlaskConical } from 'lucide-react'
 
 const NAV = [
   { to: '/dashboard',           icon: LayoutDashboard, label: 'Dashboard', end: true  },
   { to: '/dashboard/campaigns', icon: Radio,           label: 'Campaigns', end: false },
+  { to: '/dashboard/simulate',  icon: FlaskConical,    label: 'Simulator', end: true  },
   { to: '/dashboard/billing',   icon: IndianRupee,     label: 'Billing',   end: true  },
   { to: '/dashboard/settings',  icon: Settings,        label: 'Settings',  end: true  },
 ]
