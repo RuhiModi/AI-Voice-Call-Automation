@@ -1,7 +1,7 @@
 {
   "name": "voiceai-india-backend",
   "version": "2.0.0",
-  "description": "VoiceAI India — Gujarati/Hindi/English AI Voice Call Automation by Rise Ascend Technologies",
+  "description": "VoiceAI India \u2014 Gujarati/Hindi/English AI Voice Call Automation by Rise Ascend Technologies",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
