@@ -83,3 +83,4 @@ export const simulateApi = {
   message: (session_id, message)        => api.post('/simulate/message', { session_id, message }),
   end:     (session_id, outcome)        => api.post('/simulate/end', { session_id, outcome }),
 }
+  
