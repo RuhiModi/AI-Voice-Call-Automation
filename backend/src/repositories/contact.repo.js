@@ -67,6 +67,21 @@ const contactRepo = {
     )
   },
 
+  async list(campaignId, page = 1, limit = 50) {
+    const offset = (page - 1) * limit
+    const { rows } = await pool.query(
+      `SELECT id, phone, variables, status, last_outcome, call_count, do_not_call, next_call_at, created_at
+       FROM contacts WHERE campaign_id = \$1
+       ORDER BY created_at ASC LIMIT \$2 OFFSET \$3`,
+      [campaignId, limit, offset]
+    )
+    const { rows: countRows } = await pool.query(
+      'SELECT COUNT(*) as total FROM contacts WHERE campaign_id = \$1',
+      [campaignId]
+    )
+    return { contacts: rows, total: parseInt(countRows[0].total), page, limit }
+  },
+
   async setCallingStatus(id) {
     await pool.query(
       "UPDATE contacts SET status='calling' WHERE id=$1",
@@ -77,4 +92,3 @@ const contactRepo = {
 }
 
 module.exports = contactRepo
-
