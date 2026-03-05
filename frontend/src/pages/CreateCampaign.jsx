@@ -397,20 +397,28 @@ export default function CreateCampaign() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Upload Contacts CSV</label>
+              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Upload Contacts</label>
               <label className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-[#e0d9ce] hover:border-[#cfc6b9] rounded-xl p-8 cursor-pointer transition-all group">
                 <div className="w-12 h-12 bg-[#faf8f4] group-hover:bg-[#f0f0f0] rounded-xl flex items-center justify-center transition-colors">
                   <Upload size={22} className="text-[#8a8a8a] group-hover:text-[#525252]" />
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-semibold text-[#3d3d3d]">{csvFile ? csvFile.name : 'Click to upload CSV'}</p>
-                  <p className="text-xs text-[#8a8a8a] mt-1">.csv files only</p>
+                  <p className="text-sm font-semibold text-[#3d3d3d]">{csvFile ? csvFile.name : 'Click to upload contacts file'}</p>
+                  <p className="text-xs text-[#8a8a8a] mt-1">Supports CSV, Excel (.xlsx, .xls) and PDF</p>
                 </div>
-                <input type="file" accept=".csv" onChange={e => setCsvFile(e.target.files[0])} className="hidden" />
+                <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={e => setCsvFile(e.target.files[0])} className="hidden" />
               </label>
               {csvFile && (
+                <div className="mt-2 flex items-center gap-2 p-2 bg-[#f5f5f5] rounded-lg">
+                  <span className="text-xs text-[#525252] font-medium">
+                    {csvFile.name.endsWith('.xlsx') || csvFile.name.endsWith('.xls') ? '📊' :
+                     csvFile.name.endsWith('.pdf') ? '📄' : '📋'} {csvFile.name}
+                  </span>
+                </div>
+              )}
+              {csvFile && (
                 <button onClick={handleUploadContacts} disabled={loading}
-                  className="w-full mt-3 py-3 bg-[#228248] hover:bg-[#f0faf4]0 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                  className="w-full mt-3 py-3 bg-[#228248] text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                   {loading ? 'Uploading...' : <><Upload size={15} /> Upload {csvFile.name}</>}
                 </button>
               )}
@@ -420,6 +428,12 @@ export default function CreateCampaign() {
                   <span className="text-sm font-semibold text-[#1c673a]">{contactCount} contacts imported to database!</span>
                 </div>
               )}
+              <div className="mt-2 p-3 bg-[#faf8f4] border border-[#e0d9ce] rounded-lg">
+                <p className="text-xs font-bold text-[#6b6b6b] mb-1">📋 File Format Guide:</p>
+                <p className="text-xs text-[#8a8a8a]">• CSV/Excel: Must have a column named <strong>phone</strong> or <strong>mobile</strong></p>
+                <p className="text-xs text-[#8a8a8a]">• PDF: Phone numbers will be extracted automatically</p>
+                <p className="text-xs text-[#8a8a8a]">• Accepted: 9876543210, +919876543210, 09876543210</p>
+              </div>
             </div>
 
             <div>
@@ -451,7 +465,7 @@ export default function CreateCampaign() {
                   { label: 'Language',  value: form.language_priority === 'gu' ? '🟠 Gujarati' : form.language_priority === 'hi' ? '🟢 Hindi' : '🔵 English' },
                   { label: 'Agent',     value: `${form.persona_name} (${form.persona_tone})` },
                   { label: 'Type',      value: form.campaign_type },
-                  { label: 'Contacts',  value: contactCount > 0 ? `${contactCount} imported ✅` : '⚠️ No contacts yet — upload CSV first' },
+                  { label: 'Contacts',  value: contactCount > 0 ? `${contactCount} imported ✅` : '⚠️ No contacts yet — upload file first' },
                   { label: 'DB Status', value: campaignId ? `Saved ✅ (${campaignId.slice(0,8)}...)` : 'Will save on launch' },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex items-start gap-3">
@@ -505,7 +519,7 @@ export default function CreateCampaign() {
             {contactCount === 0 && (
               <div className="p-4 bg-[#fffbf0] border border-[#fde59a] rounded-xl">
                 <p className="text-xs text-[#8f540f] font-semibold">⚠️ No contacts uploaded yet</p>
-                <p className="text-xs text-[#b86f0e] mt-1">Go back to Step 3 and upload a CSV file. Campaign will launch but won't call anyone without contacts.</p>
+                <p className="text-xs text-[#b86f0e] mt-1">Go back to Step 3 and upload a CSV, Excel, or PDF file. Campaign will launch but won't call anyone without contacts.</p>
               </div>
             )}
           </div>
