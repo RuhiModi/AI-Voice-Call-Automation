@@ -11,7 +11,26 @@ const callRepo        = require('../repositories/call.repo')
 const schedulerService = require('../services/scheduler.service')
 
 const router = express.Router()
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 10 * 1024 * 1024 } })
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 },  // 10MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/pdf',
+      'application/octet-stream',  // some Excel files come as this
+    ]
+    const allowedExt = ['.csv', '.xlsx', '.xls', '.pdf']
+    const ext = require('path').extname(file.originalname).toLowerCase()
+    if (allowed.includes(file.mimetype) || allowedExt.includes(ext)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only CSV, Excel (.xlsx/.xls), and PDF files are allowed'))
+    }
+  }
+})
 
 // GET /campaigns
 router.get('/', auth, async (req, res, next) => {
@@ -46,11 +65,22 @@ router.put('/:id', auth, async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// GET /campaigns/:id/contacts — list contacts with pagination
+router.get('/:id/contacts', auth, async (req, res, next) => {
+  try {
+    const page  = parseInt(req.query.page)  || 1
+    const limit = parseInt(req.query.limit) || 50
+    const contactRepo = require('../repositories/contact.repo')
+    const result = await contactRepo.list(req.params.id, page, limit)
+    res.json(result)
+  } catch (err) { next(err) }
+})
+
 // POST /campaigns/:id/contacts  (CSV upload)
 router.post('/:id/contacts', auth, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
-    const result = await campaignService.importContacts(req.params.id, req.userId, req.file.path)
+    const result = await campaignService.importContacts(req.params.id, req.userId, req.file.path, req.file.originalname)
     res.json({ message: `${result.count} contacts imported`, ...result })
   } catch (err) {
     if (req.file) require('fs').unlink(req.file.path, () => {})
@@ -126,4 +156,3 @@ router.get('/:id/calls', auth, async (req, res, next) => {
 })
 
 module.exports = router
-
