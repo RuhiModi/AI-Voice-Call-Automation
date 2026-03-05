@@ -52,7 +52,9 @@ export const campaignApi = {
   uploadContacts: (id, file) => {
     const form = new FormData()
     form.append('file', file)
-    return api.post(`/campaigns/${id}/contacts`, form)
+    return api.post(`/campaigns/${id}/contacts`, form),
+  getContacts: (id, page = 1) =>
+    api.get(`/campaigns/${id}/contacts?page=${page}&limit=50`)
   },
   extractFromPDF: (id, file) => {
     const form = new FormData()
