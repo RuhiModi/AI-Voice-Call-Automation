@@ -2,16 +2,20 @@
 const { Pool } = require('pg')
 const config   = require('../config')
 
-// Supabase gives IPv6 by default on port 5432
-// Use port 6543 (Session mode) which supports IPv4 on Render
-let connectionString = config.databaseUrl
-
+// Using Supabase Session Pooler URL — IPv4 compatible, works on Render
+// URL format: postgresql://postgres.xxx:[pass]@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
 const pool = new Pool({
-  connectionString,
-  ssl:  { rejectUnauthorized: false },
-  max:  5,
-  idleTimeoutMillis:       30000,
-  connectionTimeoutMillis: 15000,
+  connectionString:        config.databaseUrl,
+  ssl:                     { rejectUnauthorized: false },
+  max:                     3,
+  min:                     1,
+  idleTimeoutMillis:       60000,
+  connectionTimeoutMillis: 30000,
+  keepAlive:               true,
+})
+
+pool.on('error', (err) => {
+  console.error('❌ DB pool error:', err.message)
 })
 
 pool.connect((err, client, release) => {
