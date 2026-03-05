@@ -519,29 +519,45 @@ export default function CreateCampaign() {
             {contactCount === 0 && (
               <div className="p-4 bg-[#fffbf0] border border-[#fde59a] rounded-xl">
                 <p className="text-xs text-[#8f540f] font-semibold">⚠️ No contacts uploaded yet</p>
-                <p className="text-xs text-[#b86f0e] mt-1">Go back to Step 3 and upload a CSV, Excel, or PDF file. Campaign will launch but won't call anyone without contacts.</p>
+                <p className="text-xs text-[#b86f0e] mt-1">Go back to Step 3 and upload a CSV, Excel, or PDF file.</p>
               </div>
+            )}
+
+            {/* BIG LAUNCH BUTTON */}
+            <button onClick={handleLaunch} disabled={loading}
+              className="w-full py-4 bg-[#228248] hover:bg-[#1a6638] text-white rounded-xl text-base font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg">
+              {loading
+                ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Launching...</>
+                : <><Rocket size={20} /> Launch Campaign 🚀</>
+              }
+            </button>
+
+            {/* View campaign button */}
+            {campaignId && (
+              <button onClick={() => navigate(`/dashboard/campaigns/${campaignId}`)}
+                className="w-full py-3 border-2 border-[#228248] text-[#228248] hover:bg-[#f0faf4] rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2">
+                👁️ View Campaign Details
+              </button>
             )}
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-between">
+      <div className="flex justify-between mt-4">
         <button onClick={() => setStep(s => s - 1)} disabled={step === 0}
           className="flex items-center gap-2 px-5 py-3 border-2 border-[#e0d9ce] hover:border-[#cfc6b9] rounded-xl text-sm font-semibold text-[#525252] hover:text-[#2c2c2c] disabled:opacity-30 disabled:cursor-not-allowed transition-all">
           <ChevronLeft size={16} /> Back
         </button>
-        <button onClick={handleNext} disabled={loading}
-          className={`flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 hover:shadow-lg
-            ${step === 4 ? 'bg-gradient-to-r from-jade-600 to-navy-600 hover:shadow-jade-200' : 'bg-[#1a1a1a] hover:bg-[#2c2c2c] hover:shadow-navy-200'}`}>
-          {loading
-            ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Please wait...</>
-            : step === 4
-              ? <><Rocket size={16} /> Launch Campaign</>
+        {step < 4 && (
+          <button onClick={handleNext} disabled={loading}
+            className="flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-semibold text-white bg-[#1a1a1a] hover:bg-[#2c2c2c] transition-all disabled:opacity-50">
+            {loading
+              ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Please wait...</>
               : <>Next <ChevronRight size={16} /></>
-          }
-        </button>
+            }
+          </button>
+        )}
       </div>
     </div>
   )
