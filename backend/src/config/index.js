@@ -51,6 +51,9 @@ const config = {
   llmProvider:    process.env.LLM_PROVIDER || 'groq',
   groqApiKey:     process.env.GROQ_API_KEY,
   groqModel:      process.env.LLM_MODEL_GROQ    || 'llama-3.3-70b-versatile',
+
+  // OAuth
+  googleClientId: process.env.GOOGLE_CLIENT_ID  || null,
   openaiApiKey:   process.env.OPENAI_API_KEY,
   openaiModel:    process.env.LLM_MODEL_OPENAI  || 'gpt-4o-mini',
 
@@ -68,8 +71,10 @@ const config = {
 
   // ── Telephony ─────────────────────────────────────────
   telephonyProvider: process.env.TELEPHONY_PROVIDER || 'vobiz',
-  vobizApiKey:       process.env.VOBIZ_API_KEY,
-  vobizApiUrl:       process.env.VOBIZ_API_URL || 'https://api.vobiz.in/v1',
+  vobizAuthId:       process.env.VOBIZ_AUTH_ID,
+  vobizAuthToken:    process.env.VOBIZ_AUTH_TOKEN,
+  vobizApiUrl:       process.env.VOBIZ_API_URL    || 'https://api.vobiz.in/v1',
+  vobizFromNumber:   process.env.VOBIZ_FROM_NUMBER,
   exotelSid:         process.env.EXOTEL_SID,
   exotelToken:       process.env.EXOTEL_TOKEN,
   exotelSubdomain:   process.env.EXOTEL_SUBDOMAIN,
