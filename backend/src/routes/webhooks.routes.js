@@ -1,7 +1,8 @@
 // src/routes/webhooks.routes.js
-// Receives real-time events from Vobiz and Exotel.
-// These are NOT authenticated with JWT — they come from telephony providers.
-const express        = require('express')
+// Vobiz sends form-urlencoded data (not JSON!)
+// Fields: CallSID, From, To, Direction, CallStatus, Duration, HangupCause
+
+const express            = require('express')
 const { activeSessions } = require('../call-engine/session')
 const { getAnswerXML }   = require('../telephony/vobiz')
 const callRepo           = require('../repositories/call.repo')
@@ -10,75 +11,75 @@ const router = express.Router()
 
 // ── VOBIZ ANSWER URL ──────────────────────────────────────────
 // Vobiz hits this when call is answered
-// session_id comes from custom_data we passed when making the call
+// Body contains: CallSID, From, To, Direction, CallStatus
+// caller_name contains our session_id (we set it when making call)
 router.post('/vobiz/answer', (req, res) => {
-  const sessionId = req.body?.custom_data?.session_id || req.body?.session_id || req.query?.session_id
-  const serverUrl = (process.env.SERVER_URL || req.headers.host || 'localhost:3000').replace(/^https?:\/\//, '')
-  console.log('[Vobiz] 📞 Call answered — session:', sessionId, '| body:', JSON.stringify(req.body))
+  // Vobiz sends form-urlencoded
+  const callSid   = req.body?.CallSID   || req.body?.call_uuid
+  const callerName = req.body?.CallerName || req.body?.caller_name
+  const from      = req.body?.From       || req.body?.from
+  const to        = req.body?.To         || req.body?.to
+
+  // session_id was passed as caller_name when we made the call
+  const sessionId = callerName || callSid
+
+  const serverUrl = (process.env.SERVER_URL || req.headers.host || 'localhost:3000')
+    .replace(/^https?:\/\//, '')
+
+  console.log(`[Vobiz] 📞 Answer URL hit | CallSID: ${callSid} | Session: ${sessionId} | From: ${from} | To: ${to}`)
+  console.log(`[Vobiz] Full body:`, JSON.stringify(req.body))
+
   res.set('Content-Type', 'text/xml')
   res.send(getAnswerXML(sessionId, serverUrl))
 })
 
-// ── VOBIZ WEBHOOK ─────────────────────────────────────────────
-// Vobiz fires this for: call.initiated, call.answered, call.ended,
-// call.no_answer, call.busy, call.failed
-router.post('/vobiz', async (req, res, next) => {
-  const { event, session_id, status, recording_url, custom_data } = req.body
-  const sessionId = session_id || custom_data?.session_id
-
-  console.log(`[Vobiz] event=${event} session=${sessionId} status=${status}`)
-
+// ── VOBIZ HANGUP URL ──────────────────────────────────────────
+// Vobiz hits this when call ends
+// Body: CallSID, CallStatus=completed, Duration, HangupCause
+router.post('/vobiz/hangup', async (req, res, next) => {
   try {
-    switch (event) {
-      case 'call.initiated':
-      case 'call.answered':
-        // WebSocket will connect automatically — nothing to do here
-        break
+    const callSid    = req.body?.CallSID    || req.body?.call_uuid
+    const status     = req.body?.CallStatus || req.body?.call_status
+    const duration   = req.body?.Duration   || req.body?.duration
+    const hangupCause = req.body?.HangupCause || req.body?.hangup_cause
+    const callerName  = req.body?.CallerName  || req.body?.caller_name
+    const sessionId   = callerName || callSid
 
-      case 'call.no_answer':
-        await _handleCallEnd(sessionId, 'no_answer')
-        break
+    console.log(`[Vobiz] 📴 Hangup | CallSID: ${callSid} | Status: ${status} | Duration: ${duration}s | Cause: ${hangupCause}`)
 
-      case 'call.busy':
-        await _handleCallEnd(sessionId, 'busy')
-        break
-
-      case 'call.failed':
-        await _handleCallEnd(sessionId, 'failed')
-        break
-
-      case 'call.ended': {
-        if (recording_url && sessionId) {
-          await callRepo.update(sessionId, { recording_url })
-        }
-        const session = activeSessions.get(sessionId)
-        if (session) await session.endCall('completed')
-        break
-      }
-
-      default:
-        console.log(`[Vobiz] Unhandled event: ${event}`)
-    }
+    const outcome = _mapHangupCause(status, hangupCause)
+    await _handleCallEnd(sessionId, outcome)
 
     res.json({ status: 'ok' })
   } catch (err) { next(err) }
 })
 
-// ── EXOTEL — STREAM CONNECT ───────────────────────────────────
-// Called when Exotel answers a call — returns ExoML to stream audio
+// ── VOBIZ GENERAL WEBHOOK ─────────────────────────────────────
+// Fallback for any other Vobiz events
+router.post('/vobiz', async (req, res, next) => {
+  try {
+    console.log(`[Vobiz] Webhook received:`, JSON.stringify(req.body))
+    res.json({ status: 'ok' })
+  } catch (err) { next(err) }
+})
+
+// ── EXOTEL ROUTES (keeping for fallback) ─────────────────────
 router.post('/exotel/stream/:sessionId', (req, res) => {
   const { sessionId } = req.params
   const serverUrl = process.env.SERVER_URL || 'localhost:3000'
   console.log(`[Exotel] Stream connect: ${sessionId}`)
   res.set('Content-Type', 'text/xml')
-  res.send(getStreamXML(sessionId, serverUrl))
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Stream bidirectional="true" streamTimeout="86400">
+    wss://${serverUrl}/ws/call/${sessionId}
+  </Stream>
+</Response>`)
 })
 
-// ── EXOTEL — STATUS EVENTS ────────────────────────────────────
 router.post('/exotel', async (req, res, next) => {
   const { CallSid, Status, RecordingUrl } = req.body
   console.log(`[Exotel] CallSid=${CallSid} Status=${Status}`)
-
   try {
     switch (Status) {
       case 'completed': {
@@ -95,7 +96,18 @@ router.post('/exotel', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// ── Helper ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────
+function _mapHangupCause(status, cause) {
+  if (status === 'completed')  return 'completed'
+  if (status === 'no-answer')  return 'no_answer'
+  if (status === 'busy')       return 'busy'
+  if (status === 'failed')     return 'failed'
+  if (cause  === 'NORMAL_CLEARING') return 'completed'
+  if (cause  === 'NO_ANSWER')       return 'no_answer'
+  if (cause  === 'USER_BUSY')       return 'busy'
+  return 'failed'
+}
+
 async function _handleCallEnd(sessionId, outcome) {
   if (!sessionId) return
   const session = activeSessions.get(sessionId)
@@ -103,7 +115,6 @@ async function _handleCallEnd(sessionId, outcome) {
     await session.endCall(outcome)
     return
   }
-  // Session not found — call never connected, update DB directly
   try {
     await callRepo.update(sessionId, { outcome, ended_at: new Date().toISOString() })
   } catch {
