@@ -36,10 +36,12 @@ async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
       from:        fromNumber,
       to:          toNumber,
       // When answered — Vobiz hits this URL and gets XML with WebSocket
-      answer_url:  `https://${serverUrl}/webhooks/vobiz/answer/${sessionId}`,
+      answer_url:  `https://${serverUrl}/webhooks/vobiz/answer`,
       // Call status events (answered, busy, no_answer, completed)
       status_callback_url: `https://${serverUrl}/webhooks/vobiz`,
       ring_timeout: 30,
+      // Pass session_id back via custom_data — webhook reads it from here
+      custom_data: { session_id: sessionId },
     })
     console.log(`[Vobiz] ✅ Call initiated → ${toNumber} | session: ${sessionId}`)
     return response.data
