@@ -3,10 +3,21 @@
 // These are NOT authenticated with JWT — they come from telephony providers.
 const express        = require('express')
 const { activeSessions } = require('../call-engine/session')
-const { getStreamXML }   = require('../telephony/exotel')
+const { getAnswerXML }   = require('../telephony/vobiz')
 const callRepo           = require('../repositories/call.repo')
 
 const router = express.Router()
+
+// ── VOBIZ ANSWER URL ──────────────────────────────────────────
+// Vobiz hits this when call is answered
+// session_id comes from custom_data we passed when making the call
+router.post('/vobiz/answer', (req, res) => {
+  const sessionId = req.body?.custom_data?.session_id || req.body?.session_id || req.query?.session_id
+  const serverUrl = (process.env.SERVER_URL || req.headers.host || 'localhost:3000').replace(/^https?:\/\//, '')
+  console.log('[Vobiz] 📞 Call answered — session:', sessionId, '| body:', JSON.stringify(req.body))
+  res.set('Content-Type', 'text/xml')
+  res.send(getAnswerXML(sessionId, serverUrl))
+})
 
 // ── VOBIZ WEBHOOK ─────────────────────────────────────────────
 // Vobiz fires this for: call.initiated, call.answered, call.ended,
@@ -101,4 +112,3 @@ async function _handleCallEnd(sessionId, outcome) {
 }
 
 module.exports = router
-
