@@ -15,11 +15,11 @@ function getClient() {
 
   return axios.create({
     baseURL: `https://api.vobiz.ai/api/v1/Account/${authId}`,
-    headers: {
-      'X-Auth-ID':    authId,
-      'X-Auth-Token': authToken,
-      'Content-Type': 'application/json',
+    auth: {
+      username: authId,
+      password: authToken,
     },
+    headers: { 'Content-Type': 'application/json' },
     timeout: 15000,
   })
 }
@@ -106,9 +106,9 @@ async function getBalance() {
     const response  = await axios.get(
       `https://api.vobiz.ai/api/v1/Account/${authId}/`,
       {
-        headers: {
-          'X-Auth-ID':    authId,
-          'X-Auth-Token': authToken,
+        auth: {
+          username: authId,
+          password: authToken,
         }
       }
     )
