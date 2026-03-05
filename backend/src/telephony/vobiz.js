@@ -1,7 +1,7 @@
 // src/telephony/vobiz.js
-// Vobiz API — correct format from official docs
-// Base URL: https://api.vobiz.ai/api/v1/Account/{AUTH_ID}/
+// Vobiz API — based on official docs
 // Auth: X-Auth-ID and X-Auth-Token headers
+// Base: https://api.vobiz.ai/api/v1/Account/{AUTH_ID}/
 
 const axios = require('axios')
 
@@ -10,41 +10,44 @@ function getClient() {
   const authToken = process.env.VOBIZ_AUTH_TOKEN
 
   if (!authId || !authToken) {
-    throw new Error('VOBIZ_AUTH_ID and VOBIZ_AUTH_TOKEN required in environment variables')
+    throw new Error('VOBIZ_AUTH_ID and VOBIZ_AUTH_TOKEN required')
   }
 
   return axios.create({
     baseURL: `https://api.vobiz.ai/api/v1/Account/${authId}`,
-    auth: {
-      username: authId,
-      password: authToken,
+    headers: {
+      'X-Auth-ID':    authId,
+      'X-Auth-Token': authToken,
+      'Content-Type': 'application/json',
     },
-    headers: { 'Content-Type': 'application/json' },
     timeout: 15000,
   })
 }
 
 /**
- * Make an outbound call via Vobiz.
- * When call is answered, Vobiz hits our answer_url
- * which returns XML with WebSocket URL for audio streaming.
+ * Make an outbound call via Vobiz
+ * Vobiz hits answer_url when call connects
+ * We return XML to stream audio via WebSocket
  */
 async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
   try {
+    const authId = process.env.VOBIZ_AUTH_ID
+    const appId  = process.env.VOBIZ_APP_ID
+
     const vobiz    = getClient()
     const response = await vobiz.post('/Call/', {
-      from:        fromNumber,
-      to:          toNumber,
-      // When answered — Vobiz hits this URL and gets XML with WebSocket
-      answer_url:  `https://${serverUrl}/webhooks/vobiz/answer`,
-      // Call status events (answered, busy, no_answer, completed)
-      status_callback_url: `https://${serverUrl}/webhooks/vobiz`,
-      ring_timeout: 30,
-      // Pass session_id back via custom_data — webhook reads it from here
-      custom_data: { session_id: sessionId },
+      from:       fromNumber,
+      to:         toNumber,
+      answer_url: `https://${serverUrl}/webhooks/vobiz/answer`,
+      hangup_url: `https://${serverUrl}/webhooks/vobiz/hangup`,
+      // Pass session_id so we can match webhook back to our session
+      caller_name: sessionId,
     })
+
     console.log(`[Vobiz] ✅ Call initiated → ${toNumber} | session: ${sessionId}`)
+    console.log(`[Vobiz] Response:`, JSON.stringify(response.data))
     return response.data
+
   } catch (err) {
     console.error('[Vobiz] makeOutboundCall error:', err.response?.data || err.message)
     throw err
@@ -52,8 +55,9 @@ async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
 }
 
 /**
- * Get XML response for answered call — tells Vobiz to stream audio to our WebSocket
- * Vobiz hits our answer_url and we return this XML
+ * XML response for answered call
+ * Vobiz hits answer_url → we return this XML
+ * This tells Vobiz to stream audio to our WebSocket
  */
 function getAnswerXML(sessionId, serverUrl) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -65,26 +69,7 @@ function getAnswerXML(sessionId, serverUrl) {
 }
 
 /**
- * Transfer an ongoing call to a human agent
- */
-async function transferCall(callUuid, targetNumber) {
-  try {
-    const vobiz    = getClient()
-    const response = await vobiz.post(`/Call/${callUuid}/`, {
-      action: 'transfer',
-      legs:   'aleg',
-      aleg_url: `https://api.vobiz.ai/v1/transfer?to=${targetNumber}`,
-    })
-    console.log(`[Vobiz] ✅ Call ${callUuid} transferred to ${targetNumber}`)
-    return response.data
-  } catch (err) {
-    console.error('[Vobiz] transferCall error:', err.response?.data || err.message)
-    throw err
-  }
-}
-
-/**
- * Hang up an ongoing call
+ * Hang up a call
  */
 async function hangupCall(callUuid) {
   try {
@@ -97,21 +82,12 @@ async function hangupCall(callUuid) {
 }
 
 /**
- * Get account balance
+ * Get account info and balance
  */
 async function getBalance() {
   try {
-    const authId    = process.env.VOBIZ_AUTH_ID
-    const authToken = process.env.VOBIZ_AUTH_TOKEN
-    const response  = await axios.get(
-      `https://api.vobiz.ai/api/v1/Account/${authId}/`,
-      {
-        auth: {
-          username: authId,
-          password: authToken,
-        }
-      }
-    )
+    const vobiz    = getClient()
+    const response = await vobiz.get('/')
     return response.data
   } catch (err) {
     console.error('[Vobiz] getBalance error:', err.response?.data || err.message)
@@ -119,4 +95,4 @@ async function getBalance() {
   }
 }
 
-module.exports = { makeOutboundCall, getAnswerXML, transferCall, hangupCall, getBalance }
+module.exports = { makeOutboundCall, getAnswerXML, hangupCall, getBalance }
