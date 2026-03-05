@@ -1,7 +1,7 @@
 // src/telephony/vobiz.js
-// Vobiz API — based on official docs
-// Auth: X-Auth-ID and X-Auth-Token headers
-// Base: https://api.vobiz.ai/api/v1/Account/{AUTH_ID}/
+// Vobiz Integration — REST API + SIP Trunk
+// Auth: X-Auth-ID + X-Auth-Token headers for REST API
+// Calls: Made via REST API with SIP trunk credentials
 
 const axios = require('axios')
 
@@ -25,23 +25,22 @@ function getClient() {
 }
 
 /**
- * Make an outbound call via Vobiz
- * Vobiz hits answer_url when call connects
- * We return XML to stream audio via WebSocket
+ * Make outbound call via Vobiz REST API
+ * Uses XML Application (answer_url) for call flow
  */
 async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
   try {
     const authId = process.env.VOBIZ_AUTH_ID
     const appId  = process.env.VOBIZ_APP_ID
 
-    const vobiz    = getClient()
+    const vobiz = getClient()
+
+    // Make call using XML application
     const response = await vobiz.post('/Call/', {
-      from:       fromNumber,
-      to:         toNumber,
-      answer_url: `https://${serverUrl}/webhooks/vobiz/answer`,
-      hangup_url: `https://${serverUrl}/webhooks/vobiz/hangup`,
-      // Pass session_id so we can match webhook back to our session
-      caller_name: sessionId,
+      from:        fromNumber,
+      to:          toNumber,
+      app_id:      appId,
+      caller_name: sessionId,  // Pass session_id — comes back in webhook
     })
 
     console.log(`[Vobiz] ✅ Call initiated → ${toNumber} | session: ${sessionId}`)
@@ -57,7 +56,7 @@ async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
 /**
  * XML response for answered call
  * Vobiz hits answer_url → we return this XML
- * This tells Vobiz to stream audio to our WebSocket
+ * Tells Vobiz to stream bidirectional audio to our WebSocket
  */
 function getAnswerXML(sessionId, serverUrl) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -69,7 +68,7 @@ function getAnswerXML(sessionId, serverUrl) {
 }
 
 /**
- * Hang up a call
+ * Hang up an active call
  */
 async function hangupCall(callUuid) {
   try {
@@ -82,7 +81,26 @@ async function hangupCall(callUuid) {
 }
 
 /**
- * Get account info and balance
+ * Transfer call to human agent
+ */
+async function transferCall(callUuid, targetNumber) {
+  try {
+    const vobiz    = getClient()
+    const response = await vobiz.post(`/Call/${callUuid}/`, {
+      action:   'transfer',
+      legs:     'aleg',
+      aleg_url: `https://api.vobiz.ai/v1/transfer?to=${targetNumber}`,
+    })
+    console.log(`[Vobiz] ✅ Call ${callUuid} transferred to ${targetNumber}`)
+    return response.data
+  } catch (err) {
+    console.error('[Vobiz] transferCall error:', err.response?.data || err.message)
+    throw err
+  }
+}
+
+/**
+ * Get account balance
  */
 async function getBalance() {
   try {
@@ -95,4 +113,4 @@ async function getBalance() {
   }
 }
 
-module.exports = { makeOutboundCall, getAnswerXML, hangupCall, getBalance }
+module.exports = { makeOutboundCall, getAnswerXML, hangupCall, transferCall, getBalance }
