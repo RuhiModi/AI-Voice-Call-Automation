@@ -36,11 +36,13 @@ async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
     const vobiz = getClient()
 
     // Make call using XML application
+    const serverUrl = process.env.SERVER_URL || 'ai-voice-call-automation.onrender.com'
     const response = await vobiz.post('/Call/', {
       from:        fromNumber,
       to:          toNumber,
-      app_id:      appId,
-      caller_name: sessionId,  // Pass session_id — comes back in webhook
+      answer_url:  `https://${serverUrl}/webhooks/vobiz/answer`,
+      hangup_url:  `https://${serverUrl}/webhooks/vobiz/hangup`,
+      caller_name: sessionId,
     })
 
     console.log(`[Vobiz] ✅ Call initiated → ${toNumber} | session: ${sessionId}`)
