@@ -14,8 +14,14 @@ const server = http.createServer(app)
 // ── WebSocket Server ────────────────────────────────────────
 // Telephony providers (Vobiz/Exotel) connect here when a call answers.
 // URL pattern: /ws/call/{sessionId}
-const wss = new WebSocket.Server({ server, path: '/ws' })
+// Accept WebSocket on ANY path under /ws/
+// Vobiz connects to: wss://server/ws/call/{sessionId}
+const wss = new WebSocket.Server({ server, path: '/ws/call' })
 wss.on('connection', handleWebSocketConnection)
+
+// Also accept root /ws path for flexibility
+const wss2 = new WebSocket.Server({ server, path: '/ws' })
+wss2.on('connection', handleWebSocketConnection)
 
 // ── Start ───────────────────────────────────────────────────
 server.listen(config.port, () => {
@@ -49,4 +55,3 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', reason)
 })
-
