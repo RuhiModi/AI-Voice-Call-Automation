@@ -47,6 +47,7 @@ async function sarvamTTS(text, lang = 'gu') {
 
   const voiceConfig = SARVAM_VOICES[lang] || SARVAM_VOICES.gu
 
+  console.log(`[Sarvam TTS] Calling API | lang: ${lang} | text: "${text.substring(0,40)}" | key: ${config.sarvamApiKey ? config.sarvamApiKey.substring(0,8)+'...' : 'MISSING'}`)
   const response = await axios.post(SARVAM_TTS_URL, {
     inputs:               [text.substring(0, 500)],
     target_language_code: voiceConfig.target_language_code,
@@ -69,6 +70,7 @@ async function sarvamTTS(text, lang = 'gu') {
 
   // Sarvam returns base64-encoded audio
   const base64Audio = response.data?.audios?.[0]
+  console.log(`[Sarvam TTS] Response received | has audio: ${!!base64Audio} | data keys: ${Object.keys(response.data||{}).join(',')}`)
   if (!base64Audio) throw new Error('Sarvam TTS returned no audio')
 
   const audioBuffer = Buffer.from(base64Audio, 'base64')
@@ -79,4 +81,3 @@ async function sarvamTTS(text, lang = 'gu') {
 }
 
 module.exports = { sarvamTTS, SARVAM_VOICES }
-
