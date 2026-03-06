@@ -28,6 +28,8 @@ router.post('/vobiz/answer', (req, res) => {
 
   console.log(`[Vobiz] 📞 Answer URL hit | CallSID: ${callSid} | Session: ${sessionId} | From: ${from} | To: ${to}`)
   console.log(`[Vobiz] Full body:`, JSON.stringify(req.body))
+  console.log(`[Vobiz] Session in memory: ${require('../call-engine/session').activeSessions.has(sessionId)}`)
+  console.log(`[Vobiz] Total active sessions: ${require('../call-engine/session').activeSessions.size}`)
 
   res.set('Content-Type', 'text/xml')
   res.send(getAnswerXML(sessionId, serverUrl))
