@@ -65,9 +65,9 @@ const config = {
 
   // ── TTS Provider ─────────────────────────────────────
   ttsProvider:    process.env.TTS_PROVIDER || 'sarvam',
-  ttsVoiceGu:     process.env.TTS_VOICE_GUJARATI || 'kavya',
-  ttsVoiceHi:     process.env.TTS_VOICE_HINDI    || 'neha',
-  ttsVoiceEn:     process.env.TTS_VOICE_ENGLISH  || 'amelia',
+  ttsVoiceGu:     process.env.TTS_VOICE_GUJARATI || 'anushka',
+  ttsVoiceHi:     process.env.TTS_VOICE_HINDI    || 'anushka',
+  ttsVoiceEn:     process.env.TTS_VOICE_ENGLISH  || 'anushka',
 
   // ── Telephony ─────────────────────────────────────────
   telephonyProvider: process.env.TELEPHONY_PROVIDER || 'vobiz',
