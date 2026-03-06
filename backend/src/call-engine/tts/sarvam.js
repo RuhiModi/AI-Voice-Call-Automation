@@ -9,20 +9,21 @@ const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech'
 
 // Sarvam voice configs per language
 // Full voice list: https://docs.sarvam.ai/api-reference/text-to-speech
+// Valid bulbul:v2 speakers: anushka, abhilash, manisha, vidya, arya, karun, hitesh
 const SARVAM_VOICES = {
   gu: {
     target_language_code: 'gu-IN',
-    speaker:              config.ttsVoiceGu || 'kavya',   // Natural Gujarati female
+    speaker:              config.ttsVoiceGu || 'anushka',  // Female Gujarati
     model:                'bulbul:v2',
   },
   hi: {
     target_language_code: 'hi-IN',
-    speaker:              config.ttsVoiceHi || 'neha',    // Natural Hindi female
+    speaker:              config.ttsVoiceHi || 'anushka',  // Female Hindi
     model:                'bulbul:v2',
   },
   en: {
     target_language_code: 'en-IN',
-    speaker:              config.ttsVoiceEn || 'amelia',  // Indian English female
+    speaker:              config.ttsVoiceEn || 'anushka',  // Female English
     model:                'bulbul:v2',
   },
 }
