@@ -1,17 +1,11 @@
 // src/telephony/vobiz.js
-// Vobiz Integration — REST API + SIP Trunk
-// Auth: X-Auth-ID + X-Auth-Token headers for REST API
-// Calls: Made via REST API with SIP trunk credentials
-
 const axios = require('axios')
 
 function getClient() {
   const authId    = process.env.VOBIZ_AUTH_ID
   const authToken = process.env.VOBIZ_AUTH_TOKEN
 
-  if (!authId || !authToken) {
-    throw new Error('VOBIZ_AUTH_ID and VOBIZ_AUTH_TOKEN required')
-  }
+  if (!authId || !authToken) throw new Error('VOBIZ_AUTH_ID and VOBIZ_AUTH_TOKEN required')
 
   return axios.create({
     baseURL: `https://api.vobiz.ai/api/v1/Account/${authId}`,
@@ -24,29 +18,29 @@ function getClient() {
   })
 }
 
-/**
- * Make outbound call via Vobiz REST API
- * Uses XML Application (answer_url) for call flow
- */
-async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
+async function makeOutboundCall(fromNumber, toNumber, sessionId) {
   try {
-    const authId = process.env.VOBIZ_AUTH_ID
-    const appId  = process.env.VOBIZ_APP_ID
-
-    const vobiz = getClient()
-
-    // Make call using XML application
+    const vobiz     = getClient()
     const serverUrl = process.env.SERVER_URL || 'ai-voice-call-automation.onrender.com'
+
+    // Clean phone number — must be E.164 format e.g. +919876543210
+    const cleanTo = _cleanPhone(toNumber)
+    if (!cleanTo) throw new Error(`Invalid phone number: ${toNumber}`)
+
+    const answerUrl = `https://${serverUrl}/webhooks/vobiz/answer`
+    const hangupUrl = `https://${serverUrl}/webhooks/vobiz/hangup`
+
+    console.log(`[Vobiz] Calling ${cleanTo} | answer_url: ${answerUrl}`)
+
     const response = await vobiz.post('/Call/', {
       from:        fromNumber,
-      to:          toNumber,
-      answer_url:  `https://${serverUrl}/webhooks/vobiz/answer`,
-      hangup_url:  `https://${serverUrl}/webhooks/vobiz/hangup`,
+      to:          cleanTo,
+      answer_url:  answerUrl,
+      hangup_url:  hangupUrl,
       caller_name: sessionId,
     })
 
-    console.log(`[Vobiz] ✅ Call initiated → ${toNumber} | session: ${sessionId}`)
-    console.log(`[Vobiz] Response:`, JSON.stringify(response.data))
+    console.log(`[Vobiz] ✅ Call initiated → ${cleanTo} | session: ${sessionId}`)
     return response.data
 
   } catch (err) {
@@ -55,11 +49,17 @@ async function makeOutboundCall(fromNumber, toNumber, sessionId, serverUrl) {
   }
 }
 
-/**
- * XML response for answered call
- * Vobiz hits answer_url → we return this XML
- * Tells Vobiz to stream bidirectional audio to our WebSocket
- */
+// Clean and validate phone number → E.164 format (+91XXXXXXXXXX)
+function _cleanPhone(raw) {
+  if (!raw) return null
+  let phone = String(raw).replace(/[\s\-\.\(\)]/g, '')
+  if (phone.startsWith('+91')) phone = phone.slice(3)
+  else if (phone.startsWith('91') && phone.length === 12) phone = phone.slice(2)
+  else if (phone.startsWith('0') && phone.length === 11) phone = phone.slice(1)
+  if (!/^[6-9]\d{9}$/.test(phone)) return null
+  return `+91${phone}`
+}
+
 function getAnswerXML(sessionId, serverUrl) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -69,9 +69,6 @@ function getAnswerXML(sessionId, serverUrl) {
 </Response>`
 }
 
-/**
- * Hang up an active call
- */
 async function hangupCall(callUuid) {
   try {
     const vobiz = getClient()
@@ -82,9 +79,6 @@ async function hangupCall(callUuid) {
   }
 }
 
-/**
- * Transfer call to human agent
- */
 async function transferCall(callUuid, targetNumber) {
   try {
     const vobiz    = getClient()
@@ -93,7 +87,6 @@ async function transferCall(callUuid, targetNumber) {
       legs:     'aleg',
       aleg_url: `https://api.vobiz.ai/v1/transfer?to=${targetNumber}`,
     })
-    console.log(`[Vobiz] ✅ Call ${callUuid} transferred to ${targetNumber}`)
     return response.data
   } catch (err) {
     console.error('[Vobiz] transferCall error:', err.response?.data || err.message)
@@ -101,9 +94,6 @@ async function transferCall(callUuid, targetNumber) {
   }
 }
 
-/**
- * Get account balance
- */
 async function getBalance() {
   try {
     const vobiz    = getClient()
