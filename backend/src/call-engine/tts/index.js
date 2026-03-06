@@ -35,7 +35,7 @@ async function streamTTSToSocket(text, lang, ws) {
       if (ws.readyState === 1) ws.send(audio)
 
     } catch (err) {
-      console.error(`[TTS] Primary (${config.ttsProvider}) failed: ${err.message} — trying fallback`)
+      console.error(`[TTS] Primary (${config.ttsProvider}) failed: ${err.message} | Response: ${JSON.stringify(err.response?.data)} — trying fallback`)
       // Auto-fallback to other provider
       try {
         const audio = config.ttsProvider === 'sarvam'
@@ -51,4 +51,3 @@ async function streamTTSToSocket(text, lang, ws) {
 }
 
 module.exports = { streamTTSToSocket }
-
