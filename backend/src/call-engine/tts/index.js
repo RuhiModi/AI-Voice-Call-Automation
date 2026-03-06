@@ -1,53 +1,49 @@
-// src/call-engine/tts/index.js
-// 🔥 TTS ROUTER — reads TTS_PROVIDER from config.
-// session.js only imports streamTTSToSocket() from here.
-// Switch providers via .env: TTS_PROVIDER=sarvam or TTS_PROVIDER=google
-const config = require('../../config')
-const { sarvamTTS }  = require('./sarvam')
-const { googleTTS }  = require('./google')
+const config     = require('../../config')
+const { sarvamTTS } = require('./sarvam')
+const { googleTTS } = require('./google')
 
-/**
- * Convert text to audio and stream to WebSocket.
- * Splits into sentences for fast first-byte delivery.
- * User hears first sentence in ~300ms instead of waiting for full response.
- *
- * @param {string}    text  - Text to speak
- * @param {string}    lang  - 'gu' | 'hi' | 'en'
- * @param {WebSocket} ws    - Active WebSocket connection
- */
 async function streamTTSToSocket(text, lang, ws) {
   if (!text || !ws || ws.readyState !== 1) return
 
-  // Split into sentences for streaming — faster perceived latency
+  // Split on sentence boundaries — works for Gujarati, Hindi, English
   const sentences = text
-    .split(/(?<=[।!?.।]+)\s+/)
+    .split(/(?<=[.!?।\n])\s+|(?<=[.!?।])\s*(?=[A-Zઁ-૿ા-હ])/)
     .map(s => s.trim())
-    .filter(Boolean)
+    .filter(s => s.length > 0)
 
-  for (const sentence of sentences) {
-    if (ws.readyState !== 1) break  // Socket closed mid-stream
+  // If no splits happened, send as one chunk
+  const chunks = sentences.length > 0 ? sentences : [text]
+
+  console.log(`[TTS] Sending ${chunks.length} chunk(s) for: "${text.substring(0,50)}"`)
+
+  for (const chunk of chunks) {
+    if (!ws || ws.readyState !== 1) break
 
     try {
-      const audio = config.ttsProvider === 'sarvam'
-        ? await sarvamTTS(sentence, lang)
-        : await googleTTS(sentence, lang)
-
-      if (ws.readyState === 1) ws.send(audio)
-
-    } catch (err) {
-      console.error(`[TTS] Primary (${config.ttsProvider}) failed: ${err.message} | Response: ${JSON.stringify(err.response?.data)} — trying fallback`)
-      // Auto-fallback to other provider
-      try {
-        const audio = config.ttsProvider === 'sarvam'
-          ? await googleTTS(sentence, lang)
-          : await sarvamTTS(sentence, lang)
-        if (ws.readyState === 1) ws.send(audio)
-      } catch (fallbackErr) {
-        console.error('[TTS] Fallback also failed:', fallbackErr.message)
-        // Skip sentence — better than crashing the call
+      const audio = await _getTTS(chunk, lang)
+      if (!audio || audio.length === 0) {
+        console.error('[TTS] Empty audio returned — skipping chunk')
+        continue
       }
+      console.log(`[TTS] ✅ Sending ${audio.length} bytes for: "${chunk.substring(0,30)}"`)
+      ws.send(audio)
+      // Small gap between sentences for natural flow
+      await new Promise(r => setTimeout(r, 100))
+    } catch (err) {
+      console.error(`[TTS] Failed for chunk "${chunk.substring(0,30)}": ${err.message}`)
     }
   }
+}
+
+async function _getTTS(text, lang) {
+  // Try primary
+  try {
+    return await sarvamTTS(text, lang)
+  } catch (err) {
+    console.error(`[TTS] Sarvam failed: ${err.message} | ${JSON.stringify(err.response?.data)}`)
+  }
+  // No Google fallback — just throw
+  throw new Error('TTS failed — check SARVAM_API_KEY and voice config')
 }
 
 module.exports = { streamTTSToSocket }
