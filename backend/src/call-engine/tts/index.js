@@ -6,13 +6,12 @@ async function streamTTSToSocket(text, lang, ws) {
   if (!text || !ws || ws.readyState !== 1) return
 
   // Split on sentence boundaries — works for Gujarati, Hindi, English
-  const sentences = text
-    .split(/(?<=[.!?।\n])\s+|(?<=[.!?।])\s*(?=[A-Zઁ-૿ા-હ])/)
+  // Simple split on sentence endings — works for all languages
+  const chunks = text
+    .split(/(?<=[.!?।])\s+/)
     .map(s => s.trim())
     .filter(s => s.length > 0)
-
-  // If no splits happened, send as one chunk
-  const chunks = sentences.length > 0 ? sentences : [text]
+  if (chunks.length === 0) chunks.push(text)
 
   console.log(`[TTS] Sending ${chunks.length} chunk(s) for: "${text.substring(0,50)}"`)
 
