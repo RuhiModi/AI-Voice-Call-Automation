@@ -1,88 +1,327 @@
-// src/call-engine/tts/sarvam.js
-// Sarvam AI Text-to-Speech — Bulbul v2 model.
-// ₹15/10K chars vs Google's ₹12, but with MUCH better Indian voices.
-// Bulbul has 25+ Indian voices — Gujarati, Hindi, English with natural accents.
-const axios  = require('axios')
-const config = require('../../config')
-const { wavToPcm, pcm16ToMulaw } = require('./audioConvert')
+// src/call-engine/session.js
+// 🎙 THE BRAIN — manages each live call from connection to end.
+// Coordinates: STT → LLM → TTS → DB saves → Google Sheets
+const { v4: uuidv4 }    = require('uuid')
+const { createSTTHandler, VoiceActivityDetector } = require('./stt/index')
+const { streamTTSToSocket }   = require('./tts/index')
+const { getAIResponse, parseRescheduleTime } = require('./llm/index')
+const { buildSystemPrompt, buildGreeting }   = require('./prompts')
+const { detectQuickIntent }  = require('./intent')
+const callRepo     = require('../repositories/call.repo')
+const contactRepo  = require('../repositories/contact.repo')
+const campaignRepo = require('../repositories/campaign.repo')
+const userRepo     = require('../repositories/user.repo')
+const { appendToGoogleSheet } = require('../integrations/googleSheets')
 
-const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech'
+// All active call sessions — key: sessionId, value: CallSession
+const activeSessions = new Map()
 
-// Sarvam voice configs per language
-// Full voice list: https://docs.sarvam.ai/api-reference/text-to-speech
-// Valid bulbul:v2 speakers: anushka, abhilash, manisha, vidya, arya, karun, hitesh
-const SARVAM_VOICES = {
-  gu: {
-    target_language_code: 'gu-IN',
-    speaker:              config.ttsVoiceGu || 'anushka',  // Female Gujarati
-    model:                'bulbul:v2',
-  },
-  hi: {
-    target_language_code: 'hi-IN',
-    speaker:              config.ttsVoiceHi || 'anushka',  // Female Hindi
-    model:                'bulbul:v2',
-  },
-  en: {
-    target_language_code: 'en-IN',
-    speaker:              config.ttsVoiceEn || 'anushka',  // Female English
-    model:                'bulbul:v2',
-  },
+// ═══════════════════════════════════════════════════════════════
+class CallSession {
+  constructor(contact, campaign, wsSocket) {
+    this.sessionId = uuidv4()
+    this.contact   = contact
+    this.campaign  = campaign
+    this.wsSocket  = wsSocket
+
+    this.language      = campaign.language_priority || 'gu'
+    this.transcript    = []   // Full conversation [{role, content}]
+    this.collectedData = {}   // Data gathered during the call
+    this.isActive      = true
+    this.startTime     = Date.now()
+
+    this.sttHandler = null
+    this.vad        = null
+    this.audioBuffer = Buffer.alloc(0)
+  }
+
+  // ── Start the call ─────────────────────────────────────────
+  async start() {
+    console.log(`[Session ${this.sessionId}] 📞 Call starting | WS ready: ${this.wsSocket?.readyState}`)
+
+    try {
+      await callRepo.create(this.contact.id, this.campaign.id, this.sessionId)
+      activeSessions.set(this.sessionId, this)
+
+      // Small delay — let WebSocket fully establish before sending audio
+      await new Promise(r => setTimeout(r, 500))
+
+      if (!this.wsSocket || this.wsSocket.readyState !== 1) {
+        console.error(`[Session ${this.sessionId}] ❌ WebSocket not open! State: ${this.wsSocket?.readyState}`)
+        await this.endCall('failed')
+        return
+      }
+
+      console.log(`[Session ${this.sessionId}] ✅ WebSocket open — speaking greeting`)
+      const greeting = buildGreeting(this.campaign, this.contact, this.language)
+      this.transcript.push({ role: 'assistant', content: greeting })
+      await this.speak(greeting)
+
+      this._setupSTT()
+      this._setupVAD()
+
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Start error:`, err)
+      await this.endCall('failed')
+    }
+  }
+
+  // ── Setup STT (Sarvam or Google, via index.js) ─────────────
+  _setupSTT() {
+    this.sttHandler = createSTTHandler(
+      async (text, detectedLang) => {
+        if (!this.isActive) return
+        this.language = detectedLang
+        console.log(`[Session ${this.sessionId}] User (${detectedLang}): "${text}"`)
+        this.transcript.push({ role: 'user', content: text })
+        await this._processUserInput(text)
+      },
+      async (err) => {
+        console.error(`[Session ${this.sessionId}] STT error:`, err.message)
+        // Restart STT stream on recoverable errors (Google streaming only)
+        if (this.isActive && this.sttHandler?.provider === 'google' && err.code !== 11) {
+          setTimeout(() => { if (this.isActive) this._setupSTT() }, 1000)
+        }
+      },
+      this.language
+    )
+  }
+
+  // ── Voice Activity Detector ────────────────────────────────
+  _setupVAD() {
+    this.vad = new VoiceActivityDetector(async () => {
+      // User stopped speaking — flush Sarvam buffer or push final Google chunk
+      if (this.sttHandler?.provider === 'sarvam') {
+        await this.sttHandler.flush()
+      } else if (this.audioBuffer.length > 0 && this.sttHandler && !this.sttHandler.destroyed) {
+        this.sttHandler.write(this.audioBuffer)
+        this.audioBuffer = Buffer.alloc(0)
+      }
+    }, 900)
+  }
+
+  // ── Receive audio from WebSocket ───────────────────────────
+  receiveAudio(audioData) {
+    if (!this.isActive) return
+    const mulawBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData)
+
+    // Vobiz sends mulaw audio — convert to PCM16 for STT processing
+    const { mulawToPcm16 } = require('./tts/audioConvert')
+    const buffer = mulawToPcm16(mulawBuffer)
+
+    this.vad?.processChunk(buffer)
+
+    if (this.sttHandler?.provider === 'sarvam') {
+      // Sarvam: accumulate in handler's internal buffer
+      this.sttHandler.write(buffer)
+    } else {
+      // Google: send in 3200-byte chunks (200ms at 8kHz 16-bit)
+      this.audioBuffer = Buffer.concat([this.audioBuffer, buffer])
+      const CHUNK_SIZE = 3200
+      while (this.audioBuffer.length >= CHUNK_SIZE) {
+        if (this.sttHandler && !this.sttHandler.destroyed) {
+          this.sttHandler.write(this.audioBuffer.slice(0, CHUNK_SIZE))
+        }
+        this.audioBuffer = this.audioBuffer.slice(CHUNK_SIZE)
+      }
+    }
+  }
+
+  // ── Process user input through LLM ────────────────────────
+  async _processUserInput(userText) {
+    try {
+      // Quick intent check — catches obvious DNC/transfer/reschedule before LLM
+      const quickIntent = detectQuickIntent(userText)
+
+      const systemPrompt = buildSystemPrompt(this.campaign, this.contact, this.language)
+      const history      = this.transcript.slice(-10)
+
+      const response = await getAIResponse(systemPrompt, history, userText)
+
+      // Quick intent overrides LLM if LLM missed it
+      if (quickIntent && response.action === 'continue') {
+        response.action = quickIntent
+        console.log(`[Session ${this.sessionId}] Quick intent override: ${quickIntent}`)
+      }
+
+      if (response.detected_language) this.language = response.detected_language
+      this.collectedData = { ...this.collectedData, ...response.collected_data }
+
+      this.transcript.push({ role: 'assistant', content: response.text })
+      console.log(`[Session ${this.sessionId}] AI (${response.provider}) [${response.action}]: "${response.text}"`)
+
+      await this.speak(response.text)
+      await this._handleAction(response)
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Process input error:`, err)
+    }
+  }
+
+  // ── Speak text via TTS ─────────────────────────────────────
+  async speak(text) {
+    if (!this.isActive || !text) return
+    console.log(`[Session ${this.sessionId}] 🗣️ Speaking: "${text.substring(0,60)}..." | WS state: ${this.wsSocket?.readyState} | Lang: ${this.language}`)
+    try {
+      await streamTTSToSocket(text, this.language, this.wsSocket)
+      console.log(`[Session ${this.sessionId}] ✅ Audio sent successfully`)
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] ❌ Speak error:`, err.message, err.response?.data || '')
+    }
+  }
+
+  // ── Handle LLM action ──────────────────────────────────────
+  async _handleAction({ action, reschedule_time }) {
+    switch (action) {
+      case 'reschedule': {
+        const scheduledAt = await parseRescheduleTime(reschedule_time)
+        if (scheduledAt) {
+          await contactRepo.scheduleCallback(this.contact.id, scheduledAt)
+          await callRepo.insertCallback(this.contact.id, this.campaign.id, scheduledAt, reschedule_time)
+          console.log(`[Session ${this.sessionId}] 📅 Callback scheduled: ${scheduledAt}`)
+        }
+        await this.endCall('rescheduled')
+        break
+      }
+      case 'transfer': {
+        await this._transferToHuman()
+        break
+      }
+      case 'dnc': {
+        await contactRepo.markDNC(this.contact.id)
+        console.log(`[Session ${this.sessionId}] 🚫 DNC: ${this.contact.phone}`)
+        await this.endCall('dnc')
+        break
+      }
+      case 'end': {
+        await this.endCall('completed')
+        break
+      }
+      // 'continue' → do nothing, wait for next user input
+    }
+  }
+
+  // ── Transfer to human agent ────────────────────────────────
+  async _transferToHuman() {
+    const agentNumber = process.env.HUMAN_AGENT_NUMBER
+    if (agentNumber) {
+      try {
+        const { transferCall } = require('../telephony')
+        await transferCall(this.sessionId, agentNumber)
+        console.log(`[Session ${this.sessionId}] 👤 Transferred to: ${agentNumber}`)
+      } catch (err) {
+        console.error(`[Session ${this.sessionId}] Transfer error:`, err.message)
+      }
+    }
+    await this.endCall('transferred')
+  }
+
+  // ── End call + save everything ─────────────────────────────
+  async endCall(outcome = 'completed') {
+    if (!this.isActive) return
+    this.isActive = false
+
+    const duration = Math.floor((Date.now() - this.startTime) / 1000)
+    console.log(`[Session ${this.sessionId}] 📵 Ended: ${outcome} (${duration}s)`)
+
+    try {
+      await callRepo.update(this.sessionId, {
+        outcome,
+        duration_sec:      duration,
+        language_detected: this.language,
+        transcript:        JSON.stringify(this.transcript),
+        collected_data:    JSON.stringify(this.collectedData),
+        ended_at:          new Date().toISOString(),
+      })
+
+      await contactRepo.updateStatus(this.contact.id, 'completed', outcome)
+      await campaignRepo.incrementCompleted(this.campaign.id)
+
+      // Write to Google Sheets if connected
+      if (this.campaign.google_sheet_id) {
+        const user = await userRepo.findById(this.campaign.user_id)
+        if (user?.google_sheets_token) {
+          await appendToGoogleSheet(
+            user.google_sheets_token,
+            this.campaign.google_sheet_id,
+            this.contact, outcome, this.language, duration, this.collectedData
+          ).catch(err => console.error('[Sheets] Error:', err.message))
+        }
+      }
+
+      // Mark campaign complete if no more pending
+      const stats   = await campaignRepo.getStats(this.campaign.id)
+      const pending = parseInt(stats.pending) + parseInt(stats.calling) + parseInt(stats.scheduled)
+      if (pending === 0 && this.campaign.status === 'active') {
+        await campaignRepo.updateStatus(this.campaign.id, 'completed')
+        console.log(`✅ Campaign completed: ${this.campaign.name}`)
+      }
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Save error:`, err)
+    } finally {
+      this.sttHandler?.destroy?.()
+      this.vad?.destroy()
+      activeSessions.delete(this.sessionId)
+    }
+  }
 }
 
-// Simple in-memory cache — avoid re-generating same phrases
-const _cache   = new Map()
-const MAX_CACHE = 200
+// ═══════════════════════════════════════════════════════════════
+// WebSocket Connection Handler
+// Called from server.js when a telephony provider connects.
+// ═══════════════════════════════════════════════════════════════
+async function handleWebSocketConnection(ws, req) {
+  // Extract sessionId from URL: /ws/call/{sessionId} or /ws/{sessionId}
+  const parts     = req.url.split('/')
+  const sessionId = parts[parts.length - 1]
 
-/**
- * Convert text to PCM audio using Sarvam Bulbul v2.
- * Returns a Buffer of PCM 8kHz 16-bit mono audio.
- *
- * @param {string} text
- * @param {string} lang  - 'gu' | 'hi' | 'en'
- * @returns {Buffer}
- */
-async function sarvamTTS(text, lang = 'gu') {
-  if (!config.sarvamApiKey) throw new Error('SARVAM_API_KEY not set in .env')
+  if (!sessionId) { ws.close(); return }
+  console.log(`[WS] New connection: ${sessionId}`)
 
-  const cacheKey = `${lang}:${text}`
-  if (_cache.has(cacheKey)) return _cache.get(cacheKey)
+  let session = activeSessions.get(sessionId)
 
-  const voiceConfig = SARVAM_VOICES[lang] || SARVAM_VOICES.gu
+  if (session) {
+    session.wsSocket = ws
+    await session.start()
+  } else {
+    // Session not in memory — check DB (edge case: server restart mid-call)
+    console.log(`[WS] Session ${sessionId} not in memory, checking DB...`)
+    try {
+      const row = await callRepo.findBySession(sessionId)
+      if (!row) { console.log(`[WS] No call log for ${sessionId}`); ws.close(); return }
 
-  console.log(`[Sarvam TTS] Calling API | lang: ${lang} | text: "${text.substring(0,40)}" | key: ${config.sarvamApiKey ? config.sarvamApiKey.substring(0,8)+'...' : 'MISSING'}`)
-  const response = await axios.post(SARVAM_TTS_URL, {
-    inputs:               [text.substring(0, 500)],
-    target_language_code: voiceConfig.target_language_code,
-    speaker:              voiceConfig.speaker,
-    model:                voiceConfig.model,
-    pitch:                0,
-    pace:                 1.0,
-    loudness:             1.5,
-    speech_sample_rate:   8000,
-    enable_preprocessing: true,
-  }, {
-    headers: {
-      'api-subscription-key': config.sarvamApiKey,
-      'Authorization':        `Bearer ${config.sarvamApiKey}`,
-      'Content-Type':         'application/json',
-    },
-    timeout: 10000,
+      const contact  = { id: row.contact_id, phone: row.phone, variables: row.variables }
+      const campaign = {
+        id: row.campaign_id, name: row.name, language_priority: row.language_priority,
+        script_content: row.script_content, system_prompt: row.system_prompt,
+        persona_name: row.persona_name, persona_tone: row.persona_tone,
+        data_fields: row.data_fields, handoff_keywords: row.handoff_keywords,
+        caller_id: row.caller_id, user_id: row.user_id,
+        google_sheet_id: row.google_sheet_id, campaign_type: row.campaign_type,
+      }
+      session = new CallSession(contact, campaign, ws)
+      session.sessionId = sessionId
+      await session.start()
+    } catch (err) {
+      console.error('[WS] DB lookup error:', err)
+      ws.close()
+      return
+    }
+  }
+
+  ws.on('message', (data) => {
+    const s = activeSessions.get(sessionId)
+    if (s?.isActive) s.receiveAudio(data)
   })
 
-  // Sarvam returns base64-encoded audio
-  const base64Audio = response.data?.audios?.[0]
-  console.log(`[Sarvam TTS] Response received | has audio: ${!!base64Audio} | data keys: ${Object.keys(response.data||{}).join(',')}`)
-  if (!base64Audio) throw new Error('Sarvam TTS returned no audio')
+  ws.on('close', async () => {
+    console.log(`[WS] Disconnected: ${sessionId}`)
+    const s = activeSessions.get(sessionId)
+    if (s?.isActive) await s.endCall('disconnected')
+  })
 
-  const wavBuffer  = Buffer.from(base64Audio, 'base64')
-  const pcmBuffer  = wavToPcm(wavBuffer)       // Strip WAV header → raw PCM16
-  const mulawAudio = pcm16ToMulaw(pcmBuffer)   // PCM16 → mulaw for Vobiz
-
-  console.log(`[Sarvam TTS] wav:${wavBuffer.length}B → pcm:${pcmBuffer.length}B → mulaw:${mulawAudio.length}B`)
-
-  if (_cache.size < MAX_CACHE) _cache.set(cacheKey, mulawAudio)
-
-  return mulawAudio
+  ws.on('error', (err) => {
+    console.error(`[WS] Error (${sessionId}):`, err.message)
+  })
 }
 
-module.exports = { sarvamTTS, SARVAM_VOICES }
+module.exports = { CallSession, activeSessions, handleWebSocketConnection }
