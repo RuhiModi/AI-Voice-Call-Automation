@@ -8,6 +8,7 @@ import Simulate      from './pages/Simulate'
 import LandingPage   from './pages/LandingPage'
 import CreateCampaign from './pages/CreateCampaign'
 import CampaignDetail from './pages/CampaignDetail'
+import EditCampaign   from './pages/EditCampaign'
 import Settings       from './pages/Settings'
 import Layout         from './components/Layout'
 
@@ -41,7 +42,8 @@ export default function App() {
           <Route index                element={<Dashboard />} />
           <Route path="campaigns"     element={<Campaigns />} />
           <Route path="campaigns/new" element={<CreateCampaign />} />
-          <Route path="campaigns/:id" element={<CampaignDetail />} />
+          <Route path="campaigns/:id"      element={<CampaignDetail />} />
+          <Route path="campaigns/:id/edit" element={<EditCampaign />} />
           <Route path="simulate"      element={<Simulate />} />
           <Route path="billing"       element={<Billing />} />
           <Route path="settings"      element={<Settings />} />
