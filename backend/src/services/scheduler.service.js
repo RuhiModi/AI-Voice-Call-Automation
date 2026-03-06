@@ -82,7 +82,8 @@ async function _processCampaign(campaignId) {
 
   // TRAI compliance: only call during allowed hours (IST)
   if (!_isWithinCallingHours(campaign)) {
-    console.log(`[Scheduler] Outside calling hours for: ${campaign.name}`)
+    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+    console.log(`[Scheduler] ⏰ Outside calling hours for: ${campaign.name} | IST: ${nowIST.getHours()}:${nowIST.getMinutes()} | Allowed: ${campaign.calling_hours_start} - ${campaign.calling_hours_end}`)
     return
   }
 
@@ -137,7 +138,14 @@ async function _makeCall(contactId, campaignId, campaignData = null) {
     session.sessionId = sessionId
     activeSessions.set(sessionId, session)
 
-    await makeOutboundCall(campaign.caller_id, contact.phone, sessionId, serverUrl)
+    // Use campaign caller_id, fall back to env VOBIZ_FROM_NUMBER
+    const fromNumber = campaign.caller_id || config.vobizFromNumber
+    if (!fromNumber) {
+      console.error('[Scheduler] ❌ No caller_id set! Add VOBIZ_FROM_NUMBER to env or set caller_id on campaign.')
+      await contactRepo.updateStatus(contactId, 'failed', 'no_caller_id')
+      return
+    }
+    await makeOutboundCall(fromNumber, contact.phone, sessionId, serverUrl)
     console.log(`[Scheduler] 📞 Calling ${contact.phone} — session: ${sessionId}`)
   } catch (err) {
     console.error(`[Scheduler] Failed to call ${contact.phone}:`, err.message)
@@ -157,3 +165,25 @@ function _isWithinCallingHours(campaign) {
 
 module.exports = schedulerService
 
+// ── Startup recovery ───────────────────────────────────────────
+// When server restarts, re-register all campaigns that are still 'active' in DB
+// This prevents campaigns from stalling after a Render restart
+async function recoverActiveCampaigns() {
+  try {
+    const pool = require('../db/supabaseClient')
+    const { rows } = await pool.query(
+      "SELECT * FROM campaigns WHERE status = 'active'"
+    )
+    if (rows.length === 0) return
+    console.log(`[Scheduler] 🔄 Recovering ${rows.length} active campaign(s) after restart...`)
+    for (const campaign of rows) {
+      activeCampaigns.add(campaign.id)
+      console.log(`[Scheduler] ✅ Re-registered: ${campaign.name}`)
+    }
+  } catch (err) {
+    console.error('[Scheduler] Recovery error:', err.message)
+  }
+}
+
+// Run recovery after 5s (give DB time to connect)
+setTimeout(recoverActiveCampaigns, 5000)
