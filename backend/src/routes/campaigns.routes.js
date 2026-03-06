@@ -110,6 +110,16 @@ router.post('/:id/script/url', auth, async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// DELETE /campaigns/:id
+router.delete('/:id', auth, async (req, res, next) => {
+  try {
+    const schedulerService = require('../services/scheduler.service')
+    schedulerService.pause(req.params.id)  // Stop any active calls first
+    await campaignRepo.delete(req.params.id, req.userId)
+    res.json({ message: 'Campaign deleted' })
+  } catch (err) { next(err) }
+})
+
 // POST /campaigns/:id/launch
 router.post('/:id/launch', auth, launchRateLimiter, async (req, res, next) => {
   try {
