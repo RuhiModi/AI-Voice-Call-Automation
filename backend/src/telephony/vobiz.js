@@ -21,7 +21,9 @@ function getClient() {
 async function makeOutboundCall(fromNumber, toNumber, sessionId) {
   try {
     const vobiz     = getClient()
-    const serverUrl = process.env.SERVER_URL || 'ai-voice-call-automation.onrender.com'
+    // Strip any existing protocol prefix so we control it cleanly
+    let serverUrl = process.env.SERVER_URL || 'ai-voice-call-automation.onrender.com'
+    serverUrl = serverUrl.replace(/^https?:\/\//, '')
 
     // Clean phone number — must be E.164 format e.g. +919876543210
     const cleanTo = _cleanPhone(toNumber)
