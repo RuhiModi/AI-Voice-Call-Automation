@@ -4,6 +4,7 @@
 // Bulbul has 25+ Indian voices — Gujarati, Hindi, English with natural accents.
 const axios  = require('axios')
 const config = require('../../config')
+const { wavToPcm, pcm16ToMulaw } = require('./audioConvert')
 
 const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech'
 
@@ -73,11 +74,15 @@ async function sarvamTTS(text, lang = 'gu') {
   console.log(`[Sarvam TTS] Response received | has audio: ${!!base64Audio} | data keys: ${Object.keys(response.data||{}).join(',')}`)
   if (!base64Audio) throw new Error('Sarvam TTS returned no audio')
 
-  const audioBuffer = Buffer.from(base64Audio, 'base64')
+  const wavBuffer  = Buffer.from(base64Audio, 'base64')
+  const pcmBuffer  = wavToPcm(wavBuffer)       // Strip WAV header → raw PCM16
+  const mulawAudio = pcm16ToMulaw(pcmBuffer)   // PCM16 → mulaw for Vobiz
 
-  if (_cache.size < MAX_CACHE) _cache.set(cacheKey, audioBuffer)
+  console.log(`[Sarvam TTS] wav:${wavBuffer.length}B → pcm:${pcmBuffer.length}B → mulaw:${mulawAudio.length}B`)
 
-  return audioBuffer
+  if (_cache.size < MAX_CACHE) _cache.set(cacheKey, mulawAudio)
+
+  return mulawAudio
 }
 
 module.exports = { sarvamTTS, SARVAM_VOICES }
