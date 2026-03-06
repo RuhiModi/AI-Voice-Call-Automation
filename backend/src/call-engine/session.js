@@ -37,19 +37,29 @@ class CallSession {
 
   // ── Start the call ─────────────────────────────────────────
   async start() {
-    console.log(`[Session ${this.sessionId}] 📞 Call to ${this.contact.phone} starting`)
+    console.log(`[Session ${this.sessionId}] 📞 Call starting | WS ready: ${this.wsSocket?.readyState}`)
 
     try {
       await callRepo.create(this.contact.id, this.campaign.id, this.sessionId)
+      activeSessions.set(this.sessionId, this)
 
+      // Small delay — let WebSocket fully establish before sending audio
+      await new Promise(r => setTimeout(r, 500))
+
+      if (!this.wsSocket || this.wsSocket.readyState !== 1) {
+        console.error(`[Session ${this.sessionId}] ❌ WebSocket not open! State: ${this.wsSocket?.readyState}`)
+        await this.endCall('failed')
+        return
+      }
+
+      console.log(`[Session ${this.sessionId}] ✅ WebSocket open — speaking greeting`)
       const greeting = buildGreeting(this.campaign, this.contact, this.language)
-      await this.speak(greeting)
       this.transcript.push({ role: 'assistant', content: greeting })
+      await this.speak(greeting)
 
       this._setupSTT()
       this._setupVAD()
 
-      activeSessions.set(this.sessionId, this)
     } catch (err) {
       console.error(`[Session ${this.sessionId}] Start error:`, err)
       await this.endCall('failed')
@@ -309,4 +319,3 @@ async function handleWebSocketConnection(ws, req) {
 }
 
 module.exports = { CallSession, activeSessions, handleWebSocketConnection }
-
