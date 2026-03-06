@@ -12,8 +12,16 @@ const contactRepo = {
         [campaignId]
       )
       for (const c of contacts) {
-        let raw   = String(c.phone).replace(/[\s\-\.\(\)]/g, '')
+        // Handle Excel scientific notation e.g. 7.874e9 → 7874000000
+        let rawPhone = c.phone
+        if (typeof rawPhone === 'number' || (typeof rawPhone === 'string' && rawPhone.includes('e'))) {
+          rawPhone = Math.round(Number(rawPhone)).toString()
+        }
+
+        let raw   = String(rawPhone).replace(/[\s\-\.\(\)]/g, '')
         let phone = raw.replace(/\D/g, '')  // digits only
+
+        console.log(`[Contacts] Processing phone: ${c.phone} → cleaned: ${phone}`)
 
         // Normalize to 10-digit Indian mobile
         if (phone.startsWith('91') && phone.length === 12) phone = phone.slice(2)
@@ -21,11 +29,12 @@ const contactRepo = {
 
         // Validate: must be 10 digits starting with 6-9
         if (!/^[6-9]\d{9}$/.test(phone)) {
-          console.warn(`[Contacts] Skipping invalid phone: ${c.phone}`)
+          console.warn(`[Contacts] ❌ Skipping invalid phone: "${c.phone}" → "${phone}" (must be 10 digits starting 6-9)`)
           continue
         }
 
         const e164 = '+91' + phone
+        console.log(`[Contacts] ✅ Valid: ${e164}`)
         await client.query(
           'INSERT INTO contacts (campaign_id, phone, variables) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
           [campaignId, e164, JSON.stringify(c.variables || {})]
