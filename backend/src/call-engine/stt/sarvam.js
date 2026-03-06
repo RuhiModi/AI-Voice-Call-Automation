@@ -42,6 +42,7 @@ async function transcribeWithSarvam(audioBuffer, hintLang = 'gu') {
     headers: {
       ...form.getHeaders(),
       'api-subscription-key': config.sarvamApiKey,
+      'Authorization':        `Bearer ${config.sarvamApiKey}`,
     },
     timeout: 10000,
   })
@@ -86,4 +87,3 @@ function _addWavHeader(pcmBuffer, sampleRate, numChannels, bitDepth) {
 }
 
 module.exports = { transcribeWithSarvam }
-
