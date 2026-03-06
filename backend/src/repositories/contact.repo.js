@@ -12,12 +12,23 @@ const contactRepo = {
         [campaignId]
       )
       for (const c of contacts) {
-        let phone = String(c.phone).replace(/\D/g, '')
-        if (phone.length === 10) phone = '91' + phone
-        if (!phone.startsWith('+')) phone = '+' + phone
+        let raw   = String(c.phone).replace(/[\s\-\.\(\)]/g, '')
+        let phone = raw.replace(/\D/g, '')  // digits only
+
+        // Normalize to 10-digit Indian mobile
+        if (phone.startsWith('91') && phone.length === 12) phone = phone.slice(2)
+        else if (phone.startsWith('0')  && phone.length === 11) phone = phone.slice(1)
+
+        // Validate: must be 10 digits starting with 6-9
+        if (!/^[6-9]\d{9}$/.test(phone)) {
+          console.warn(`[Contacts] Skipping invalid phone: ${c.phone}`)
+          continue
+        }
+
+        const e164 = '+91' + phone
         await client.query(
-          'INSERT INTO contacts (campaign_id, phone, variables) VALUES ($1, $2, $3)',
-          [campaignId, phone, JSON.stringify(c.variables || {})]
+          'INSERT INTO contacts (campaign_id, phone, variables) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [campaignId, e164, JSON.stringify(c.variables || {})]
         )
       }
       await client.query(
