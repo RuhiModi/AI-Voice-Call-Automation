@@ -172,7 +172,7 @@ export default function CampaignDetail() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={loadAll} className="p-2.5 border border-gray-200 rounded-xl text-gray-500 hover:border-gray-400 transition-all"><RefreshCw size={14}/></button>
-          <button onClick={openEdit} className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-gray-400 transition-all"><Edit2 size={14}/> Edit</button>
+          <button onClick={() => navigate(`/dashboard/campaigns/${id}/edit`)} className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-gray-400 transition-all"><Edit2 size={14}/> Edit</button>
           <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-gray-400 transition-all"><Download size={14}/> Export</button>
           {campaign.status !== 'completed' && (
             <button onClick={toggleCampaign} disabled={actionLoading}
@@ -351,7 +351,7 @@ export default function CampaignDetail() {
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-bold text-gray-900">Campaign Settings</h2>
-            <button onClick={openEdit} className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-all">
+            <button onClick={() => navigate(`/dashboard/campaigns/${id}/edit`)} className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-all">
               <Edit2 size={14}/> Edit Settings
             </button>
           </div>
