@@ -156,10 +156,12 @@ class CallSession {
   // ── Speak text via TTS ─────────────────────────────────────
   async speak(text) {
     if (!this.isActive || !text) return
+    console.log(`[Session ${this.sessionId}] 🗣️ Speaking: "${text.substring(0,60)}..." | WS state: ${this.wsSocket?.readyState} | Lang: ${this.language}`)
     try {
       await streamTTSToSocket(text, this.language, this.wsSocket)
+      console.log(`[Session ${this.sessionId}] ✅ Audio sent successfully`)
     } catch (err) {
-      console.error(`[Session ${this.sessionId}] Speak error:`, err.message)
+      console.error(`[Session ${this.sessionId}] ❌ Speak error:`, err.message, err.response?.data || '')
     }
   }
 
