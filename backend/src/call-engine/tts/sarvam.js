@@ -53,19 +53,18 @@ async function sarvamTTS(text, lang = 'gu') {
     target_language_code: voiceConfig.target_language_code,
     speaker:              voiceConfig.speaker,
     model:                voiceConfig.model,
-    // Telephony optimized settings
-    pitch:          0,
-    pace:           0.9,    // Slightly slower for clarity on phone
-    loudness:       1.2,
-    speech_sample_rate: 8000,  // Match telephony sample rate
-    enable_preprocessing: true, // Better handling of numbers, dates
-    eng_interpolation_wt: 0.1, // Low English mixing for pure Indian voices
+    pitch:                0,
+    pace:                 1.0,
+    loudness:             1.5,
+    speech_sample_rate:   8000,
+    enable_preprocessing: true,
   }, {
     headers: {
       'api-subscription-key': config.sarvamApiKey,
-      'Content-Type': 'application/json',
+      'Authorization':        `Bearer ${config.sarvamApiKey}`,
+      'Content-Type':         'application/json',
     },
-    timeout: 8000,
+    timeout: 10000,
   })
 
   // Sarvam returns base64-encoded audio
