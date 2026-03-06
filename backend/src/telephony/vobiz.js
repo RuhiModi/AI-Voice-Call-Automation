@@ -63,12 +63,14 @@ function _cleanPhone(raw) {
 }
 
 function getAnswerXML(sessionId, serverUrl) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Stream streamTimeout="86400" keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000">
-    wss://${serverUrl}/ws/call/${sessionId}
-  </Stream>
-</Response>`
+  // Clean serverUrl — remove any protocol prefix
+  const cleanUrl = serverUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const wsUrl    = `wss://${cleanUrl}/ws/call/${sessionId}`
+
+  console.log(`[Vobiz] Answer XML → WebSocket: ${wsUrl}`)
+
+  // IMPORTANT: wss:// URL must be inline inside <Stream> tag, no whitespace
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Stream streamTimeout="86400" keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000">${wsUrl}</Stream></Response>`
 }
 
 async function hangupCall(callUuid) {
