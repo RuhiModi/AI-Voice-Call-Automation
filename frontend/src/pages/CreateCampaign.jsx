@@ -507,13 +507,36 @@ export default function CreateCampaign() {
             </div>
 
             <div>
-              <label className="block text-xs text-[#6b6b6b] mb-1.5">
+              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">
                 <Calendar size={12} className="inline mr-1" />
-                Schedule Start (leave blank to launch immediately)
+                When to Start Calling?
               </label>
-              <input type="datetime-local" value={form.schedule_start}
-                onChange={e => set('schedule_start', e.target.value)}
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {[
+                  { label: '⚡ Now',        value: 'now' },
+                  { label: '📅 Schedule',   value: 'schedule' },
+                ].map(opt => (
+                  <button key={opt.value} type="button"
+                    onClick={() => { set('_scheduleMode', opt.value); if (opt.value === 'now') set('schedule_start', '') }}
+                    className={`py-3 rounded-xl text-sm font-semibold border-2 transition-all
+                      ${(form._scheduleMode || 'now') === opt.value
+                        ? 'border-[#228248] bg-[#f0faf4] text-[#228248]'
+                        : 'border-[#e0d9ce] bg-white text-[#6b6b6b] hover:border-[#cfc6b9]'}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {(form._scheduleMode === 'schedule') && (
+                <input type="datetime-local" value={form.schedule_start}
+                  onChange={e => set('schedule_start', e.target.value)}
+                  min={new Date().toISOString().slice(0,16)}
+                  className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
+              )}
+              {(form._scheduleMode === 'now' || !form._scheduleMode) && (
+                <p className="text-xs text-[#228248] font-medium flex items-center gap-1.5">
+                  ✅ Calls will start immediately after launch
+                </p>
+              )}
             </div>
 
             {contactCount === 0 && (
