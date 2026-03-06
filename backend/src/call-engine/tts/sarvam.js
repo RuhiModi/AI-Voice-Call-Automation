@@ -1,89 +1,95 @@
-// src/call-engine/tts/sarvam.js
-// Sarvam AI Text-to-Speech — Bulbul v2 model.
-// ₹15/10K chars vs Google's ₹12, but with MUCH better Indian voices.
-// Bulbul has 25+ Indian voices — Gujarati, Hindi, English with natural accents.
-const axios  = require('axios')
-const config = require('../../config')
-const { wavToPcm } = require('./audioConvert')
-
-const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech'
-
-// Sarvam voice configs per language
-// Full voice list: https://docs.sarvam.ai/api-reference/text-to-speech
-// Valid bulbul:v2 speakers: anushka, abhilash, manisha, vidya, arya, karun, hitesh
-const SARVAM_VOICES = {
-  gu: {
-    target_language_code: 'gu-IN',
-    speaker:              config.ttsVoiceGu || 'anushka',  // Female Gujarati
-    model:                'bulbul:v2',
-  },
-  hi: {
-    target_language_code: 'hi-IN',
-    speaker:              config.ttsVoiceHi || 'anushka',  // Female Hindi
-    model:                'bulbul:v2',
-  },
-  en: {
-    target_language_code: 'en-IN',
-    speaker:              config.ttsVoiceEn || 'anushka',  // Female English
-    model:                'bulbul:v2',
-  },
-}
-
-// Simple in-memory cache — avoid re-generating same phrases
-const _cache   = new Map()
-const MAX_CACHE = 200
+// Pure JS audio conversion — no external dependencies
+// Converts between PCM16 and mulaw (G.711 u-law) for telephony
 
 /**
- * Convert text to PCM audio using Sarvam Bulbul v2.
- * Returns a Buffer of PCM 8kHz 16-bit mono audio.
- *
- * @param {string} text
- * @param {string} lang  - 'gu' | 'hi' | 'en'
- * @returns {Buffer}
+ * Convert PCM 16-bit signed to 8-bit mulaw
  */
-async function sarvamTTS(text, lang = 'gu') {
-  if (!config.sarvamApiKey) throw new Error('SARVAM_API_KEY not set in .env')
-
-  const cacheKey = `${lang}:${text}`
-  if (_cache.has(cacheKey)) return _cache.get(cacheKey)
-
-  const voiceConfig = SARVAM_VOICES[lang] || SARVAM_VOICES.gu
-
-  console.log(`[Sarvam TTS] Calling API | lang: ${lang} | text: "${text.substring(0,40)}" | key: ${config.sarvamApiKey ? config.sarvamApiKey.substring(0,8)+'...' : 'MISSING'}`)
-  const response = await axios.post(SARVAM_TTS_URL, {
-    inputs:               [text.substring(0, 500)],
-    target_language_code: voiceConfig.target_language_code,
-    speaker:              voiceConfig.speaker,
-    model:                voiceConfig.model,
-    pitch:                0,
-    pace:                 1.0,
-    loudness:             1.5,
-    speech_sample_rate:   8000,
-    enable_preprocessing: true,
-  }, {
-    headers: {
-      'api-subscription-key': config.sarvamApiKey,
-      'Authorization':        `Bearer ${config.sarvamApiKey}`,
-      'Content-Type':         'application/json',
-    },
-    timeout: 10000,
-  })
-
-  // Sarvam returns base64-encoded audio
-  const base64Audio = response.data?.audios?.[0]
-  console.log(`[Sarvam TTS] Response received | has audio: ${!!base64Audio} | data keys: ${Object.keys(response.data||{}).join(',')}`)
-  if (!base64Audio) throw new Error('Sarvam TTS returned no audio')
-
-  const wavBuffer  = Buffer.from(base64Audio, 'base64')
-  const pcmBuffer  = wavToPcm(wavBuffer)  // Strip WAV header → raw PCM16
-
-  // Try sending raw PCM16 — Vobiz bidirectional stream expects PCM16 from server
-  // (Vobiz sends mulaw TO us, but expects PCM16 back)
-  console.log(`[Sarvam TTS] wav:${wavBuffer.length}B → pcm:${pcmBuffer.length}B (sending raw PCM16)`)
-
-  if (_cache.size < MAX_CACHE) _cache.set(cacheKey, pcmBuffer)
-
-  return pcmBuffer
+function pcm16ToMulaw(pcmBuffer) {
+  const samples = pcmBuffer.length / 2
+  const mulaw   = Buffer.alloc(samples)
+  for (let i = 0; i < samples; i++) {
+    const sample = pcmBuffer.readInt16LE(i * 2)
+    mulaw[i] = _encodeMulaw(sample)
+  }
+  return mulaw
 }
 
-module.exports = { sarvamTTS, SARVAM_VOICES }
+/**
+ * Convert mulaw to PCM 16-bit signed
+ * Vobiz sends mulaw → we convert to PCM for Sarvam STT
+ */
+function mulawToPcm16(mulawBuffer) {
+  const pcm = Buffer.alloc(mulawBuffer.length * 2)
+  for (let i = 0; i < mulawBuffer.length; i++) {
+    const sample = _decodeMulaw(mulawBuffer[i])
+    pcm.writeInt16LE(sample, i * 2)
+  }
+  return pcm
+}
+
+/**
+ * Strip WAV header — find 'data' chunk properly
+ */
+function wavToPcm(wavBuffer) {
+  if (wavBuffer.slice(0, 4).toString() !== 'RIFF') {
+    console.log('[Audio] Not WAV, using as-is')
+    return wavBuffer
+  }
+  // Find 'data' chunk by scanning headers
+  let offset = 12
+  while (offset < wavBuffer.length - 8) {
+    const chunkId   = wavBuffer.slice(offset, offset + 4).toString()
+    const chunkSize = wavBuffer.readUInt32LE(offset + 4)
+    if (chunkId === 'data') {
+      console.log(`[Audio] WAV data at offset ${offset + 8}, pcm size: ${chunkSize}`)
+      return wavBuffer.slice(offset + 8)
+    }
+    offset += 8 + chunkSize
+  }
+  return wavBuffer.slice(44)
+}
+
+// ── G.711 u-law encoding ─────────────────────────────────────
+const MULAW_BIAS = 33
+const MULAW_MAX  = 32767
+
+function _encodeMulaw(sample) {
+  const sign    = (sample >> 8) & 0x80
+  if (sign) sample = -sample
+  if (sample > MULAW_MAX) sample = MULAW_MAX
+  sample += MULAW_BIAS
+  const exponent = _mulawExpTable[(sample >> 7) & 0xFF]
+  const mantissa = (sample >> (exponent + 3)) & 0x0F
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF
+}
+
+function _decodeMulaw(mulaw) {
+  mulaw  = ~mulaw & 0xFF
+  const sign     = mulaw & 0x80
+  const exponent = (mulaw >> 4) & 0x07
+  const mantissa = mulaw & 0x0F
+  let   sample   = ((mantissa << 3) + MULAW_BIAS) << exponent
+  sample -= MULAW_BIAS
+  return sign ? -sample : sample
+}
+
+const _mulawExpTable = [
+  0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,
+  4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
+  5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+  5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+]
+
+module.exports = { pcm16ToMulaw, mulawToPcm16, wavToPcm }
