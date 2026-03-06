@@ -14,14 +14,27 @@ const server = http.createServer(app)
 // ── WebSocket Server ────────────────────────────────────────
 // Telephony providers (Vobiz/Exotel) connect here when a call answers.
 // URL pattern: /ws/call/{sessionId}
-// Accept WebSocket on ANY path under /ws/
-// Vobiz connects to: wss://server/ws/call/{sessionId}
-const wss = new WebSocket.Server({ server, path: '/ws/call' })
+// 
+// IMPORTANT: ws library 'path' option matches EXACT path only.
+// We use noServer mode + manually upgrade to handle dynamic paths like
+// /ws/call/15ae9f67-xxx which would NOT match path: '/ws/call'
+const wss = new WebSocket.Server({ noServer: true })
 wss.on('connection', handleWebSocketConnection)
 
-// Also accept root /ws path for flexibility
-const wss2 = new WebSocket.Server({ server, path: '/ws' })
-wss2.on('connection', handleWebSocketConnection)
+server.on('upgrade', (req, socket, head) => {
+  const url = req.url || ''
+  console.log(`[WS] Upgrade request: ${url}`)
+  
+  // Accept any /ws/* path
+  if (url.startsWith('/ws')) {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req)
+    })
+  } else {
+    console.log(`[WS] Rejected upgrade for path: ${url}`)
+    socket.destroy()
+  }
+})
 
 // ── Start ───────────────────────────────────────────────────
 server.listen(config.port, () => {
