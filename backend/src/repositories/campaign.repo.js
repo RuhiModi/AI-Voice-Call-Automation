@@ -70,6 +70,25 @@ const campaignRepo = {
     return rows[0] || null
   },
 
+  async delete(id, userId) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // Delete all related data first
+      await client.query('DELETE FROM call_logs   WHERE campaign_id = $1', [id])
+      await client.query('DELETE FROM contacts    WHERE campaign_id = $1', [id])
+      await client.query('DELETE FROM callbacks   WHERE campaign_id = $1', [id])
+      await client.query('DELETE FROM campaigns   WHERE id = $1 AND user_id = $2', [id, userId])
+      await client.query('COMMIT')
+      return true
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+  },
+
   async updateStatus(id, status) {
     await pool.query(
       'UPDATE campaigns SET status = $1, updated_at = NOW() WHERE id = $2',
@@ -105,4 +124,3 @@ const campaignRepo = {
 }
 
 module.exports = campaignRepo
-
