@@ -53,10 +53,11 @@ cron.schedule('*/30 * * * * *', async () => {
 })
 
 // ── Callback check ─────────────────────────────────────────────
-// Every minute — check for rescheduled callbacks that are now due
-cron.schedule('* * * * *', async () => {
+// Every 5 minutes — check for rescheduled callbacks that are now due
+cron.schedule('*/5 * * * *', async () => {
   try {
     const callbacks = await callRepo.getPendingCallbacks()
+    if (!callbacks?.length) return
     for (const cb of callbacks) {
       const campaign = await campaignRepo.findById(cb.campaign_id)
       if (!campaign || campaign.status !== 'active') continue
@@ -65,7 +66,10 @@ cron.schedule('* * * * *', async () => {
       console.log(`[Scheduler] 📅 Callback triggered for contact ${cb.contact_id}`)
     }
   } catch (err) {
-    console.error('[Scheduler] Callback check error:', err.message)
+    // Suppress frequent timeout noise — only log non-timeout errors
+    if (!err.message.includes('timeout')) {
+      console.error('[Scheduler] Callback check error:', err.message)
+    }
   }
 })
 
@@ -145,7 +149,7 @@ async function _makeCall(contactId, campaignId, campaignData = null) {
       await contactRepo.updateStatus(contactId, 'failed', 'no_caller_id')
       return
     }
-    await makeOutboundCall(fromNumber, contact.phone, sessionId, serverUrl)
+    await makeOutboundCall(fromNumber, contact.phone, sessionId)
     console.log(`[Scheduler] 📞 Calling ${contact.phone} — session: ${sessionId}`)
   } catch (err) {
     console.error(`[Scheduler] Failed to call ${contact.phone}:`, err.message)
