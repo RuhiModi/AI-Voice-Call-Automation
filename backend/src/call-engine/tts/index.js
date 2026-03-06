@@ -24,8 +24,13 @@ async function streamTTSToSocket(text, lang, ws) {
         console.error('[TTS] Empty audio returned — skipping chunk')
         continue
       }
-      console.log(`[TTS] ✅ Sending ${audio.length} bytes for: "${chunk.substring(0,30)}"`)
-      ws.send(audio)
+      // Vobiz expects JSON-wrapped base64 encoded mulaw audio (like Twilio/Plivo)
+      const payload = JSON.stringify({
+        event:     'media',
+        media:     { payload: audio.toString('base64') }
+      })
+      console.log(`[TTS] ✅ Sending ${audio.length} bytes (base64 JSON) for: "${chunk.substring(0,30)}"`)
+      ws.send(payload)
       // Small gap between sentences for natural flow
       await new Promise(r => setTimeout(r, 100))
     } catch (err) {
