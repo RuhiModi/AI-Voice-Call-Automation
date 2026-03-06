@@ -3,8 +3,6 @@
 
 /**
  * Convert PCM 16-bit signed to 8-bit mulaw
- * Vobiz WebSocket expects: mulaw 8kHz mono
- * Sarvam TTS returns: PCM 16-bit 8kHz mono (inside WAV container)
  */
 function pcm16ToMulaw(pcmBuffer) {
   const samples = pcmBuffer.length / 2
@@ -30,14 +28,25 @@ function mulawToPcm16(mulawBuffer) {
 }
 
 /**
- * Strip WAV header (44 bytes) and return raw PCM
+ * Strip WAV header — find 'data' chunk properly
  */
 function wavToPcm(wavBuffer) {
-  // WAV header is 44 bytes for standard PCM WAV
-  if (wavBuffer.slice(0, 4).toString() === 'RIFF') {
-    return wavBuffer.slice(44)
+  if (wavBuffer.slice(0, 4).toString() !== 'RIFF') {
+    console.log('[Audio] Not WAV, using as-is')
+    return wavBuffer
   }
-  return wavBuffer // Already raw PCM
+  // Find 'data' chunk by scanning headers
+  let offset = 12
+  while (offset < wavBuffer.length - 8) {
+    const chunkId   = wavBuffer.slice(offset, offset + 4).toString()
+    const chunkSize = wavBuffer.readUInt32LE(offset + 4)
+    if (chunkId === 'data') {
+      console.log(`[Audio] WAV data at offset ${offset + 8}, pcm size: ${chunkSize}`)
+      return wavBuffer.slice(offset + 8)
+    }
+    offset += 8 + chunkSize
+  }
+  return wavBuffer.slice(44)
 }
 
 // ── G.711 u-law encoding ─────────────────────────────────────
@@ -51,8 +60,7 @@ function _encodeMulaw(sample) {
   sample += MULAW_BIAS
   const exponent = _mulawExpTable[(sample >> 7) & 0xFF]
   const mantissa = (sample >> (exponent + 3)) & 0x0F
-  const mulaw    = ~(sign | (exponent << 4) | mantissa) & 0xFF
-  return mulaw
+  return ~(sign | (exponent << 4) | mantissa) & 0xFF
 }
 
 function _decodeMulaw(mulaw) {
