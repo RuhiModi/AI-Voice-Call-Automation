@@ -56,6 +56,8 @@ const campaignRepo = {
       'calling_hours_start','calling_hours_end','google_sheet_id','google_sheet_url',
       'schedule_start',
     ]
+    // Convert empty strings to null for timestamp fields
+    if (data.schedule_start === '') data.schedule_start = null
     const keys = Object.keys(data).filter(k => ALLOWED.includes(k))
     if (!keys.length) return null
 
