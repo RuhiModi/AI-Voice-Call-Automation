@@ -8,6 +8,7 @@ const { getAIResponse, parseRescheduleTime } = require('./llm/index')
 const { buildSystemPrompt, buildGreeting }   = require('./prompts')
 const { detectQuickIntent }  = require('./intent')
 const { tryQuickReply }       = require('./quickReply')
+const { parseScript, ScriptFlowExecutor } = require('./scriptFlow')
 const callRepo     = require('../repositories/call.repo')
 const contactRepo  = require('../repositories/contact.repo')
 const campaignRepo = require('../repositories/campaign.repo')
@@ -27,6 +28,7 @@ class CallSession {
 
     this.language      = campaign.language_priority || 'gu'
     this.transcript    = []   // Full conversation [{role, content}]
+    this.flowExecutor   = null  // Script flow executor
     this.collectedData = {}   // Data gathered during the call
     this.isActive      = true
     this.startTime     = Date.now()
@@ -60,6 +62,14 @@ class CallSession {
 
       this._setupSTT()
       this._setupVAD()
+      // Parse campaign script into flow steps
+      if (this.campaign?.script_content) {
+        const steps = parseScript(this.campaign.script_content)
+        if (steps.length > 0) {
+          this.flowExecutor = new ScriptFlowExecutor(steps)
+          console.log(`[Session ${this.sessionId}] 📋 Script flow loaded: ${steps.length} steps`)
+        }
+      }
 
     } catch (err) {
       console.error(`[Session ${this.sessionId}] Start error:`, err)
@@ -141,7 +151,25 @@ class CallSession {
       // Quick intent check — catches obvious DNC/transfer/reschedule before LLM
       const quickIntent = detectQuickIntent(userText)
 
-      // ⚡ Try script-driven reply first (no LLM needed for simple acks)
+      // ⚡ 1. Try structured script flow first (fastest — no LLM)
+      if (this.flowExecutor) {
+        const flowResult = this.flowExecutor.process(userText)
+        if (!flowResult.useLLM && flowResult.text) {
+          // Capture data if needed
+          if (flowResult.capture_field && flowResult.capture_value) {
+            this.collectedData[flowResult.capture_field] = flowResult.capture_value
+          }
+          this.transcript.push({ role: 'assistant', content: flowResult.text })
+          console.log(`[Session ${this.sessionId}] 📋 ScriptFlow (no LLM): "${flowResult.text.substring(0,60)}"`)
+          await this.speak(flowResult.text)
+          if (flowResult.action && flowResult.action !== 'continue') {
+            await this._handleAction(flowResult)
+          }
+          return
+        }
+      }
+
+      // ⚡ 2. Try simple ack quick reply (no LLM for "હા", "okay" etc)
       const quickReply = tryQuickReply(userText, this.campaign?.script_content, this.transcript)
       if (quickReply) {
         this.transcript.push({ role: 'assistant', content: quickReply.text })
