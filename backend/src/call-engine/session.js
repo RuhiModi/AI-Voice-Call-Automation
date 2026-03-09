@@ -90,7 +90,7 @@ class CallSession {
   // ── Voice Activity Detector ────────────────────────────────
   _setupVAD() {
     this.vad = new VoiceActivityDetector(async () => {
-      // User stopped speaking — flush Sarvam buffer or push final Google chunk
+      console.log(`[Session ${this.sessionId}] 🔇 Silence detected — flushing STT buffer`)
       if (this.sttHandler?.provider === 'sarvam') {
         await this.sttHandler.flush()
       } else if (this.audioBuffer.length > 0 && this.sttHandler && !this.sttHandler.destroyed) {
