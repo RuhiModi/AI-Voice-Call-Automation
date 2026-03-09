@@ -1,587 +1,586 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { campaignApi } from '../hooks/api'
-import { ChevronRight, ChevronLeft, Upload, Link2, FileText, Check, Plus, X, Rocket, Users, Bot, Phone, Calendar } from 'lucide-react'
 
-const STEPS = [
-  { id: 0, label: 'Basic Info', icon: Phone },
-  { id: 1, label: 'Script',     icon: FileText },
-  { id: 2, label: 'AI Config',  icon: Bot },
-  { id: 3, label: 'Contacts',   icon: Users },
-  { id: 4, label: 'Launch',     icon: Rocket },
+// ── Campaign "modes" — plain language, no tech jargon ─────────
+const MODES = [
+  {
+    id:       'announcement',
+    emoji:    '📢',
+    title:    'Inform People',
+    subtitle: 'Route updates, scheme news, birthday wishes, reminders',
+    color:    '#f5a623',
+    bg:       '#fffbf0',
+    border:   '#fde59a',
+    examples: ['Driver route update', 'Scheme deadline reminder', 'Birthday wishes', 'EMI reminder'],
+  },
+  {
+    id:       'survey',
+    emoji:    '📋',
+    title:    'Ask Questions',
+    subtitle: 'Verify, collect feedback, confirm status',
+    color:    '#228248',
+    bg:       '#f0faf4',
+    border:   '#b8e6cb',
+    examples: ['Scheme beneficiary check', 'Service feedback', 'Appointment confirmation', 'Voting survey'],
+  },
+  {
+    id:       'reminder',
+    emoji:    '⏰',
+    title:    'Send Reminders',
+    subtitle: 'Appointments, payments, meetings, deadlines',
+    color:    '#4f7ef0',
+    bg:       '#f0f4ff',
+    border:   '#c0d0ff',
+    examples: ['Doctor appointment', 'Court date', 'Loan EMI', 'Meeting reminder'],
+  },
 ]
 
-const LANG_OPTIONS = [
-  { code: 'gu', label: 'ગુજરાતી', sublabel: 'Gujarati', flag: '🟠' },
-  { code: 'hi', label: 'हिंदी',   sublabel: 'Hindi',    flag: '🟢' },
-  { code: 'en', label: 'English', sublabel: 'English',  flag: '🔵' },
+const LANGS = [
+  { code: 'gu', label: 'ગુજ', full: 'Gujarati' },
+  { code: 'hi', label: 'हिं', full: 'Hindi'    },
+  { code: 'en', label: 'Eng', full: 'English'  },
 ]
 
-const CAMPAIGN_TYPES = [
-  { type: 'reminder',  emoji: '⏰', label: 'Reminder',         desc: 'Appointments, deadlines, updates' },
-  { type: 'survey',    emoji: '📋', label: 'Survey',           desc: 'Feedback, satisfaction, NPS' },
-  { type: 'political', emoji: '🏛️', label: 'Political/Scheme', desc: 'Verify beneficiaries, scheme status' },
-  { type: 'custom',    emoji: '✨', label: 'Custom',           desc: 'Any other use case' },
-]
+// ── Extract {{variable}} names from template ──────────────────
+function extractVars(text) {
+  if (!text) return []
+  return [...new Set([...text.matchAll(/\{\{([^}]+)\}\}/g)].map(m => m[1].trim()))]
+}
 
-const TONES = [
-  { value: 'friendly',     label: '😊 Friendly',     desc: 'Warm and approachable' },
-  { value: 'formal',       label: '👔 Formal',       desc: 'Professional and structured' },
-  { value: 'professional', label: '💼 Professional', desc: 'Business-like tone' },
-]
+// ── Parse CSV/Excel headers to detect column names ────────────
+function parseHeaders(text) {
+  const firstLine = text.split('\n')[0]
+  return firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, '')).filter(Boolean)
+}
 
 export default function CreateCampaign() {
-  const navigate = useNavigate()
-  const [step,         setStep]         = useState(0)
-  const [loading,      setLoading]      = useState(false)
-  const [campaignId,   setCampaignId]   = useState(null)   // Real DB id once saved
-  const [csvFile,      setCsvFile]      = useState(null)
-  const [pdfFile,      setPdfFile]      = useState(null)
-  const [urlInput,     setUrlInput]     = useState('')
-  const [fieldInput,   setFieldInput]   = useState('')
-  const [contactCount, setContactCount] = useState(0)
+  const navigate  = useNavigate()
+  const fileRef   = useRef(null)
+  const pdfRef    = useRef(null)
 
-  const [form, setForm] = useState({
-    name:                  '',
-    description:           '',
-    campaign_type:         'reminder',
-    language_priority:     'gu',
-    script_type:           'manual',
-    script_content:        '',
-    persona_name:          'Priya',
-    persona_tone:          'friendly',
-    data_fields:           [],
-    caller_id:             '',
-    max_concurrent_calls:  5,
-    max_retries:           2,
-    retry_gap_minutes:     30,
-    calling_hours_start:   '09:00',
-    calling_hours_end:     '21:00',
-    google_sheet_url:      '',
-    google_sheet_id:       '',
-    schedule_start:        '',
+  const [mode,         setMode]         = useState(null)        // 'announcement' | 'survey' | 'reminder'
+  const [lang,         setLang]         = useState('gu')
+  const [message,      setMessage]      = useState('')          // announcement template
+  const [pdfFile,      setPdfFile]      = useState(null)        // survey PDF
+  const [contactFile,  setContactFile]  = useState(null)        // Excel/CSV
+  const [contactCols,  setContactCols]  = useState([])          // detected column names
+  const [contactCount, setContactCount] = useState(0)
+  const [previewRow,   setPreviewRow]   = useState(null)        // first row for preview
+  const [loading,      setLoading]      = useState(false)
+  const [launched,     setLaunched]     = useState(false)
+  const [campaignId,   setCampaignId]   = useState(null)
+  const [dragOver,     setDragOver]     = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [advanced, setAdvanced] = useState({
+    persona_name:         'Priya',
+    max_concurrent_calls: 3,
+    calling_hours_start:  '09:00',
+    calling_hours_end:    '21:00',
+    max_retries:          2,
   })
 
-  const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
+  const selectedMode = MODES.find(m => m.id === mode)
+  const templateVars = extractVars(message)
+  const missingCols  = templateVars.filter(v =>
+    !contactCols.some(c => c.toLowerCase().replace(/[\s_-]/g, '') === v.toLowerCase().replace(/[\s_-]/g, ''))
+  )
 
-  // Save as draft and return the campaign id
-  async function saveDraft() {
-    if (!form.name) { toast.error('Campaign name is required'); return null }
-    if (campaignId) return campaignId   // Already saved
+  // ── Insert variable into message at cursor ────────────────
+  const msgRef = useRef(null)
+  function insertVar(varName) {
+    const el  = msgRef.current
+    const tag = `{{${varName}}}`
+    if (!el) { setMessage(m => m + tag); return }
+    const start = el.selectionStart
+    const end   = el.selectionEnd
+    const next  = message.slice(0, start) + tag + message.slice(end)
+    setMessage(next)
+    setTimeout(() => {
+      el.focus()
+      el.setSelectionRange(start + tag.length, start + tag.length)
+    }, 0)
+  }
+
+  // ── Preview first contact in message ─────────────────────
+  function buildPreview() {
+    if (!message || !previewRow) return null
+    let preview = message
+    for (const [col, val] of Object.entries(previewRow)) {
+      preview = preview.replace(new RegExp(`\\{\\{\\s*${col}\\s*\\}\\}`, 'gi'), val)
+    }
+    return preview
+  }
+
+  // ── Handle contact file upload ────────────────────────────
+  const handleContactFile = useCallback(async (file) => {
+    if (!file) return
+    setContactFile(file)
+
+    // Read first few rows to detect columns + preview
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const text = e.target.result
+      const lines = text.split('\n').filter(l => l.trim())
+      if (lines.length < 1) return
+
+      const headers = parseHeaders(lines[0])
+      setContactCols(headers)
+
+      // Build preview row from first data row
+      if (lines.length > 1) {
+        const vals = lines[1].split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+        const row = {}
+        headers.forEach((h, i) => { row[h] = vals[i] || '' })
+        setPreviewRow(row)
+      }
+    }
+    // Only works for CSV — for Excel show col count
+    if (file.name.endsWith('.csv')) {
+      reader.readAsText(file)
+    } else {
+      // Excel: show filename, actual parsing happens server-side
+      setContactCols([])
+      setPreviewRow(null)
+    }
+  }, [])
+
+  // ── LAUNCH ────────────────────────────────────────────────
+  async function handleLaunch() {
+    if (!mode)    { toast.error('Please choose what kind of call to make'); return }
+    if (!contactFile) { toast.error('Please upload a contact file'); return }
+    if (mode === 'announcement' && !message.trim()) {
+      toast.error('Please write your message'); return
+    }
+    if (mode === 'survey' && !pdfFile) {
+      toast.error('Please upload the question PDF'); return
+    }
+
+    setLoading(true)
     try {
-      const res = await campaignApi.create({ ...form, status: 'draft' })
+      // 1. Create campaign
+      const autoName = `${selectedMode.title} — ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' })}`
+      const payload = {
+        name:                 autoName,
+        campaign_type:        mode,
+        language_priority:    lang,
+        script_type:          mode === 'survey' ? 'pdf' : 'manual',
+        script_content:       mode === 'announcement' ? message : '',
+        announcement_template: mode === 'announcement' ? message : null,
+        persona_name:         advanced.persona_name,
+        max_concurrent_calls: advanced.max_concurrent_calls,
+        calling_hours_start:  advanced.calling_hours_start,
+        calling_hours_end:    advanced.calling_hours_end,
+        max_retries:          advanced.max_retries,
+        status:               'draft',
+      }
+
+      const res = await campaignApi.create(payload)
       const id  = res.data.campaign.id
       setCampaignId(id)
-      toast.success('Campaign saved!')
-      return id
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to save campaign')
-      return null
-    }
-  }
 
-  async function handleExtract() {
-    setLoading(true)
-    try {
-      const id = campaignId || await saveDraft()
-      if (!id) return
-      let text = ''
-      if (form.script_type === 'pdf' && pdfFile) {
-        const res = await campaignApi.extractFromPDF(id, pdfFile)
-        text = res.data.text
-      } else if (form.script_type === 'url' && urlInput) {
-        const res = await campaignApi.extractFromURL(id, urlInput)
-        text = res.data.text
+      // 2. Upload PDF script (survey) — triggers flow_config parsing
+      if (mode === 'survey' && pdfFile) {
+        try {
+          await campaignApi.extractFromPDF(id, pdfFile)
+        } catch (e) {
+          console.warn('PDF parse non-fatal:', e.message)
+        }
       }
-      set('script_content', text)
-      toast.success('Script extracted!')
-    } catch (err) {
-      toast.error('Extraction failed: ' + (err.response?.data?.error || err.message))
-    } finally {
-      setLoading(false)
-    }
-  }
 
-  async function handleUploadContacts() {
-    if (!csvFile) return
-    setLoading(true)
-    try {
-      const id = campaignId || await saveDraft()
-      if (!id) return
-      const res = await campaignApi.uploadContacts(id, csvFile)
-      setContactCount(res.data.count)
-      toast.success(`${res.data.count} contacts imported!`)
-    } catch (err) {
-      toast.error('Upload failed: ' + (err.response?.data?.error || err.message))
-    } finally {
-      setLoading(false)
-    }
-  }
+      // 3. Upload contacts
+      const contactRes = await campaignApi.uploadContacts(id, contactFile)
+      setContactCount(contactRes.data.count)
 
-  async function handleLaunch() {
-    if (!form.name) { toast.error('Campaign name required'); return }
-    setLoading(true)
-    try {
-      let id = campaignId
-      if (!id) {
-        const res = await campaignApi.create(form)
-        id = res.data.campaign.id
-        setCampaignId(id)
-      } else {
-        await campaignApi.update(id, form)
-      }
-      // Launch — sets status to 'active' in DB
-      // Note: actual calls won't happen until Vobiz key is added
+      // 4. Launch
       await campaignApi.launch(id)
-      toast.success('Campaign launched! 🚀')
-      navigate(`/dashboard/campaigns/${id}`)
+
+      setLaunched(true)
+      toast.success(`🚀 ${contactRes.data.count} calls starting now!`)
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Launch failed')
+      toast.error(err.response?.data?.error || 'Something went wrong')
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleNext() {
-    if (step === 0) {
-      if (!form.name) { toast.error('Campaign name is required'); return }
-      setLoading(true)
-      const id = await saveDraft()
-      setLoading(false)
-      if (!id) return
-    }
-    if (step === 4) { await handleLaunch(); return }
-    setStep(s => s + 1)
+  // ── Drag and drop ──────────────────────────────────────────
+  function onDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleContactFile(file)
   }
 
-  const progress = (step / (STEPS.length - 1)) * 100
+  // ── SUCCESS SCREEN ─────────────────────────────────────────
+  if (launched) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          <div className="text-7xl mb-6 animate-bounce">🚀</div>
+          <h2 className="text-2xl font-bold text-[#1a1a1a] mb-2">Campaign Launched!</h2>
+          <p className="text-[#6b6b6b] mb-1">
+            <span className="font-bold text-[#228248]">{contactCount} calls</span> are starting now
+          </p>
+          <p className="text-sm text-[#8a8a8a] mb-8">Your AI agent is calling everyone on the list</p>
+          <div className="flex flex-col gap-3">
+            <button onClick={() => navigate(`/dashboard/campaigns/${campaignId}`)}
+              className="w-full py-3.5 bg-[#1a1a1a] text-white rounded-2xl font-semibold text-sm">
+              Watch Live Results →
+            </button>
+            <button onClick={() => { setLaunched(false); setMode(null); setMessage(''); setContactFile(null); setContactCols([]); setPreviewRow(null); setPdfFile(null) }}
+              className="w-full py-3.5 border-2 border-[#e0d9ce] text-[#525252] rounded-2xl font-semibold text-sm">
+              Create Another Campaign
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const preview = buildPreview()
+  const canLaunch = mode && contactFile && (mode === 'survey' ? !!pdfFile : !!message.trim())
 
   return (
-    <div className="p-6 lg:p-10 max-w-3xl mx-auto animate-fade-in">
+    <div className="max-w-2xl mx-auto px-4 py-8 pb-32">
 
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="font-display font-bold text-3xl text-[#1a1a1a] mb-1">Create Campaign</h1>
-        <p className="text-[#8a8a8a] text-sm">Set up your AI voice calling campaign</p>
-        {campaignId && (
-          <p className="text-xs text-[#228248] mt-1">✅ Saved to database · ID: {campaignId.slice(0,8)}...</p>
-        )}
+        <h1 className="text-2xl font-bold text-[#1a1a1a] mb-1">New Campaign</h1>
+        <p className="text-[#8a8a8a] text-sm">Set up and launch in under 2 minutes</p>
       </div>
 
-      {/* Step indicator */}
-      <div className="mb-8">
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-          {STEPS.map((s, i) => {
-            const Icon   = s.icon
-            const done   = i < step
-            const active = i === step
-            return (
-              <div key={s.id} className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={() => i < step && setStep(i)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all
-                    ${done   ? 'bg-[#f0faf4] text-[#1c673a] cursor-pointer hover:bg-jade-100' :
-                      active ? 'bg-[#1a1a1a] text-white shadow-sm' :
-                               'bg-white border border-[#ede7dc] text-[#8a8a8a] cursor-not-allowed'}`}>
-                  {done ? <Check size={13} /> : <Icon size={13} />}
-                  <span className="hidden sm:inline">{s.label}</span>
-                  <span className="sm:hidden">{i + 1}</span>
-                </button>
-                {i < STEPS.length - 1 && <ChevronRight size={14} className={done ? 'text-jade-400' : 'text-[#c4c4c4]'} />}
-              </div>
-            )
-          })}
+      {/* ── STEP 1: Mode ─────────────────────────────────────── */}
+      <Section label="1. What do you want to do?" done={!!mode}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {MODES.map(m => (
+            <button key={m.id} onClick={() => setMode(m.id)}
+              className={`relative p-4 rounded-2xl border-2 text-left transition-all duration-200 group
+                ${mode === m.id
+                  ? 'border-[#1a1a1a] bg-[#1a1a1a] shadow-lg scale-[1.02]'
+                  : 'border-[#ede7dc] bg-white hover:border-[#ccc] hover:shadow-sm'}`}>
+              <div className="text-3xl mb-3">{m.emoji}</div>
+              <p className={`font-bold text-sm mb-1 ${mode === m.id ? 'text-white' : 'text-[#1a1a1a]'}`}>
+                {m.title}
+              </p>
+              <p className={`text-xs leading-relaxed ${mode === m.id ? 'text-white/70' : 'text-[#8a8a8a]'}`}>
+                {m.subtitle}
+              </p>
+              {mode === m.id && (
+                <div className="absolute top-3 right-3 w-5 h-5 bg-white rounded-full flex items-center justify-center">
+                  <svg className="w-3 h-3 text-[#1a1a1a]" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              )}
+            </button>
+          ))}
         </div>
-        <div className="h-1.5 bg-[#f0f0f0] rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-[#f5a623] to-[#e08c10] rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-[#ede7dc] p-7 mb-6">
-
-        {/* STEP 0 — Basic Info */}
-        {step === 0 && (
-          <div className="space-y-6">
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Campaign Name *</label>
-              <input value={form.name} onChange={e => set('name', e.target.value)}
-                placeholder="e.g. Bus Driver Reminder — Jan 2025"
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none transition-all" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Description</label>
-              <textarea value={form.description} onChange={e => set('description', e.target.value)}
-                rows={2} placeholder="What is this campaign about? (optional)"
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none resize-none transition-all" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-3">Primary Language</label>
-              <div className="grid grid-cols-3 gap-3">
-                {LANG_OPTIONS.map(l => (
-                  <button key={l.code} onClick={() => set('language_priority', l.code)}
-                    className={`flex flex-col items-center p-4 rounded-xl border-2 transition-all
-                      ${form.language_priority === l.code ? 'border-navy-600 bg-[#faf8f4] shadow-sm' : 'border-[#ede7dc] hover:border-[#e0d9ce]'}`}>
-                    <span className="text-2xl mb-2">{l.flag}</span>
-                    <span className={`font-display font-bold text-sm ${form.language_priority === l.code ? 'text-[#1a1a1a]' : 'text-[#525252]'}`}>{l.label}</span>
-                    <span className="text-[11px] text-[#8a8a8a] mt-0.5">{l.sublabel}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-3">Campaign Type</label>
-              <div className="grid grid-cols-2 gap-3">
-                {CAMPAIGN_TYPES.map(t => (
-                  <button key={t.type} onClick={() => set('campaign_type', t.type)}
-                    className={`flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all
-                      ${form.campaign_type === t.type ? 'border-navy-600 bg-[#faf8f4]' : 'border-[#ede7dc] hover:border-[#e0d9ce]'}`}>
-                    <span className="text-xl">{t.emoji}</span>
-                    <div>
-                      <p className={`font-semibold text-sm ${form.campaign_type === t.type ? 'text-[#1a1a1a]' : 'text-[#3d3d3d]'}`}>{t.label}</p>
-                      <p className="text-[11px] text-[#8a8a8a] mt-0.5 leading-relaxed">{t.desc}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+        {selectedMode && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {selectedMode.examples.map(ex => (
+              <span key={ex} className="text-xs px-3 py-1 rounded-full border border-[#e8e0d5] text-[#6b6b6b] bg-[#faf8f4]">
+                {ex}
+              </span>
+            ))}
           </div>
         )}
+      </Section>
 
-        {/* STEP 1 — Script */}
-        {step === 1 && (
-          <div className="space-y-6">
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-3">Script Source</label>
-              <div className="grid grid-cols-3 gap-3 mb-5">
-                {[
-                  { type: 'manual', icon: FileText, label: 'Write Script' },
-                  { type: 'pdf',    icon: Upload,   label: 'Upload PDF' },
-                  { type: 'url',    icon: Link2,    label: 'From URL' },
-                ].map(s => (
-                  <button key={s.type} onClick={() => set('script_type', s.type)}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all
-                      ${form.script_type === s.type ? 'border-navy-600 bg-[#faf8f4]' : 'border-[#ede7dc] hover:border-[#e0d9ce]'}`}>
-                    <s.icon size={20} className={form.script_type === s.type ? 'text-[#3d3d3d]' : 'text-[#8a8a8a]'} />
-                    <span className={`text-xs font-semibold ${form.script_type === s.type ? 'text-[#2c2c2c]' : 'text-[#6b6b6b]'}`}>{s.label}</span>
-                  </button>
-                ))}
-              </div>
-              {form.script_type === 'pdf' && (
-                <div className="flex items-center gap-3 mb-4">
-                  <label className="flex-1 flex items-center gap-3 border-2 border-dashed border-[#e0d9ce] hover:border-[#cfc6b9] rounded-xl px-4 py-3 cursor-pointer transition-all">
-                    <Upload size={16} className="text-[#8a8a8a]" />
-                    <span className="text-sm text-[#6b6b6b]">{pdfFile ? pdfFile.name : 'Click to upload PDF'}</span>
-                    <input type="file" accept=".pdf" onChange={e => setPdfFile(e.target.files[0])} className="hidden" />
-                  </label>
-                  {pdfFile && (
-                    <button onClick={handleExtract} disabled={loading}
-                      className="px-4 py-3 bg-[#1a1a1a] text-white rounded-xl text-sm font-semibold hover:bg-[#2c2c2c] disabled:opacity-50 whitespace-nowrap">
-                      {loading ? '...' : 'Extract'}
-                    </button>
+      {/* ── STEP 2: Language ──────────────────────────────────── */}
+      {mode && (
+        <Section label="2. Language" done={true}>
+          <div className="flex gap-2">
+            {LANGS.map(l => (
+              <button key={l.code} onClick={() => setLang(l.code)}
+                className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
+                  ${lang === l.code
+                    ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
+                    : 'border-[#ede7dc] text-[#525252] hover:border-[#bbb]'}`}>
+                {l.label}
+                <span className={`block text-[10px] font-normal mt-0.5 ${lang === l.code ? 'text-white/60' : 'text-[#aaa]'}`}>
+                  {l.full}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* ── STEP 3: Contact File ──────────────────────────────── */}
+      {mode && (
+        <Section label="3. Upload your contact list" done={!!contactFile}>
+          <div
+            onDrop={onDrop}
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onClick={() => !contactFile && fileRef.current?.click()}
+            className={`relative border-2 border-dashed rounded-2xl transition-all cursor-pointer
+              ${contactFile
+                ? 'border-[#228248] bg-[#f0faf4] p-4 cursor-default'
+                : dragOver
+                  ? 'border-[#1a1a1a] bg-[#f5f5f5] p-8'
+                  : 'border-[#e0d9ce] hover:border-[#bbb] bg-[#faf8f4] p-8'}`}>
+
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls"
+              onChange={e => handleContactFile(e.target.files[0])} className="hidden" />
+
+            {contactFile ? (
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-[#228248] rounded-xl flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-lg">📊</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-[#1c673a] text-sm truncate">{contactFile.name}</p>
+                  {contactCols.length > 0 ? (
+                    <p className="text-xs text-[#228248] mt-1">
+                      Columns found: <span className="font-semibold">{contactCols.join(', ')}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-[#228248] mt-1">File ready — contacts will be processed on launch</p>
                   )}
                 </div>
-              )}
-              {form.script_type === 'url' && (
-                <div className="flex gap-3 mb-4">
-                  <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
-                    placeholder="https://example.com/scheme-details"
-                    className="flex-1 bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none" />
-                  <button onClick={handleExtract} disabled={loading || !urlInput}
-                    className="px-5 py-3 bg-[#1a1a1a] text-white rounded-xl text-sm font-semibold hover:bg-[#2c2c2c] disabled:opacity-50">
-                    {loading ? '...' : 'Fetch'}
-                  </button>
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">
-                Campaign Script
-                <span className="text-[#a8a8a8] normal-case font-normal ml-2">Use {`{{name}}`}, {`{{bus_time}}`} for variables</span>
-              </label>
-              <textarea value={form.script_content} onChange={e => set('script_content', e.target.value)}
-                rows={9}
-                placeholder={`Write your call script here.\n\n• "Hello {{name}}! Your appointment is at {{time}}. Please confirm."\n\n• "નમસ્તે {{name}} ભાઈ! {{scheme_name}} scheme વિષે વાત કરવી છે."\n\nThe AI uses this as context and conversation guide.`}
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#3d3d3d] placeholder-navy-300 font-mono leading-relaxed resize-none focus:border-[#cfc6b9] focus:outline-none transition-all" />
-              <p className="text-xs text-[#8a8a8a] mt-2">{form.script_content.length} characters</p>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 2 — AI Config */}
-        {step === 2 && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Agent Name</label>
-                <input value={form.persona_name} onChange={e => set('persona_name', e.target.value)}
-                  placeholder="Priya"
-                  className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none" />
-                <p className="text-xs text-[#8a8a8a] mt-1">Name used in greeting</p>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Caller ID</label>
-                <input value={form.caller_id} onChange={e => set('caller_id', e.target.value)}
-                  placeholder="+917900000001"
-                  className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none" />
-                <p className="text-xs text-[#8a8a8a] mt-1">Your registered number</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-3">Agent Tone</label>
-              <div className="grid grid-cols-3 gap-3">
-                {TONES.map(t => (
-                  <button key={t.value} onClick={() => set('persona_tone', t.value)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all
-                      ${form.persona_tone === t.value ? 'border-navy-600 bg-[#faf8f4]' : 'border-[#ede7dc] hover:border-[#e0d9ce]'}`}>
-                    <p className={`font-semibold text-sm mb-1 ${form.persona_tone === t.value ? 'text-[#1a1a1a]' : 'text-[#3d3d3d]'}`}>{t.label}</p>
-                    <p className="text-[11px] text-[#8a8a8a]">{t.desc}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">
-                Data Fields to Collect
-                <span className="text-[#a8a8a8] normal-case font-normal ml-2">What should AI ask and record?</span>
-              </label>
-              <div className="flex gap-2 mb-3">
-                <input value={fieldInput} onChange={e => setFieldInput(e.target.value)}
-                  placeholder="e.g. scheme_status, availability, feedback"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && fieldInput.trim()) {
-                      set('data_fields', [...form.data_fields, fieldInput.trim()])
-                      setFieldInput('')
-                    }
-                  }}
-                  className="flex-1 bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none" />
-                <button onClick={() => { if (fieldInput.trim()) { set('data_fields', [...form.data_fields, fieldInput.trim()]); setFieldInput('') }}}
-                  className="w-11 h-11 bg-[#1a1a1a] text-white rounded-xl flex items-center justify-center hover:bg-[#2c2c2c] flex-shrink-0">
-                  <Plus size={16} />
+                <button onClick={e => { e.stopPropagation(); setContactFile(null); setContactCols([]); setPreviewRow(null) }}
+                  className="w-7 h-7 rounded-full bg-[#e0f0e8] flex items-center justify-center text-[#228248] hover:bg-[#228248] hover:text-white transition-all flex-shrink-0">
+                  ✕
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {form.data_fields.map((f, i) => (
-                  <span key={i} className="flex items-center gap-1.5 bg-[#f0f0f0] text-[#3d3d3d] px-3 py-1.5 rounded-xl text-xs font-semibold">
-                    {f}
-                    <button onClick={() => set('data_fields', form.data_fields.filter((_, j) => j !== i))} className="hover:text-red-500">
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-                {form.data_fields.length === 0 && <p className="text-xs text-[#a8a8a8] italic">Press Enter to add a field</p>}
-              </div>
-            </div>
-
-            <div className="p-4 bg-[#faf8f4] rounded-xl border border-[#ede7dc]">
-              <p className="text-xs font-bold text-[#525252] uppercase tracking-wide mb-2">Auto-behaviors (always on)</p>
-              {['✅ Auto-detect language (gu/hi/en)', '✅ Reschedule if user is busy', '✅ Transfer to human on request', '✅ Mark DNC if user says "stop calling"'].map(b => (
-                <p key={b} className="text-xs text-[#6b6b6b] mb-1">{b}</p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3 — Contacts */}
-        {step === 3 && (
-          <div className="space-y-6">
-            <div className="p-4 bg-[#fffbf0] border border-[#fde59a] rounded-xl">
-              <p className="text-xs font-bold text-orange-800 uppercase tracking-wide mb-2">📋 CSV Format</p>
-              <div className="bg-white rounded-xl p-3 font-mono text-xs text-[#3d3d3d] leading-relaxed">
-                <p className="text-[#8a8a8a] mb-1"># Required column: phone</p>
-                <p className="font-semibold">phone,name,bus_number,departure_time</p>
-                <p>9876543210,Rajesh Patel,Bus 47,6:30 AM</p>
-                <p>9876543211,Suresh Kumar,Bus 12,7:00 AM</p>
-              </div>
-              <p className="text-xs text-[#8f540f] mt-2">Column names must match script variables e.g. {`{{name}}`} → column "name"</p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">Upload Contacts</label>
-              <label className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-[#e0d9ce] hover:border-[#cfc6b9] rounded-xl p-8 cursor-pointer transition-all group">
-                <div className="w-12 h-12 bg-[#faf8f4] group-hover:bg-[#f0f0f0] rounded-xl flex items-center justify-center transition-colors">
-                  <Upload size={22} className="text-[#8a8a8a] group-hover:text-[#525252]" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-[#3d3d3d]">{csvFile ? csvFile.name : 'Click to upload contacts file'}</p>
-                  <p className="text-xs text-[#8a8a8a] mt-1">Supports CSV, Excel (.xlsx, .xls) and PDF</p>
-                </div>
-                <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={e => setCsvFile(e.target.files[0])} className="hidden" />
-              </label>
-              {csvFile && (
-                <div className="mt-2 flex items-center gap-2 p-2 bg-[#f5f5f5] rounded-lg">
-                  <span className="text-xs text-[#525252] font-medium">
-                    {csvFile.name.endsWith('.xlsx') || csvFile.name.endsWith('.xls') ? '📊' :
-                     csvFile.name.endsWith('.pdf') ? '📄' : '📋'} {csvFile.name}
-                  </span>
-                </div>
-              )}
-              {csvFile && (
-                <button onClick={handleUploadContacts} disabled={loading}
-                  className="w-full mt-3 py-3 bg-[#228248] text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                  {loading ? 'Uploading...' : <><Upload size={15} /> Upload {csvFile.name}</>}
-                </button>
-              )}
-              {contactCount > 0 && (
-                <div className="mt-3 flex items-center gap-2 p-3 bg-[#f0faf4] border border-[#b8e6cb] rounded-xl">
-                  <Check size={16} className="text-[#228248]" />
-                  <span className="text-sm font-semibold text-[#1c673a]">{contactCount} contacts imported to database!</span>
-                </div>
-              )}
-              <div className="mt-2 p-3 bg-[#faf8f4] border border-[#e0d9ce] rounded-lg">
-                <p className="text-xs font-bold text-[#6b6b6b] mb-1">📋 File Format Guide:</p>
-                <p className="text-xs text-[#8a8a8a]">• CSV/Excel: Must have a column named <strong>phone</strong> or <strong>mobile</strong></p>
-                <p className="text-xs text-[#8a8a8a]">• PDF: Phone numbers will be extracted automatically</p>
-                <p className="text-xs text-[#8a8a8a]">• Accepted: 9876543210, +919876543210, 09876543210</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">
-                Google Sheets Output (optional)
-              </label>
-              <input value={form.google_sheet_url} onChange={e => {
-                set('google_sheet_url', e.target.value)
-                const match = e.target.value.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)
-                if (match) set('google_sheet_id', match[1])
-              }}
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] placeholder-navy-300 focus:border-[#cfc6b9] focus:outline-none" />
-              {form.google_sheet_id && (
-                <p className="text-xs text-[#228248] mt-1">✅ Sheet ID: {form.google_sheet_id.substring(0, 20)}...</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* STEP 4 — Launch */}
-        {step === 4 && (
-          <div className="space-y-6">
-            <div className="p-5 bg-gradient-to-br from-navy-50 to-white rounded-xl border border-[#ede7dc]">
-              <p className="text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-4">Campaign Summary</p>
-              <div className="space-y-3">
-                {[
-                  { label: 'Campaign',  value: form.name },
-                  { label: 'Language',  value: form.language_priority === 'gu' ? '🟠 Gujarati' : form.language_priority === 'hi' ? '🟢 Hindi' : '🔵 English' },
-                  { label: 'Agent',     value: `${form.persona_name} (${form.persona_tone})` },
-                  { label: 'Type',      value: form.campaign_type },
-                  { label: 'Contacts',  value: contactCount > 0 ? `${contactCount} imported ✅` : '⚠️ No contacts yet — upload file first' },
-                  { label: 'DB Status', value: campaignId ? `Saved ✅ (${campaignId.slice(0,8)}...)` : 'Will save on launch' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-start gap-3">
-                    <span className="text-xs font-semibold text-[#8a8a8a] w-24 flex-shrink-0 pt-0.5">{label}</span>
-                    <span className="text-sm text-[#3d3d3d] flex-1">{value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-3">Calling Configuration</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-[#6b6b6b] mb-1.5">Concurrent Calls</label>
-                  <input type="number" value={form.max_concurrent_calls} min={1} max={20}
-                    onChange={e => set('max_concurrent_calls', parseInt(e.target.value))}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-[#6b6b6b] mb-1.5">Max Retries</label>
-                  <input type="number" value={form.max_retries} min={0} max={5}
-                    onChange={e => set('max_retries', parseInt(e.target.value))}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-[#6b6b6b] mb-1.5">Start Time</label>
-                  <input type="time" value={form.calling_hours_start}
-                    onChange={e => set('calling_hours_start', e.target.value)}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-[#6b6b6b] mb-1.5">End Time</label>
-                  <input type="time" value={form.calling_hours_end}
-                    onChange={e => set('calling_hours_end', e.target.value)}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#6b6b6b] uppercase tracking-wider mb-2">
-                <Calendar size={12} className="inline mr-1" />
-                When to Start Calling?
-              </label>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                {[
-                  { label: '⚡ Now',        value: 'now' },
-                  { label: '📅 Schedule',   value: 'schedule' },
-                ].map(opt => (
-                  <button key={opt.value} type="button"
-                    onClick={() => { set('_scheduleMode', opt.value); if (opt.value === 'now') set('schedule_start', '') }}
-                    className={`py-3 rounded-xl text-sm font-semibold border-2 transition-all
-                      ${(form._scheduleMode || 'now') === opt.value
-                        ? 'border-[#228248] bg-[#f0faf4] text-[#228248]'
-                        : 'border-[#e0d9ce] bg-white text-[#6b6b6b] hover:border-[#cfc6b9]'}`}>
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              {(form._scheduleMode === 'schedule') && (
-                <input type="datetime-local" value={form.schedule_start}
-                  onChange={e => set('schedule_start', e.target.value)}
-                  min={new Date().toISOString().slice(0,16)}
-                  className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#cfc6b9] focus:outline-none" />
-              )}
-              {(form._scheduleMode === 'now' || !form._scheduleMode) && (
-                <p className="text-xs text-[#228248] font-medium flex items-center gap-1.5">
-                  ✅ Calls will start immediately after launch
+            ) : (
+              <div className="text-center">
+                <div className="text-4xl mb-3">📎</div>
+                <p className="font-semibold text-[#3d3d3d] text-sm mb-1">
+                  Drop your Excel or CSV file here
                 </p>
-              )}
-            </div>
-
-            {contactCount === 0 && (
-              <div className="p-4 bg-[#fffbf0] border border-[#fde59a] rounded-xl">
-                <p className="text-xs text-[#8f540f] font-semibold">⚠️ No contacts uploaded yet</p>
-                <p className="text-xs text-[#b86f0e] mt-1">Go back to Step 3 and upload a CSV, Excel, or PDF file.</p>
+                <p className="text-xs text-[#8a8a8a]">
+                  Must have a <strong>phone</strong> column + any other info (name, route, timing...)
+                </p>
+                <p className="text-xs text-[#bbb] mt-2">or click to browse</p>
               </div>
             )}
+          </div>
 
-            {/* BIG LAUNCH BUTTON */}
-            <button onClick={handleLaunch} disabled={loading}
-              className="w-full py-4 bg-[#228248] hover:bg-[#1a6638] text-white rounded-xl text-base font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-3 shadow-lg">
-              {loading
-                ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Launching...</>
-                : <><Rocket size={20} /> Launch Campaign 🚀</>
-              }
-            </button>
+          {/* Column chips */}
+          {contactCols.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {contactCols.map(col => (
+                <span key={col}
+                  className="text-xs px-2.5 py-1 bg-white border border-[#e0d9ce] rounded-full text-[#525252] font-mono">
+                  {col}
+                </span>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
 
-            {/* View campaign button */}
-            {campaignId && (
-              <button onClick={() => navigate(`/dashboard/campaigns/${campaignId}`)}
-                className="w-full py-3 border-2 border-[#228248] text-[#228248] hover:bg-[#f0faf4] rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2">
-                👁️ View Campaign Details
+      {/* ── STEP 4a: Message (Announcement / Reminder) ─────────── */}
+      {mode && mode !== 'survey' && (
+        <Section label="4. Write your message" done={message.trim().length > 10}>
+
+          {/* Variable insert buttons — only if columns detected */}
+          {contactCols.filter(c => c.toLowerCase() !== 'phone' && c.toLowerCase() !== 'mobile').length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-[#8a8a8a] mb-2">
+                Tap a column name to insert it into your message ↓
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {contactCols
+                  .filter(c => c.toLowerCase() !== 'phone' && c.toLowerCase() !== 'mobile')
+                  .map(col => (
+                    <button key={col} onClick={() => insertVar(col)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#fff9ee] border border-[#fde59a] text-[#8f540f] rounded-full text-xs font-semibold hover:bg-[#fde59a] transition-all">
+                      <span className="text-[10px] opacity-60">{'{{'}</span>
+                      {col}
+                      <span className="text-[10px] opacity-60">{'}}'}</span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          <textarea ref={msgRef}
+            value={message} onChange={e => setMessage(e.target.value)}
+            rows={4}
+            placeholder={
+              lang === 'gu'
+                ? 'નમસ્તે {{Name}}, આપનો રૂટ {{Route}} છે, સમય {{Timing}} છે. સમજ્યા?'
+                : lang === 'hi'
+                  ? 'नमस्ते {{Name}}, आपका रूट {{Route}} है, समय {{Timing}} है। समझे?'
+                  : 'Hello {{Name}}, your route is {{Route}} at {{Timing}}. Got it?'
+            }
+            className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#1a1a1a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed font-mono" />
+
+          {/* Warning: variable in message but not in file */}
+          {missingCols.length > 0 && (
+            <div className="mt-2 p-3 bg-[#fff5f0] border border-[#ffc0a0] rounded-xl">
+              <p className="text-xs text-[#c0440f] font-semibold">
+                ⚠️ These variables are not in your contact file:
+                {' '}<span className="font-mono">{missingCols.map(v => `{{${v}}}`).join(', ')}</span>
+              </p>
+              <p className="text-xs text-[#c0440f] mt-0.5">
+                Add these columns to your file or fix the spelling.
+              </p>
+            </div>
+          )}
+
+          {/* Live preview */}
+          {preview && missingCols.length === 0 && (
+            <div className="mt-3 p-4 bg-[#f0faf4] border border-[#b8e6cb] rounded-2xl">
+              <p className="text-xs font-semibold text-[#228248] mb-2 uppercase tracking-wide">
+                Preview — first contact
+              </p>
+              <p className="text-sm text-[#1c673a] leading-relaxed">{preview}</p>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {/* ── STEP 4b: PDF Upload (Survey) ─────────────────────── */}
+      {mode === 'survey' && (
+        <Section label="4. Upload your question script (PDF)" done={!!pdfFile}>
+          <div
+            onClick={() => !pdfFile && pdfRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl transition-all
+              ${pdfFile
+                ? 'border-[#228248] bg-[#f0faf4] p-4 cursor-default'
+                : 'border-[#e0d9ce] hover:border-[#bbb] bg-[#faf8f4] p-8 cursor-pointer'}`}>
+
+            <input ref={pdfRef} type="file" accept=".pdf"
+              onChange={e => setPdfFile(e.target.files[0])} className="hidden" />
+
+            {pdfFile ? (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#228248] rounded-xl flex items-center justify-center">
+                  <span className="text-white text-lg">📄</span>
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-[#1c673a] text-sm">{pdfFile.name}</p>
+                  <p className="text-xs text-[#228248] mt-0.5">Script will be parsed automatically</p>
+                </div>
+                <button onClick={() => setPdfFile(null)}
+                  className="w-7 h-7 rounded-full bg-[#e0f0e8] flex items-center justify-center text-[#228248] hover:bg-[#228248] hover:text-white transition-all">
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <div className="text-4xl mb-3">📄</div>
+                <p className="font-semibold text-[#3d3d3d] text-sm mb-1">Upload your PDF script</p>
+                <p className="text-xs text-[#8a8a8a]">The AI will follow this script exactly — no LLM guessing</p>
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* ── ADVANCED (collapsed by default) ──────────────────── */}
+      {mode && (
+        <div className="mb-6">
+          <button onClick={() => setShowAdvanced(v => !v)}
+            className="flex items-center gap-2 text-xs text-[#8a8a8a] hover:text-[#525252] transition-colors py-2">
+            <svg className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
+              fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            Advanced settings (agent name, calling hours, retries)
+          </button>
+
+          {showAdvanced && (
+            <div className="bg-white border border-[#ede7dc] rounded-2xl p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Agent Name</label>
+                  <input value={advanced.persona_name}
+                    onChange={e => setAdvanced(a => ({ ...a, persona_name: e.target.value }))}
+                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Concurrent Calls</label>
+                  <input type="number" min={1} max={20} value={advanced.max_concurrent_calls}
+                    onChange={e => setAdvanced(a => ({ ...a, max_concurrent_calls: +e.target.value }))}
+                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call From</label>
+                  <input type="time" value={advanced.calling_hours_start}
+                    onChange={e => setAdvanced(a => ({ ...a, calling_hours_start: e.target.value }))}
+                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call Until</label>
+                  <input type="time" value={advanced.calling_hours_end}
+                    onChange={e => setAdvanced(a => ({ ...a, calling_hours_end: e.target.value }))}
+                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── LAUNCH BUTTON — sticky bottom ────────────────────── */}
+      {mode && (
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur border-t border-[#ede7dc] z-50">
+          <div className="max-w-2xl mx-auto">
+            {!canLaunch ? (
+              <div className="flex items-center gap-3 px-5 py-4 bg-[#f5f5f5] rounded-2xl">
+                <div className="flex gap-1">
+                  {[!!mode, !!contactFile, mode === 'survey' ? !!pdfFile : message.trim().length > 10].map((done, i) => (
+                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${done ? 'bg-[#228248]' : 'bg-[#ddd]'}`} />
+                  ))}
+                </div>
+                <p className="text-sm text-[#8a8a8a]">
+                  {!mode ? 'Choose what kind of call to make'
+                    : !contactFile ? 'Upload your contact list'
+                    : mode === 'survey' && !pdfFile ? 'Upload your question PDF'
+                    : 'Write your message'}
+                </p>
+              </div>
+            ) : (
+              <button onClick={handleLaunch} disabled={loading}
+                className="w-full py-4 bg-[#1a1a1a] hover:bg-[#2c2c2c] active:scale-[0.98] text-white rounded-2xl font-bold text-base transition-all disabled:opacity-60 flex items-center justify-center gap-3 shadow-xl">
+                {loading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Starting calls...
+                  </>
+                ) : (
+                  <>
+                    🚀 Launch Campaign
+                    {contactFile && (
+                      <span className="text-sm font-normal opacity-70">→ {contactFile.name}</span>
+                    )}
+                  </>
+                )}
               </button>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Navigation */}
-      <div className="flex justify-between mt-4">
-        <button onClick={() => setStep(s => s - 1)} disabled={step === 0}
-          className="flex items-center gap-2 px-5 py-3 border-2 border-[#e0d9ce] hover:border-[#cfc6b9] rounded-xl text-sm font-semibold text-[#525252] hover:text-[#2c2c2c] disabled:opacity-30 disabled:cursor-not-allowed transition-all">
-          <ChevronLeft size={16} /> Back
-        </button>
-        {step < 4 && (
-          <button onClick={handleNext} disabled={loading}
-            className="flex items-center gap-2 px-7 py-3 rounded-xl text-sm font-semibold text-white bg-[#1a1a1a] hover:bg-[#2c2c2c] transition-all disabled:opacity-50">
-            {loading
-              ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Please wait...</>
-              : <>Next <ChevronRight size={16} /></>
-            }
-          </button>
-        )}
+    </div>
+  )
+}
+
+// ── Section wrapper component ─────────────────────────────────
+function Section({ label, done, children }) {
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all
+          ${done ? 'bg-[#228248]' : 'bg-[#e8e0d5]'}`}>
+          {done ? (
+            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <div className="w-2 h-2 rounded-full bg-[#bbb]" />
+          )}
+        </div>
+        <h3 className="text-sm font-bold text-[#3d3d3d] uppercase tracking-wide">{label}</h3>
       </div>
+      {children}
     </div>
   )
 }
