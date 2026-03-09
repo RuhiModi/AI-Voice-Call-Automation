@@ -99,7 +99,7 @@ class SarvamSTTHandler {
 // Detects when user stops speaking using RMS energy.
 // Works the same regardless of STT provider.
 class VoiceActivityDetector {
-  constructor(onSilenceDetected, silenceThresholdMs = 600) {
+  constructor(onSilenceDetected, silenceThresholdMs = 400) {
     this.onSilenceDetected  = onSilenceDetected
     this.silenceThresholdMs = silenceThresholdMs
     this.isSpeaking         = false
