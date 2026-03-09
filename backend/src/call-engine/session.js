@@ -104,6 +104,10 @@ class CallSession {
   receiveAudio(audioData) {
     if (!this.isActive) return
     const mulawBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData)
+    if (!this._audioLogCount) this._audioLogCount = 0
+    if (this._audioLogCount++ < 3) {
+      console.log(`[Session ${this.sessionId}] 🎤 Receiving audio: ${mulawBuffer.length} bytes (mulaw)`)
+    }
 
     // Vobiz sends mulaw audio — convert to PCM16 for STT processing
     const { mulawToPcm16 } = require('./tts/audioConvert')
@@ -310,7 +314,28 @@ async function handleWebSocketConnection(ws, req) {
 
   ws.on('message', (data) => {
     const s = activeSessions.get(sessionId)
-    if (s?.isActive) s.receiveAudio(data)
+    if (!s?.isActive) return
+
+    // Vobiz sends JSON-wrapped audio (same format as Plivo/Twilio)
+    try {
+      const msg = JSON.parse(data.toString())
+      
+      if (msg.event === 'media' && msg.media?.payload) {
+        // Decode base64 mulaw audio from Vobiz
+        const audioBuffer = Buffer.from(msg.media.payload, 'base64')
+        s.receiveAudio(audioBuffer)
+      } else if (msg.event === 'start') {
+        console.log(`[WS] Stream started for session: ${sessionId}`)
+      } else if (msg.event === 'stop') {
+        console.log(`[WS] Stream stopped for session: ${sessionId}`)
+      } else {
+        // Unknown event — log for debugging
+        console.log(`[WS] Unknown event: ${msg.event}`)
+      }
+    } catch (e) {
+      // Not JSON — treat as raw binary audio (fallback)
+      s.receiveAudio(data)
+    }
   })
 
   ws.on('close', async () => {
