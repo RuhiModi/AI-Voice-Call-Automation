@@ -1,370 +1,160 @@
 // src/call-engine/scriptFlow.js
 //
-// HARDCODED STATE MACHINE from voice_flow-08__updated020326.pdf
+// STATE MACHINE — reads flow config parsed from PDF.
+// Zero LLM for scripted paths. One call = one response = waits.
 //
-// States: intro → task_check → task_done / task_pending / no_details → problem_recorded → end
-// LLM is NEVER called for scripted states. Only for genuinely unknown input (fallback).
-//
-// Each state has:
-//   text     — what AI speaks
-//   options  — list of { match[], next, capture?, action? }
-//   default  — fallback if nothing matches (either next state or useLLM)
+// flowConfig is produced by parsePdfScript.js at campaign creation time
+// and stored as JSON in campaigns.flow_config column.
 
 // ─────────────────────────────────────────────────────────────
 // MATCH HELPER
 // ─────────────────────────────────────────────────────────────
-// Returns true if userText contains any of the match terms (multilingual)
 
-function matches(userText, terms) {
+function matchesAny(userText, synonyms = []) {
   const u = userText.toLowerCase().trim()
-  return terms.some(t => u.includes(t.toLowerCase()))
+  return synonyms.some(s => u.includes(s.toLowerCase()))
 }
 
 // ─────────────────────────────────────────────────────────────
-// THE FLOW — hardcoded from PDF
+// FALLBACK CONFIG — used if no PDF uploaded / parse failed
+// Minimal Gujarati flow that always works
 // ─────────────────────────────────────────────────────────────
 
-const FLOW = {
-
-  // ── INTRO ──────────────────────────────────────────────────
-  intro: {
-    text: 'નમસ્તે, દરિયાપુરના ધારાસભ્ય કૌશિક જૈનના ઇ-કાર્યાલય તરફથી બોલી રહ્યા છીએ. યોજનાકીય કેમ્પ દરમ્યાન આપનું કામ પૂર્ણ થયું છે કે નહીં તેની પુષ્ટિ માટે આ કૉલ છે. શું આપ હાલ 1 મિનિટ આપી શકો?',
-    options: [
-      {
-        // Who is this — check FIRST so "bol kon" doesn't match 'bol' in yes
-        match: ['કોણ', 'kon bole', 'bol kon', 'kaun hai', 'who are you', 'tame kon'],
-        next:  'who_is_this',
-      },
-      {
-        // Wrong number — check before no
-        match: ['ખોટો નંબર', 'wrong number', 'khotho number', 'galat number'],
-        next:  'wrong_number',
-      },
-      {
-        // Busy / No — check before yes to avoid substring conflict
-        match: ['ના, ', 'ના,', 'busy', 'વ્યસ્ત', 'સમય નથી', 'ઉપલબ્ધ નથી',
-                'haal nahi', 'nahi', 'not now', 'later call'],
-        next:  'reschedule',
-        capture: 'availability',
-        captureValue: 'not_available',
-      },
-      {
-        // Call back later (standalone)
-        match: ['પછી ફોન', 'call back', 'baad me call', 'pheri call'],
-        next:  'reschedule',
-      },
-      {
-        // Yes — available
-        match: ['હા', 'ji', 'જી', 'bol', 'બોલ', 'haa', 'han', 'yes', 'okay', 'ok',
-                'ટૂંક', 'sure', 'bolo', 'bolav'],
-        next:  'task_check',
-      },
-    ],
-    default: { next: 'task_check' }, // positive-sounding → proceed
-  },
-
-  // ── WHO IS THIS (clarification, then re-ask intro question) ──
-  who_is_this: {
-    text: 'આ કૉલ કેમ્પ દરમ્યાન નોંધાયેલ કામ અંગે પુષ્ટિ માટે છે. શું આપ હાલ 1 મિનિટ આપી શકશો?',
-    options: [
-      {
-        match: ['હા', 'ji', 'જી', 'ok', 'okay', 'haa', 'han', 'yes', 'bol', 'બોલ', 'sure', 'bolav'],
-        next: 'task_check',
-      },
-      {
-        match: ['busy', 'વ્યસ્ત', 'nahi', 'later', 'ną'],
-        next: 'reschedule',
-      },
-      {
-        match: ['ના', 'na', 'naa', 'no'],
-        next: 'reschedule',
-      },
-    ],
-    default: { next: 'task_check' },
-  },
-
-  // ── RESCHEDULE ──────────────────────────────────────────────
-  reschedule: {
-    text: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?',
-    options: [
-      {
-        match: ['1 કલાક', '1 hour', 'ek kalak', 'one hour', 'klaak', 'kalak'],
-        next: 'reschedule_confirmed',
-        capture: 'reschedule_time', captureValue: '1_hour',
-      },
-      {
-        match: ['સાંજ', 'evening', 'saanje', 'saanj', 'sanje'],
-        next: 'reschedule_confirmed',
-        capture: 'reschedule_time', captureValue: 'evening',
-      },
-      {
-        match: ['કાલ', 'tomorrow', 'kal', 'kaale'],
-        next: 'reschedule_confirmed',
-        capture: 'reschedule_time', captureValue: 'tomorrow',
-      },
-      {
-        match: ['નથી', 'nahi', 'no', 'nt', 'want', 'ichhta nathi', 'ઇચ્છતા નથી'],
-        next: 'reschedule_confirmed',
-        capture: 'reschedule_time', captureValue: 'declined',
-      },
-    ],
-    // If they say a time like "5 vage" just capture it
-    default: { next: 'reschedule_confirmed', capture: 'reschedule_time' },
-  },
-
-  // ── RESCHEDULE CONFIRMED ────────────────────────────────────
-  reschedule_confirmed: {
-    text: 'બરાબર. અમે આ સમયે ફરી સંપર્ક કરીશું. આભાર.',
-    options: [],
-    default: { next: 'end' },
-  },
-
-  // ── WRONG NUMBER ───────────────────────────────────────────
-  wrong_number: {
-    text: 'માફ કરશો અસુવિધા માટે. નંબર સુધારો ઉપલબ્ધ ન હોય તો આ કૉલ અહીં સમાપ્ત કરીએ. આભાર.',
-    options: [],
-    default: { next: 'end' },
-  },
-
-  // ── TASK CHECK ─────────────────────────────────────────────
-  task_check: {
-    text: 'કૃપા કરીને જણાવો કે યોજનાકીય કેમ્પ દરમ્યાન આપનું કામ પૂર્ણ થયું છે કે નહીં?',
-    options: [
-      {
-        // Yes — task done
-        match: ['હા', 'han', 'haa', 'yes', 'purn', 'પૂર્ણ', 'thayu', 'thai', 'thayun',
-                'complete', 'done', 'ho gaya', 'thai gayu', 'tha', 'maru kam purn'],
-        next: 'task_done',
-        capture: 'task_status', captureValue: 'completed',
-      },
-      {
-        // Never applied
-        match: ['અરજી કરી નથી', 'arji nathi', 'apply nathi', 'mane arji nathi',
-                'applied nahi', 'didnt apply', 'no application', 'arji j nathi'],
-        next: 'never_applied',
-        capture: 'task_status', captureValue: 'never_applied',
-      },
-      {
-        // Partially done
-        match: ['ભાગ્યે', 'bhagye', 'partly', 'partial', 'thodun', 'thodi', 'half'],
-        next: 'partially_done',
-        capture: 'task_status', captureValue: 'partial',
-      },
-      {
-        // No — pending
-        match: ['ના', 'na', 'naa', 'no', 'baki', 'બાકી', 'pending', 'nathi thayu',
-                'nathi', 'nahi hua', 'nahi', 'hun baki', 'abhi nahi'],
-        next: 'task_pending',
-        capture: 'task_status', captureValue: 'pending',
-      },
-      {
-        // Don't know
-        match: ['ખબર નથી', 'khabar nathi', 'dont know', 'pata nahi', 'nai khabar'],
-        next: 'task_pending',
-        capture: 'task_status', captureValue: 'unknown',
-      },
-    ],
-    default: { useLLM: true }, // unexpected answer — ask LLM to interpret
-  },
-
-  // ── TASK DONE ───────────────────────────────────────────────
-  task_done: {
-    text: 'ખૂબ આનંદ થયો કે આપનું કામ સફળતાપૂર્વક પૂર્ણ થયું છે. આભાર. દરિયાપુરના ધારાસભ્ય કૌશિક જૈનનું ઇ-કાર્યાલય આપની સેવા માટે હંમેશા તૈયાર છે. જો આપ ઇચ્છો તો 1 થી 5 સુધીમાં સેવા માટે રેટિંગ આપશો?',
-    options: [
-      { match: ['1'], next: 'rating_done', capture: 'rating', captureValue: '1' },
-      { match: ['2'], next: 'rating_done', capture: 'rating', captureValue: '2' },
-      { match: ['3'], next: 'rating_done', capture: 'rating', captureValue: '3' },
-      { match: ['4'], next: 'rating_done', capture: 'rating', captureValue: '4' },
-      { match: ['5'], next: 'rating_done', capture: 'rating', captureValue: '5' },
-      { match: ['ખૂબ સંતોષ', 'khub santosh', 'very happy', 'excellent', 'best', 'sara'], next: 'rating_done', capture: 'rating', captureValue: '5' },
-      { match: ['સામાન્ય', 'normal', 'average', 'ok', 'okay', 'theek'], next: 'rating_done', capture: 'rating', captureValue: '3' },
-      { match: ['અસંતોષ', 'asantosh', 'bad', 'poor', 'nahi gamyu', 'not good'], next: 'rating_done', capture: 'rating', captureValue: '1' },
-      { match: ['અભિપ્રાય નથી', 'abhipray nathi', 'no opinion', 'skip', 'nahi'], next: 'rating_done', capture: 'rating', captureValue: 'none' },
-    ],
-    default: { next: 'rating_done', capture: 'rating' }, // capture whatever they say
-  },
-
-  // ── RATING DONE ─────────────────────────────────────────────
-  rating_done: {
-    text: 'આભાર. આપનો પ્રતિસાદ અમારા માટે મહત્વનો છે. ઇ-કાર્યાલય આપની સેવા માટે પ્રતિબદ્ધ છે. શુભ દિવસ.',
-    options: [],
-    default: { next: 'end' },
-  },
-
-  // ── TASK PENDING ────────────────────────────────────────────
-  task_pending: {
-    text: 'માફ કરશો કે આપનું કામ હજુ પૂર્ણ થયું નથી. કૃપા કરીને આપની મુખ્ય સમસ્યા જણાવો: દસ્તાવેજ અધૂરા, વિભાગ તરફથી પ્રતિસાદ નથી, ટેક્નિકલ વિલંબ, નાણાકીય મુદ્દો, અથવા અન્ય?',
-    options: [
-      {
-        match: ['દસ્તાવેજ', 'dastavej', 'document', 'papers', 'kagad', 'kagaz', 'adhura'],
-        next: 'urgency_check',
-        capture: 'problem_type', captureValue: 'documents',
-      },
-      {
-        match: ['પ્રતિસાદ નથી', 'pratisad nathi', 'vibhag', 'department', 'reply nathi',
-                'koi jawab nahi', 'no response', 'no reply'],
-        next: 'urgency_check',
-        capture: 'problem_type', captureValue: 'no_dept_response',
-      },
-      {
-        match: ['ટેક્નિકલ', 'technical', 'system', 'online', 'tech', 'vilamb', 'delay'],
-        next: 'urgency_check',
-        capture: 'problem_type', captureValue: 'technical',
-      },
-      {
-        match: ['નાણા', 'naana', 'paisa', 'money', 'financial', 'fund', 'rupiya'],
-        next: 'urgency_check',
-        capture: 'problem_type', captureValue: 'financial',
-      },
-      {
-        match: ['અન્ય', 'anya', 'other', 'ble', 'something else', 'biju'],
-        next: 'urgency_check',
-        capture: 'problem_type', captureValue: 'other',
-      },
-      {
-        match: ['હાલ', 'haal', 'abhi nahi', 'later', 'pachhi', 'not now', 'cant say'],
-        next: 'no_details',
-        capture: 'problem_type', captureValue: 'declined_to_share',
-      },
-    ],
-    default: { next: 'urgency_check', capture: 'problem_type' },
-  },
-
-  // ── PARTIALLY DONE ──────────────────────────────────────────
-  partially_done: {
-    text: 'સમજ્યા. કયો ભાગ હજુ બાકી છે? દસ્તાવેજ, મંજૂરી, ચૂકવણી, ટેક્નિકલ કામ, અથવા અન્ય?',
-    options: [
-      { match: ['દસ્તાવેજ', 'document', 'dastavej', 'papers'], next: 'days_pending', capture: 'pending_part', captureValue: 'documents' },
-      { match: ['મંજૂરી', 'manjuri', 'approval', 'permission'], next: 'days_pending', capture: 'pending_part', captureValue: 'approval' },
-      { match: ['ચૂકવણી', 'chukavni', 'payment', 'paisa'], next: 'days_pending', capture: 'pending_part', captureValue: 'payment' },
-      { match: ['ટેક્નિકલ', 'technical', 'tech'], next: 'days_pending', capture: 'pending_part', captureValue: 'technical' },
-      { match: ['અન્ય', 'other', 'anya'], next: 'days_pending', capture: 'pending_part', captureValue: 'other' },
-    ],
-    default: { next: 'days_pending', capture: 'pending_part' },
-  },
-
-  // ── DAYS PENDING ────────────────────────────────────────────
-  days_pending: {
-    text: 'કેટલા દિવસથી આ ભાગ બાકી છે?',
-    options: [],
-    default: { next: 'urgency_check', capture: 'days_pending' },
-  },
-
-  // ── NEVER APPLIED ───────────────────────────────────────────
-  never_applied: {
-    text: 'સમજ્યા. શું આ ગેરસમજ હતી, કે કોઈ અન્ય પરિવાર સભ્યે અરજી કરી હતી, અથવા ડેટા ભૂલ છે?',
-    options: [
-      { match: ['ગેરસમજ', 'gersamaj', 'misunderstanding', 'mistake'], next: 'problem_recorded', capture: 'never_applied_reason', captureValue: 'misunderstanding' },
-      { match: ['પરિવાર', 'parivar', 'family', 'member', 'anya', 'relative'], next: 'problem_recorded', capture: 'never_applied_reason', captureValue: 'family_member' },
-      { match: ['ડેટા', 'data', 'bhool', 'error', 'mistake', 'galti'], next: 'problem_recorded', capture: 'never_applied_reason', captureValue: 'data_error' },
-    ],
-    default: { next: 'problem_recorded', capture: 'never_applied_reason' },
-  },
-
-  // ── URGENCY CHECK ───────────────────────────────────────────
-  urgency_check: {
-    text: 'આ મુદ્દો કેટલો તાત્કાલિક છે? તાત્કાલિક, સામાન્ય, અથવા રાહ જોઈ શકો?',
-    options: [
-      { match: ['તાત્કાલિક', 'tatkalik', 'urgent', 'jaldi', 'turant', 'emergency', 'asap'], next: 'escalate_check', capture: 'urgency', captureValue: 'urgent' },
-      { match: ['સામાન્ય', 'samanya', 'normal', 'theek', 'ok'], next: 'escalate_check', capture: 'urgency', captureValue: 'normal' },
-      { match: ['રાહ', 'raah', 'wait', 'can wait', 'shakun', 'no rush'], next: 'escalate_check', capture: 'urgency', captureValue: 'can_wait' },
-    ],
-    default: { next: 'escalate_check', capture: 'urgency' },
-  },
-
-  // ── ESCALATE CHECK ──────────────────────────────────────────
-  escalate_check: {
-    text: 'શું આપ ઇચ્છો છો કે અમારી ટીમ આ મુદ્દો સંબંધિત વિભાગ સુધી પહોંચાડે?',
-    options: [
-      {
-        match: ['હા', 'han', 'haa', 'yes', 'please', 'jarur', 'pahonchado', 'pahonchad'],
-        next: 'contact_time',
-        capture: 'escalate', captureValue: 'yes',
-      },
-      {
-        match: ['ના', 'na', 'no', 'nahi', 'naa', 'nai'],
-        next: 'problem_recorded',
-        capture: 'escalate', captureValue: 'no',
-      },
-      {
-        match: ['પહેલા', 'pahela', 'more info', 'vdhu', 'vahu', 'info', 'tell me more'],
-        next: 'more_info',
-        capture: 'escalate', captureValue: 'wants_more_info',
-      },
-    ],
-    default: { next: 'contact_time' },
-  },
-
-  // ── MORE INFO ───────────────────────────────────────────────
-  more_info: {
-    text: 'ઠીક છે. અમારી ટીમ 48 કલાકમાં સમીક્ષા કરીને સંપર્ક કરશે. શું આ ઠીક છે?',
-    options: [
-      { match: ['હા', 'yes', 'ok', 'okay', 'bol', 'han'], next: 'contact_time', capture: 'escalate', captureValue: 'yes' },
-      { match: ['ના', 'no', 'nahi', 'na'], next: 'problem_recorded', capture: 'escalate', captureValue: 'no' },
-    ],
-    default: { next: 'contact_time' },
-  },
-
-  // ── CONTACT TIME ────────────────────────────────────────────
-  contact_time: {
-    text: 'સંપર્ક માટે કયો સમય યોગ્ય છે? અને WhatsApp અથવા SMS અપડેટ મંજૂર છે?',
-    options: [
-      { match: ['whatsapp', 'wa', 'wapp'], next: 'problem_recorded', capture: 'contact_method', captureValue: 'whatsapp' },
-      { match: ['sms', 'message', 'msg'], next: 'problem_recorded', capture: 'contact_method', captureValue: 'sms' },
-      { match: ['ફોન', 'phone', 'call', 'fon'], next: 'problem_recorded', capture: 'contact_method', captureValue: 'call' },
-      { match: ['હા', 'yes', 'ok', 'han', 'both', 'bnne'], next: 'problem_recorded', capture: 'contact_method', captureValue: 'any' },
-    ],
-    default: { next: 'problem_recorded', capture: 'contact_time' },
-  },
-
-  // ── PROBLEM RECORDED ────────────────────────────────────────
-  problem_recorded: {
-    text: 'આભાર. આપની માહિતી નોંધાઈ ગઈ છે. અમારી ટીમ 48 કલાકમાં સંપર્ક કરશે. ઇ-કાર્યાલય આપની સેવા માટે પ્રતિબદ્ધ છે. શુભ દિવસ.',
-    options: [],
-    default: { next: 'end' },
-  },
-
-  // ── NO DETAILS ──────────────────────────────────────────────
-  no_details: {
-    text: 'બરાબર. હાલ આપ તરફથી વિગતો પ્રાપ્ત થઈ નથી. જરૂર પડે તો કૃપા કરીને ઇ-કાર્યાલય હેલ્પલાઇન પર સંપર્ક કરશો. આભાર.',
-    options: [],
-    default: { next: 'end' },
-  },
-
-  // ── FALLBACK ────────────────────────────────────────────────
-  fallback: {
-    text: 'માફ કરશો, હાલ સિસ્ટમમાં ટેક્નિકલ સમસ્યા આવી છે. અમારી ટીમ જલ્દી જ આપને ફરીથી સંપર્ક કરશે.',
-    options: [],
-    default: { next: 'end' },
-  },
-
-  end: { text: null, options: [], default: { next: 'end' } },
+const FALLBACK_CONFIG = {
+  flow_order: ['intro', 'task_check', 'task_done', 'task_pending', 'problem_recorded', 'no_details', 'fallback'],
+  states: {
+    intro: {
+      text: 'નમસ્તે, દરિયાપુરના ધારાસભ્ય કૌશિક જૈનના ઇ-કાર્યાલય તરફથી બોલી રહ્યા છીએ. યોજનાકીય કેમ્પ દરમ્યાન આપનું કામ પૂર્ણ થયું છે કે નહીં તેની પુષ્ટિ માટે આ કૉલ છે. શું આપ હાલ 1 મિનિટ આપી શકો?',
+      transitions: { default: 'task_check', busy: 'reschedule', wrong: 'wrong_number', who: 'who_is_this' },
+      options: [
+        { type: 'condition', trigger: 'કોણ', trigger_synonyms: ['kon','kaun','who','bol kon'], response: 'આ કૉલ કેમ્પ દરમ્યાન નોંધાયેલ કામ અંગે પુષ્ટિ માટે છે. શું આપ 1 મિનિટ આપી શકો?', action: 'continue' },
+        { type: 'condition', trigger: 'ખોટો', trigger_synonyms: ['wrong','khotho','galat number'], response: 'માફ કરશો. આ ખોટો નંબર છે. આભાર.', action: 'end' },
+        { type: 'condition', trigger: 'busy', trigger_synonyms: ['busy','vyast','વ્યસ્ત','nahi','na ,','ना'], response: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?', action: 'reschedule', next_state: 'reschedule' },
+        { type: 'condition', trigger: 'પછી', trigger_synonyms: ['later','pachhi','baad','call back'], response: 'ઠીક છે. ક્યારે ફોન કરી શકીએ?', action: 'continue', next_state: 'reschedule' },
+      ],
+    },
+    reschedule: {
+      text: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?',
+      transitions: { default: 'reschedule_confirmed' },
+      options: [],
+    },
+    reschedule_confirmed: {
+      text: 'બરાબર. અમે આ સમયે ફરી સંપર્ક કરીશું. આભાર.',
+      transitions: { default: 'end' },
+      options: [],
+    },
+    who_is_this: {
+      text: 'આ કૉલ કેમ્પ દરમ્યાન નોંધાયેલ કામ અંગે પુષ્ટિ માટે છે. શું આપ 1 મિનિટ આપી શકો?',
+      transitions: { default: 'task_check' },
+      options: [],
+    },
+    wrong_number: {
+      text: 'માફ કરશો અસુવિધા માટે. આભાર.',
+      transitions: { default: 'end' },
+      options: [],
+    },
+    task_check: {
+      text: 'કૃપા કરીને જણાવો કે યોજનાકીય કેમ્પ દરમ્યાન આપનું કામ પૂર્ણ થયું છે કે નહીં?',
+      transitions: { default: 'task_pending', yes: 'task_done', never: 'never_applied', partial: 'partially_done' },
+      options: [
+        { type: 'condition', trigger: 'અરજી કરી નથી', trigger_synonyms: ['apply nathi','applied nahi','arji nathi','never applied'], response: null, next_state: 'never_applied', capture: 'task_status', captureValue: 'never_applied' },
+        { type: 'condition', trigger: 'ભાગ્યે', trigger_synonyms: ['partial','partly','bhagye','half','thodun'], response: null, next_state: 'partially_done', capture: 'task_status', captureValue: 'partial' },
+        { type: 'condition', trigger: 'પૂર્ણ', trigger_synonyms: ['પૂર્ણ','purn','puri','complete','done','thayu','thai','thai gayu','completed','ho gaya','thayi gayu','thayun'], response: null, next_state: 'task_done', capture: 'task_status', captureValue: 'completed' },
+        { type: 'condition', trigger: 'બાકી', trigger_synonyms: ['બાકી','baki','pending','nathi','nahi hua','incomplete','nathi thayu','hun baki','abhi nahi'], response: null, next_state: 'task_pending', capture: 'task_status', captureValue: 'pending' },
+        { type: 'condition', trigger: 'ખબર નથી', trigger_synonyms: ['dont know','pata nahi','khabar nathi'], response: null, next_state: 'task_pending', capture: 'task_status', captureValue: 'unknown' },
+      ],
+    },
+    task_done: {
+      text: 'ખૂબ આનંદ થયો કે આપનું કામ સફળતાપૂર્વક પૂર્ણ થયું છે. આભાર. દરિયાપુરના ધારાસભ્ય કૌશિક જૈનનું ઇ-કાર્યાલય આપની સેવા માટે હંમેશા તૈયાર છે. જો આપ ઇચ્છો તો 1 થી 5 સુધીમાં સેવા માટે રેટિંગ આપશો?',
+      transitions: { default: 'rating_done' },
+      options: [{ type: 'rating_capture', min: 1, max: 5, capture: 'rating' }],
+    },
+    rating_done: {
+      text: 'આભાર. આપનો પ્રતિસાદ અમારા માટે મહત્વનો છે. ઇ-કાર્યાલય આપની સેવા માટે પ્રતિબદ્ધ છે. શુભ દિવસ.',
+      transitions: { default: 'end' },
+      options: [],
+    },
+    task_pending: {
+      text: 'માફ કરશો કે આપનું કામ હજુ પૂર્ણ થયું નથી. કૃપા કરીને આપની મુખ્ય સમસ્યા જણાવો: દસ્તાવેજ અધૂરા, વિભાગ તરફથી પ્રતિસાદ નથી, ટેક્નિકલ વિલંબ, નાણાકીય મુદ્દો, અથવા અન્ય?',
+      transitions: { default: 'urgency_check', no_details: 'no_details' },
+      options: [
+        { type: 'condition', trigger: 'દસ્તાવેજ', trigger_synonyms: ['document','dastavej','papers','kagad'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'documents' },
+        { type: 'condition', trigger: 'પ્રતિસાદ', trigger_synonyms: ['no response','no reply','vibhag','department','reply nathi'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'no_dept_response' },
+        { type: 'condition', trigger: 'ટેક્નિકલ', trigger_synonyms: ['technical','tech','system','online','vilamb'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'technical' },
+        { type: 'condition', trigger: 'નાણા', trigger_synonyms: ['paisa','money','financial','fund','rupiya'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'financial' },
+        { type: 'condition', trigger: 'અન્ય', trigger_synonyms: ['other','anya','biju','something else'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'other' },
+        { type: 'condition', trigger: 'હાલ', trigger_synonyms: ['not now','later','pachhi','abhi nahi','cant say'], response: null, next_state: 'no_details', capture: 'problem_type', captureValue: 'declined' },
+      ],
+    },
+    partially_done: {
+      text: 'સમજ્યા. કયો ભાગ હજુ બાકી છે? દસ્તાવેજ, મંજૂરી, ચૂકવણી, ટેક્નિકલ, અથવા અન્ય?',
+      transitions: { default: 'urgency_check' },
+      options: [],
+    },
+    never_applied: {
+      text: 'સમજ્યા. શું આ ગેરસમજ હતી, કે કોઈ અન્ય પરિવાર સભ્યે અરજી કરી હતી, અથવા ડેટા ભૂલ છે?',
+      transitions: { default: 'problem_recorded' },
+      options: [],
+    },
+    urgency_check: {
+      text: 'આ મુદ્દો કેટલો તાત્કાલિક છે? તાત્કાલિક, સામાન્ય, અથવા રાહ જોઈ શકો?',
+      transitions: { default: 'escalate_check' },
+      options: [
+        { type: 'condition', trigger: 'તાત્કાલિક', trigger_synonyms: ['urgent','tatkalik','jaldi','emergency','asap'], response: null, next_state: 'escalate_check', capture: 'urgency', captureValue: 'urgent' },
+        { type: 'condition', trigger: 'સામાન્ય', trigger_synonyms: ['normal','average','theek','ok','samanya'], response: null, next_state: 'escalate_check', capture: 'urgency', captureValue: 'normal' },
+        { type: 'condition', trigger: 'રાહ', trigger_synonyms: ['wait','can wait','no rush','shakun','raah'], response: null, next_state: 'escalate_check', capture: 'urgency', captureValue: 'can_wait' },
+      ],
+    },
+    escalate_check: {
+      text: 'શું આપ ઇચ્છો છો કે અમારી ટીમ આ મુદ્દો સંબંધિત વિભાગ સુધી પહોંચાડે?',
+      transitions: { default: 'contact_time', no: 'problem_recorded' },
+      options: [
+        { type: 'condition', trigger: 'હા', trigger_synonyms: ['yes','ok','okay','please','jarur','han','haa'], response: null, next_state: 'contact_time', capture: 'escalate', captureValue: 'yes' },
+        { type: 'condition', trigger: 'ના', trigger_synonyms: ['no','nahi','na','naa','nai'], response: null, next_state: 'problem_recorded', capture: 'escalate', captureValue: 'no' },
+      ],
+    },
+    contact_time: {
+      text: 'સંપર્ક માટે કયો સમય યોગ્ય છે? અને WhatsApp અથવા SMS અપડેટ મંજૂર છે?',
+      transitions: { default: 'problem_recorded' },
+      options: [
+        { type: 'condition', trigger: 'whatsapp', trigger_synonyms: ['whatsapp','wa','wapp'], response: null, next_state: 'problem_recorded', capture: 'contact_method', captureValue: 'whatsapp' },
+        { type: 'condition', trigger: 'sms', trigger_synonyms: ['sms','message','msg','text'], response: null, next_state: 'problem_recorded', capture: 'contact_method', captureValue: 'sms' },
+      ],
+    },
+    problem_recorded: {
+      text: 'આભાર. આપની માહિતી નોંધાઈ ગઈ છે. અમારી ટીમ 48 કલાકમાં સંપર્ક કરશે. ઇ-કાર્યાલય આપની સેવા માટે પ્રતિબદ્ધ છે. શુભ દિવસ.',
+      transitions: { default: 'end' },
+      options: [],
+    },
+    no_details: {
+      text: 'બરાબર. હાલ આપ તરફથી વિગતો પ્રાપ્ત થઈ નથી. જરૂર પડે તો કૃપા કરીને ઇ-કાર્યાલય હેલ્પલાઇન પર સંપર્ક કરશો. આભાર.',
+      transitions: { default: 'end' },
+      options: [],
+    },
+    fallback: {
+      text: 'માફ કરશો, હાલ સિસ્ટમમાં ટેક્નિકલ સમસ્યા આવી છે. અમારી ટીમ જલ્દી જ આપને ફરીથી સંપર્ક કરશે.',
+      transitions: { default: 'end' },
+      options: [],
+    },
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
-// REAL-LIFE RESPONSE HANDLERS (PDF Section: Additional Handling)
-// These are checked BEFORE state transitions
+// REAL-LIFE HANDLERS (global — applied before any state logic)
 // ─────────────────────────────────────────────────────────────
 
-const REAL_LIFE_HANDLERS = [
+const GLOBAL_HANDLERS = [
   {
-    // Angry / frustrated
-    match: ['gussa', 'problem chhe', 'shikayat', 'naaraj', 'krodh', 'angry', 'frustrated',
-            'tamne shun', 'bekaar', 'faltu', 'waste'],
+    synonyms: ['faltu','bekaar','waste','gussa','shikayat','complaint','naaraj','angry'],
     response: 'અમે આપની લાગણી સમજીએ છીએ. કૃપા કરીને સમસ્યા જણાવો, અમે મદદ કરવા ઇચ્છીએ છીએ.',
-    continueFlow: true,  // after speaking, stay in same state
   },
   {
-    // Political comment
-    match: ['bjp', 'congress', 'aap', 'party', 'rajkaran', 'rajkiy', 'political', 'neta'],
+    synonyms: ['bjp','congress','aap','party','rajkiy','political','neta','vote'],
     response: 'આ કૉલ સેવા પુષ્ટિ માટે છે. રાજકીય ચર્ચા અહીં શક્ય નથી.',
-    continueFlow: true,
   },
   {
-    // Voice unclear
-    match: ['avaj', 'awaz', 'sunai', 'clear nahi', 'spaShT nathi', 'avaaj nathi'],
+    synonyms: ['avaz nathi','clear nahi','sunai nahi','avaj','avaaj','spasht nathi'],
     response: 'માફ કરશો, અવાજ સ્પષ્ટ નથી. શું ફરીથી કહેશો?',
-    continueFlow: true,
   },
 ]
 
@@ -373,25 +163,40 @@ const REAL_LIFE_HANDLERS = [
 // ─────────────────────────────────────────────────────────────
 
 class ScriptFlowExecutor {
-  constructor() {
-    this.state       = 'intro'
-    this.done        = false
+  /**
+   * @param {object|null} flowConfig — parsed from PDF via parsePdfScript.js
+   *                                   If null, uses FALLBACK_CONFIG
+   */
+  /**
+   * @param {object|null} pdfTexts — { texts: { state_id: 'Gujarati prompt...' } }
+   *                                  from parsePdfToFlowConfig(). If null uses fallback.
+   */
+  constructor(pdfTexts = null) {
+    // Always use FALLBACK_CONFIG for logic/transitions
+    // Override only the text for each state from the PDF
+    this.config = JSON.parse(JSON.stringify(FALLBACK_CONFIG))  // deep clone
+    if (pdfTexts?.texts) {
+      for (const [stateId, text] of Object.entries(pdfTexts.texts)) {
+        if (this.config.states[stateId] && text) {
+          this.config.states[stateId].text = text
+          console.log(`[ScriptFlow] 📄 PDF text loaded for state: ${stateId}`)
+        }
+      }
+    }
+    this.state         = 'intro'
+    this.done          = false
     this.collectedData = {}
   }
 
-  /**
-   * Get the opening text (called once at call start, before any user input)
-   */
+  /** Called once at call start — speaks intro, then waits */
   getOpening() {
-    const state = FLOW[this.state]
-    return state?.text || null
+    return this.config.states['intro']?.text || FALLBACK_CONFIG.states.intro.text
   }
 
   /**
-   * Called once per user utterance.
-   * Returns:
-   *   { useLLM: false, text, action?, capture_field?, capture_value?, stateId }
-   *   { useLLM: true }   — only for genuinely ambiguous input
+   * Called once per user utterance. Returns:
+   *   { useLLM: false, text, action, stateId, capture_field, capture_value }
+   *   { useLLM: true }  — only for truly unknown input
    */
   process(userText) {
     if (this.done || this.state === 'end') {
@@ -400,102 +205,124 @@ class ScriptFlowExecutor {
 
     const lower = userText.trim().toLowerCase()
 
-    // ── 1. Real-life handlers (anger, politics, unclear audio) ──
-    for (const handler of REAL_LIFE_HANDLERS) {
-      if (handler.match.some(m => lower.includes(m.toLowerCase()))) {
-        console.log(`[ScriptFlow] 🔥 Real-life handler: "${handler.response.substring(0, 40)}"`)
-        return {
-          useLLM:        false,
-          text:          handler.response,
-          action:        'continue',
-          stayInState:   true,  // don't advance state
-          stateId:       this.state,
+    // ── 1. Global real-life handlers ──────────────────────────
+    for (const handler of GLOBAL_HANDLERS) {
+      if (matchesAny(lower, handler.synonyms)) {
+        console.log(`[ScriptFlow] 🔥 Global handler triggered`)
+        return { useLLM: false, text: handler.response, action: 'continue', stateId: this.state }
+      }
+    }
+
+    // Also check per-state real_life_handlers from PDF
+    const currentState = this.config.states[this.state]
+    if (currentState?.real_life_handlers) {
+      for (const h of currentState.real_life_handlers) {
+        if (matchesAny(lower, h.synonyms || [h.trigger])) {
+          return { useLLM: false, text: h.response, action: 'continue', stateId: this.state }
         }
       }
     }
 
-    // ── 2. Match options in current state ───────────────────────
-    const currentState = FLOW[this.state]
-    if (!currentState) {
-      console.warn(`[ScriptFlow] Unknown state: ${this.state}`)
-      return { useLLM: true }
-    }
+    // ── 2. Check options/conditions in current state ──────────
+    if (currentState?.options) {
+      for (const opt of currentState.options) {
 
-    for (const option of currentState.options) {
-      if (matches(lower, option.match)) {
-        // Capture data
-        if (option.capture) {
-          const val = option.captureValue || userText
-          this.collectedData[option.capture] = val
-          console.log(`[ScriptFlow] 📝 Captured ${option.capture} = "${val}"`)
+        // Rating capture — any digit 1-5
+        if (opt.type === 'rating_capture') {
+          const digit = lower.match(/[1-5]/)
+          const wordMatch = matchesAny(lower, ['excellent','good','average','bad','poor','khub','saro','samanya'])
+          if (digit || wordMatch) {
+            const val = digit ? digit[0] : lower
+            this.collectedData[opt.capture || 'rating'] = val
+            console.log(`[ScriptFlow] ⭐ Rating captured: ${val}`)
+            return this._goTo('rating_done', 'rating', val)
+          }
         }
 
-        // Advance state
-        const nextStateId = option.next
-        const nextState   = FLOW[nextStateId]
-        this.state = nextStateId
+        // Condition match
+        if (opt.type === 'condition' || opt.type === 'choice') {
+          const synonyms = opt.trigger_synonyms || opt.synonyms || [opt.trigger || opt.text]
+          if (matchesAny(lower, synonyms)) {
+            console.log(`[ScriptFlow] ✅ Match: "${opt.trigger || opt.text}"`)
 
-        if (nextStateId === 'end' || !nextState?.text) {
-          this.done = true
-          return { useLLM: false, text: null, action: 'end' }
-        }
+            // Capture
+            if (opt.capture) {
+              const val = opt.captureValue || userText
+              this.collectedData[opt.capture] = val
+            }
 
-        console.log(`[ScriptFlow] ➡️ ${nextStateId}: "${nextState.text.substring(0, 50)}"`)
-        return {
-          useLLM:        false,
-          text:          nextState.text,
-          action:        option.action || 'continue',
-          capture_field: option.capture,
-          capture_value: this.collectedData[option.capture],
-          stateId:       nextStateId,
+            // If condition has its own response text → speak it, stay or move
+            if (opt.response) {
+              const nextId = opt.next_state || this._defaultNext()
+              if (nextId) this.state = nextId
+              if (opt.action === 'end') this.done = true
+              return {
+                useLLM:        false,
+                text:          opt.response,
+                action:        opt.action || 'continue',
+                stateId:       this.state,
+                capture_field: opt.capture,
+                capture_value: opt.capture ? this.collectedData[opt.capture] : null,
+              }
+            }
+
+            // No inline response → go directly to next state and speak its text
+            const nextId = opt.next_state || this._defaultNext()
+            return this._goTo(nextId, opt.capture, opt.capture ? this.collectedData[opt.capture] : null, opt.action)
+          }
         }
       }
     }
 
-    // ── 3. Default transition ───────────────────────────────────
-    const def = currentState.default
-    if (!def) return { useLLM: true }
-
-    if (def.useLLM) {
-      console.log(`[ScriptFlow] 🤖 Default → LLM for state: ${this.state}`)
-      return { useLLM: true }
+    // ── 3. Default transition (user said something, just advance) ─
+    const nextId = this._defaultNext()
+    if (nextId && nextId !== 'end') {
+      console.log(`[ScriptFlow] ➡️ Default advance → ${nextId}`)
+      return this._goTo(nextId)
     }
 
-    // Capture raw userText if default has capture
-    if (def.capture) {
-      this.collectedData[def.capture] = userText
-      console.log(`[ScriptFlow] 📝 Default captured ${def.capture} = "${userText}"`)
-    }
+    // ── 4. Unknown — let LLM handle ───────────────────────────
+    console.log(`[ScriptFlow] 🤖 Unknown input in state ${this.state}, using LLM`)
+    return { useLLM: true }
+  }
 
-    const nextStateId = def.next
-    const nextState   = FLOW[nextStateId]
-    this.state = nextStateId
+  _defaultNext() {
+    const state = this.config.states[this.state]
+    return state?.transitions?.default || null
+  }
 
-    if (nextStateId === 'end' || !nextState?.text) {
+  _goTo(nextStateId, captureField = null, captureValue = null, action = 'continue') {
+    if (!nextStateId || nextStateId === 'end') {
       this.done = true
       return { useLLM: false, text: null, action: 'end' }
     }
 
-    console.log(`[ScriptFlow] ➡️ Default → ${nextStateId}: "${nextState.text.substring(0, 50)}"`)
+    const nextState = this.config.states[nextStateId]
+    if (!nextState) {
+      this.done = true
+      return { useLLM: false, text: null, action: 'end' }
+    }
+
+    this.state = nextStateId
+    if (action === 'end') this.done = true
+
+    console.log(`[ScriptFlow] ➡️ ${nextStateId}: "${nextState.text?.substring(0, 50)}"`)
     return {
       useLLM:        false,
       text:          nextState.text,
-      action:        def.action || 'continue',
-      capture_field: def.capture,
-      capture_value: def.capture ? userText : null,
+      action:        action || 'continue',
       stateId:       nextStateId,
+      capture_field: captureField,
+      capture_value: captureValue,
     }
   }
 
   getSummary() {
-    return {
-      finalState:    this.state,
-      collectedData: this.collectedData,
-    }
+    return { finalState: this.state, collectedData: this.collectedData }
   }
 }
 
-// Parse not needed anymore — we export executor directly
-function parseScript(_rawScript) { return [] }
+// parseScript kept for backward compat — returns empty (not used anymore)
+function parseScript() { return [] }
 
-module.exports = { ScriptFlowExecutor, parseScript, FLOW }
+module.exports = { ScriptFlowExecutor, parseScript, FALLBACK_CONFIG }
