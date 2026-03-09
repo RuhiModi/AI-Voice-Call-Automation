@@ -46,6 +46,16 @@ function StatCard({ label, value, color }) {
   )
 }
 
+// Helper: extract name from contact variables (handles string JSON or object)
+function getContactName(variables, fallback = 'Unknown') {
+  try {
+    const v = typeof variables === 'string' ? JSON.parse(variables) : (variables || {})
+    return v.name || v.Name || v.contact_name || v['Contact Name'] || v.NAME || fallback
+  } catch {
+    return fallback
+  }
+}
+
 export default function CampaignDetail() {
   const { id }   = useParams()
   const navigate = useNavigate()
@@ -135,7 +145,7 @@ export default function CampaignDetail() {
 
   function exportCSV() {
     const header = ['Phone','Name','Outcome','Duration(s)','Time']
-    const rows = calls.map(c => [c.phone, c.variables?.name||'', c.outcome, c.duration_sec, new Date(c.started_at).toLocaleString('en-IN')])
+    const rows = calls.map(c => [c.phone, getContactName(c.variables, ''), c.outcome, c.duration_sec, new Date(c.started_at).toLocaleString('en-IN')])
     const csv = [header,...rows].map(r=>r.join(',')).join('\n')
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}))
@@ -238,14 +248,15 @@ export default function CampaignDetail() {
                 const isExpanded = expandedCall===call.id
                 const transcript = Array.isArray(call.transcript) ? call.transcript : (()=>{try{return JSON.parse(call.transcript||'[]')}catch{return []}})()
                 const cd = (()=>{if(!call.collected_data)return{};if(typeof call.collected_data==='object')return call.collected_data;try{return JSON.parse(call.collected_data)}catch{return{}}})()
+                const contactName = getContactName(call.variables, null)
                 return (
                   <div key={call.id}>
                     <button onClick={()=>setExpandedCall(isExpanded?null:call.id)} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors text-left">
                       <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-sm font-bold text-gray-500 flex-shrink-0">
-                        {(call.variables?.name||call.phone)?.[0]?.toUpperCase()||'?'}
+                        {(contactName || call.phone || '?')[0].toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">{call.variables?.name||'Unknown'}</p>
+                        <p className="font-semibold text-gray-900 text-sm">{contactName || call.phone || 'Unknown'}</p>
                         <p className="text-xs text-gray-500">{call.phone} · {call.duration_sec||0}s</p>
                       </div>
                       <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${oc.bg} ${oc.border}`}>
@@ -263,7 +274,9 @@ export default function CampaignDetail() {
                             {transcript.map((t,ti)=>(
                               <div key={ti} className={`flex ${t.role==='assistant'?'justify-start':'justify-end'}`}>
                                 <div className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm ${t.role==='assistant'?'bg-white border border-gray-200 text-gray-800':'bg-gray-800 text-white'}`}>
-                                  <p className={`text-[10px] font-bold mb-1 ${t.role==='assistant'?'text-gray-400':'text-gray-400'}`}>{t.role==='assistant'?'🤖 AI Agent':'👤 Contact'}</p>
+                                  <p className={`text-[10px] font-bold mb-1 ${t.role==='assistant'?'text-gray-400':'text-gray-400'}`}>
+                                    {t.role==='assistant' ? '🤖 AI Agent' : ('👤 ' + (contactName || 'Contact'))}
+                                  </p>
                                   {t.content||t.text}
                                 </div>
                               </div>
@@ -327,7 +340,7 @@ export default function CampaignDetail() {
                       <tr key={contact.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-3 text-gray-400 text-xs">{i+1}</td>
                         <td className="px-6 py-3 font-medium text-gray-800">{contact.phone}</td>
-                        <td className="px-6 py-3 text-gray-600">{contact.variables?.name||'—'}</td>
+                        <td className="px-6 py-3 text-gray-600">{getContactName(contact.variables, '—')}</td>
                         <td className="px-6 py-3">
                           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${oc.bg} ${oc.border}`}>
                             <div className={`w-1.5 h-1.5 rounded-full ${oc.dot}`}/>
