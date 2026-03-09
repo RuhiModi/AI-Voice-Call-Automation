@@ -65,17 +65,26 @@ class SarvamSTTHandler {
     }
 
     const audioToProcess = this.buffer
-    this.buffer = Buffer.alloc(0)
+    this.buffer = Buffer.alloc(0)  // Reset immediately
+
+    // Sarvam STT limit: ~60 seconds = ~960KB PCM16 at 8kHz
+    // Cap at 30 seconds = 480KB to stay safe
+    const MAX_BYTES = 480000
+    const trimmed = audioToProcess.length > MAX_BYTES
+      ? audioToProcess.slice(audioToProcess.length - MAX_BYTES)
+      : audioToProcess
 
     try {
-      console.log(`[STT:Sarvam] Sending ${(audioToProcess.length / 1024).toFixed(1)}KB to Sarvam...`)
-      const { transcript, detectedLang } = await transcribeWithSarvam(audioToProcess, this.hintLang)
+      console.log(`[STT:Sarvam] Sending ${(trimmed.length / 1024).toFixed(1)}KB to Sarvam...`)
+      const { transcript, detectedLang } = await transcribeWithSarvam(trimmed, this.hintLang)
       if (transcript) {
-        console.log(`[STT:Sarvam] (${detectedLang}): "${transcript}"`)
+        console.log(`[STT:Sarvam] ✅ (${detectedLang}): "${transcript}"`)
         this.onTranscript(transcript, detectedLang)
+      } else {
+        console.log('[STT:Sarvam] Empty transcript returned')
       }
     } catch (err) {
-      console.error('[STT:Sarvam] Error:', err.message)
+      console.error('[STT:Sarvam] Error:', err.message, err.response?.data)
       if (this.onError) this.onError(err)
     }
   }
