@@ -31,6 +31,8 @@ class CallSession {
     this.transcript    = []   // Full conversation [{role, content}]
     this.flowExecutor   = null  // Script flow executor
     this.collectedData = {}   // Data gathered during the call
+    this.llmUsed       = false  // Whether LLM was activated at all
+    this.llmTurns      = 0      // How many turns LLM handled
     this.isActive      = true
     this.startTime     = Date.now()
 
@@ -194,7 +196,9 @@ class CallSession {
       }
 
       // ── 2. LLM fallback — confusion threshold reached ────────
-      console.log(`[Session ${this.sessionId}] 🤖 LLM fallback: "${userText.substring(0,40)}"`)
+      this.llmUsed = true
+      this.llmTurns++
+      console.log(`[Session ${this.sessionId}] 🤖 LLM fallback #${this.llmTurns}: "${userText.substring(0,40)}"`)
       const quickIntent  = detectQuickIntent(userText)
       const systemPrompt = buildSystemPrompt(this.campaign, this.contact, this.language)
       const history      = this.transcript.slice(-6)
@@ -288,6 +292,10 @@ class CallSession {
     console.log(`[Session ${this.sessionId}] 📵 Ended: ${outcome} (${duration}s)`)
 
     try {
+      // Pull final summary from flow executor
+      const flowSummary = this.flowExecutor?.getSummary?.() || {}
+      this.collectedData = { ...this.collectedData, ...(flowSummary.collectedData || {}) }
+
       await callRepo.update(this.sessionId, {
         outcome,
         duration_sec:      duration,
@@ -295,6 +303,11 @@ class CallSession {
         transcript:        JSON.stringify(this.transcript),
         collected_data:    JSON.stringify(this.collectedData),
         ended_at:          new Date().toISOString(),
+        confusion_count:   this.flowExecutor?.confusionCount || 0,
+        acknowledged:      flowSummary.acknowledged ?? null,
+        campaign_type:     this.campaign?.campaign_type || null,
+        llm_used:          this.llmUsed,
+        llm_turns:         this.llmTurns,
       })
 
       await contactRepo.updateStatus(this.contact.id, 'completed', outcome)
