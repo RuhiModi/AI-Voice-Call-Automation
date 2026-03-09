@@ -77,9 +77,27 @@ RESPONSE FORMAT — ALWAYS return valid JSON, nothing else:
 function buildGreeting(campaign, contact, lang = 'gu') {
   const name    = contact?.variables?.name || ''
   const persona = campaign.persona_name || 'Priya'
+
+  // Use script's first line as greeting if available
+  if (campaign.script_content) {
+    let script = campaign.script_content.trim()
+    // Replace {{name}} and {{contact_name}} variables
+    if (name) {
+      script = script.replace(/\{\{name\}\}/gi, name)
+      script = script.replace(/\{\{contact_name\}\}/gi, name)
+    }
+    script = script.replace(/\{\{agent_name\}\}/gi, persona)
+    script = script.replace(/\{\{campaign_name\}\}/gi, campaign.name)
+
+    // Extract first 1-2 sentences as greeting (don't read entire script at once)
+    const sentences = script.split(/(?<=[.!?।])\s+/)
+    const greeting  = sentences.slice(0, 2).join(' ')
+    if (greeting.length > 10) return greeting
+  }
+
+  // Fallback if no script
   const greetFn = GREETINGS[lang] || GREETINGS.gu
   const base    = greetFn(name, persona)
-
   const full = {
     gu: `${base} ${campaign.name} campaign તરફથી call છે. શું હું 2 minute વાત કરી શકું?`,
     hi: `${base} ${campaign.name} campaign की तरफ से call है। क्या मैं 2 minute बात कर सकती हूं?`,
@@ -89,4 +107,3 @@ function buildGreeting(campaign, contact, lang = 'gu') {
 }
 
 module.exports = { buildSystemPrompt, buildGreeting, LANG_NAMES }
-
