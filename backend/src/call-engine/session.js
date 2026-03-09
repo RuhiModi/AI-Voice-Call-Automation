@@ -315,29 +315,40 @@ async function handleWebSocketConnection(ws, req) {
     }
   }
 
+  let _msgCount = 0
   ws.on('message', (data) => {
     const s = activeSessions.get(sessionId)
     if (!s?.isActive) return
 
-    // Vobiz sends JSON-wrapped audio (same format as Plivo/Twilio)
+    _msgCount++
+    // Log first 3 messages to see exact format from Vobiz
+    if (_msgCount <= 3) {
+      const preview = Buffer.isBuffer(data) ? `[Binary ${data.length} bytes]` : data.toString().substring(0, 200)
+      console.log(`[WS] Message #${_msgCount} from Vobiz: ${preview}`)
+    }
+
+    // Try JSON first
     try {
       const msg = JSON.parse(data.toString())
-      
+      if (_msgCount <= 3) console.log(`[WS] Parsed event: "${msg.event}" | keys: ${Object.keys(msg).join(',')}`)
+
       if (msg.event === 'media' && msg.media?.payload) {
-        // Decode base64 mulaw audio from Vobiz
         const audioBuffer = Buffer.from(msg.media.payload, 'base64')
         s.receiveAudio(audioBuffer)
       } else if (msg.event === 'start') {
-        console.log(`[WS] Stream started for session: ${sessionId}`)
+        console.log(`[WS] Stream started | streamSid: ${msg.streamSid || msg.stream_id || 'N/A'}`)
+        console.log(`[WS] Start details:`, JSON.stringify(msg).substring(0, 300))
       } else if (msg.event === 'stop') {
-        console.log(`[WS] Stream stopped for session: ${sessionId}`)
+        console.log(`[WS] Stream stopped`)
+      } else if (msg.event === 'connected') {
+        console.log(`[WS] Connected event received`)
       } else {
-        // Unknown event — log for debugging
-        console.log(`[WS] Unknown event: ${msg.event}`)
+        console.log(`[WS] Unknown event: "${msg.event}" | full: ${JSON.stringify(msg).substring(0,200)}`)
       }
     } catch (e) {
-      // Not JSON — treat as raw binary audio (fallback)
-      s.receiveAudio(data)
+      // Raw binary — treat as mulaw directly
+      if (_msgCount <= 3) console.log(`[WS] Raw binary audio: ${data.length} bytes`)
+      s.receiveAudio(Buffer.isBuffer(data) ? data : Buffer.from(data))
     }
   })
 
