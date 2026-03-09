@@ -8,7 +8,8 @@ const { getAIResponse, parseRescheduleTime } = require('./llm/index')
 const { buildSystemPrompt, buildGreeting }   = require('./prompts')
 const { detectQuickIntent }  = require('./intent')
 const { tryQuickReply }       = require('./quickReply')
-const { parseScript, ScriptFlowExecutor } = require('./scriptFlow')
+const { parseScript, ScriptFlowExecutor }  = require('./scriptFlow')
+const { AnnouncementFlowExecutor }         = require('./announcementFlow')
 const callRepo     = require('../repositories/call.repo')
 const contactRepo  = require('../repositories/contact.repo')
 const campaignRepo = require('../repositories/campaign.repo')
@@ -57,13 +58,22 @@ class CallSession {
 
       console.log(`[Session ${this.sessionId}] ✅ WebSocket open — starting state machine flow`)
 
-      // Load state machine — use campaign's parsed PDF config if available
-      const pdfTexts = this.campaign?.flow_config || null
-      this.flowExecutor = new ScriptFlowExecutor(pdfTexts)
-      const src = pdfTexts ? '📄 PDF' : '⚙️ Fallback'
-      console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src})`)
+      // Pick executor based on campaign type
+      const campaignType = this.campaign?.campaign_type || 'survey'
 
-      // Speak opening (intro state text) — then STOP and wait for user
+      if (campaignType === 'announcement') {
+        // Personalized message + ack flow (e.g. driver route notifications)
+        this.flowExecutor = new AnnouncementFlowExecutor(this.campaign, this.contact)
+        console.log(`[Session ${this.sessionId}] 📢 Announcement flow loaded`)
+      } else {
+        // Survey / verification flow — driven by PDF state machine
+        const pdfTexts = this.campaign?.flow_config || null
+        this.flowExecutor = new ScriptFlowExecutor(pdfTexts)
+        const src = pdfTexts ? '📄 PDF' : '⚙️ Fallback'
+        console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src})`)
+      }
+
+      // Speak opening — then STOP and wait for user
       const opening = this.flowExecutor.getOpening()
       this.transcript.push({ role: 'assistant', content: opening })
       await this.speak(opening)
@@ -148,23 +158,33 @@ class CallSession {
   // ── Process user input through LLM ────────────────────────
   async _processUserInput(userText) {
     try {
-      // ── 1. Hardcoded state machine — ZERO LLM for scripted paths ──
+      // ── 0. Post-LLM resume for announcement flow ─────────────
+      // After LLM handled one turn, next input goes back to announcement executor
+      if (this._postLLMPending && this.flowExecutor instanceof AnnouncementFlowExecutor) {
+        this._postLLMPending = false
+        const resumeResult = this.flowExecutor.resumeAfterLLM(userText)
+        this.transcript.push({ role: 'assistant', content: resumeResult.text })
+        await this.speak(resumeResult.text)
+        if (resumeResult.action === 'end') await this._handleAction(resumeResult)
+        return
+      }
+
+      // ── 1. Flow executor (ScriptFlow or AnnouncementFlow) ─────
       const flowResult = this.flowExecutor.process(userText)
 
       if (!flowResult.useLLM) {
-        // Capture collected data into session
+        // Sync collected data
         const summary = this.flowExecutor.getSummary()
-        this.collectedData = { ...this.collectedData, ...summary.collectedData }
+        this.collectedData = { ...this.collectedData, ...(summary.collectedData || {}) }
 
         if (!flowResult.text) {
-          // State machine reached END
-          console.log(`[Session ${this.sessionId}] 📋 ScriptFlow: END reached`)
+          console.log(`[Session ${this.sessionId}] ✅ Flow END reached`)
           await this._handleAction({ action: 'end' })
           return
         }
 
         this.transcript.push({ role: 'assistant', content: flowResult.text })
-        console.log(`[Session ${this.sessionId}] 📋 ScriptFlow [${flowResult.stateId}] (no LLM): "${flowResult.text.substring(0,60)}"`)
+        console.log(`[Session ${this.sessionId}] 📋 Flow [${flowResult.stateId || 'announcement'}]: "${flowResult.text.substring(0,60)}"`)
         await this.speak(flowResult.text)
 
         if (flowResult.action && flowResult.action !== 'continue') {
@@ -173,25 +193,28 @@ class CallSession {
         return
       }
 
-      // ── 2. LLM fallback — only for genuinely ambiguous/unexpected input ──
-      console.log(`[Session ${this.sessionId}] 🤖 LLM fallback for unexpected: "${userText.substring(0,40)}"`)
+      // ── 2. LLM fallback — confusion threshold reached ────────
+      console.log(`[Session ${this.sessionId}] 🤖 LLM fallback: "${userText.substring(0,40)}"`)
       const quickIntent  = detectQuickIntent(userText)
       const systemPrompt = buildSystemPrompt(this.campaign, this.contact, this.language)
       const history      = this.transcript.slice(-6)
 
       const response = await getAIResponse(systemPrompt, history, userText)
 
-      if (quickIntent && response.action === 'continue') {
-        response.action = quickIntent
-      }
-
+      if (quickIntent && response.action === 'continue') response.action = quickIntent
       if (response.detected_language) this.language = response.detected_language
       this.collectedData = { ...this.collectedData, ...response.collected_data }
 
       this.transcript.push({ role: 'assistant', content: response.text })
       console.log(`[Session ${this.sessionId}] AI (${response.provider}) [${response.action}]: "${response.text}"`)
-
       await this.speak(response.text)
+
+      // ── 3. After LLM — let announcement flow resume if applicable ──
+      // Register next user input as post-LLM check
+      if (this.flowExecutor instanceof AnnouncementFlowExecutor) {
+        this._postLLMPending = true
+      }
+
       await this._handleAction(response)
     } catch (err) {
       console.error(`[Session ${this.sessionId}] Process input error:`, err)
