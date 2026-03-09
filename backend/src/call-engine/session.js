@@ -57,9 +57,11 @@ class CallSession {
 
       console.log(`[Session ${this.sessionId}] ✅ WebSocket open — starting state machine flow`)
 
-      // Always use hardcoded state machine (no LLM for scripted states)
-      this.flowExecutor = new ScriptFlowExecutor()
-      console.log(`[Session ${this.sessionId}] 📋 Hardcoded script flow loaded`)
+      // Load state machine — use campaign's parsed PDF config if available
+      const pdfTexts = this.campaign?.flow_config || null
+      this.flowExecutor = new ScriptFlowExecutor(pdfTexts)
+      const src = pdfTexts ? '📄 PDF' : '⚙️ Fallback'
+      console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src})`)
 
       // Speak opening (intro state text) — then STOP and wait for user
       const opening = this.flowExecutor.getOpening()
