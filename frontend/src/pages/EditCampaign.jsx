@@ -56,6 +56,7 @@ export default function EditCampaign() {
   const [form, setForm] = useState({
     name: '', description: '', campaign_type: 'custom',
     language_priority: 'gu', script_type: 'manual', script_content: '',
+    announcement_template: '', closing_message: '',
     persona_name: 'Priya', persona_tone: 'friendly',
     data_fields: [], caller_id: '',
     max_concurrent_calls: 5, max_retries: 2,
@@ -80,6 +81,8 @@ export default function EditCampaign() {
           language_priority:    c.language_priority || 'gu',
           script_type:          c.script_type || 'manual',
           script_content:       c.script_content || '',
+          announcement_template: c.announcement_template || '',
+          closing_message:       c.closing_message || '',
           persona_name:         c.persona_name || 'Priya',
           persona_tone:         c.persona_tone || 'friendly',
           data_fields:          c.data_fields || [],
@@ -248,6 +251,34 @@ export default function EditCampaign() {
           <>
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Script / Instructions</label>
+              {/* Announcement/Reminder — message template with variables */}
+              {(form.campaign_type === 'announcement' || form.campaign_type === 'reminder') && (
+                <div className="mb-4 p-4 bg-[#fffbf0] border border-[#fde59a] rounded-xl space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[#8f540f] uppercase tracking-wider mb-2">
+                      Message Template
+                      <span className="text-[#b86f0e] normal-case font-normal ml-2">Use {'{{name}}'}, {'{{route}}'} for contact columns</span>
+                    </label>
+                    <textarea
+                      value={form.announcement_template}
+                      onChange={e => set('announcement_template', e.target.value)}
+                      rows={3}
+                      placeholder="નમસ્તે {{name}}, આપનો રૂટ {{route}} છે. સમજ્યા?"
+                      className="w-full bg-white border border-[#fde59a] rounded-xl px-4 py-3 text-sm font-mono resize-none focus:outline-none focus:border-[#f5a623]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#8f540f] uppercase tracking-wider mb-2">Closing Message</label>
+                    <input
+                      value={form.closing_message}
+                      onChange={e => set('closing_message', e.target.value)}
+                      placeholder="ઠીક છે. ધ્યાન રાખજો. આભાર."
+                      className="w-full bg-white border border-[#fde59a] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#f5a623]"
+                    />
+                  </div>
+                </div>
+              )}
+
               <textarea value={form.script_content} onChange={e => set('script_content', e.target.value)}
                 className={inp + ' resize-none font-mono text-xs'} rows={14}
                 placeholder={`Write your call script here...\n\nExample:\nYou are calling to offer a special Diwali discount.\nAsk the customer if they are interested in our product.\nCollect: name, interest level (1-5), callback time preference.\n\nUse {{name}} to personalize with contact's name.`}/>
