@@ -95,3 +95,37 @@ export const passwordApi = {
   change: (currentPassword, newPassword) =>
     api.post('/auth/change-password', { currentPassword, newPassword }),
 }
+
+// ── Billing ───────────────────────────────────────────────────
+export const billingApi = {
+  getUsage:   ()     => api.get('/billing/usage'),
+  getHistory: ()     => api.get('/billing/history'),
+  getPlans:   ()     => api.get('/billing/plans'),
+  upgrade:    (plan) => api.post('/billing/upgrade', { plan }),
+}
+
+// ── Settings ──────────────────────────────────────────────────
+export const settingsApi = {
+  get:    ()     => api.get('/settings'),
+  update: (data) => api.put('/settings', data),
+}
+
+// ── User ──────────────────────────────────────────────────────
+export const userApi = {
+  getProfile:    ()     => api.get('/auth/me'),
+  updateProfile: (data) => api.put('/auth/profile', data),
+}
+
+// ── Contacts ──────────────────────────────────────────────────
+export const contactApi = {
+  list:   (campaignId, params) => api.get(`/campaigns/${campaignId}/contacts`, { params }),
+  upload: (campaignId, form)   => api.post(`/campaigns/${campaignId}/contacts`, form),
+  delete: (campaignId, id)     => api.delete(`/campaigns/${campaignId}/contacts/${id}`),
+}
+
+// ── Call Logs ─────────────────────────────────────────────────
+export const callApi = {
+  list:   (campaignId, params) => api.get(`/campaigns/${campaignId}/calls`, { params }),
+  get:    (campaignId, id)     => api.get(`/campaigns/${campaignId}/calls/${id}`),
+  export: (campaignId)         => api.get(`/campaigns/${campaignId}/calls/export`),
+}
