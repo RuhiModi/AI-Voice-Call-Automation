@@ -7,6 +7,7 @@ const { streamTTSToSocket }   = require('./tts/index')
 const { getAIResponse, parseRescheduleTime } = require('./llm/index')
 const { buildSystemPrompt, buildGreeting }   = require('./prompts')
 const { detectQuickIntent }  = require('./intent')
+const { tryQuickReply }       = require('./quickReply')
 const callRepo     = require('../repositories/call.repo')
 const contactRepo  = require('../repositories/contact.repo')
 const campaignRepo = require('../repositories/campaign.repo')
@@ -139,6 +140,15 @@ class CallSession {
     try {
       // Quick intent check — catches obvious DNC/transfer/reschedule before LLM
       const quickIntent = detectQuickIntent(userText)
+
+      // ⚡ Try script-driven reply first (no LLM needed for simple acks)
+      const quickReply = tryQuickReply(userText, this.campaign?.script_content, this.transcript)
+      if (quickReply) {
+        this.transcript.push({ role: 'assistant', content: quickReply.text })
+        console.log(`[Session ${this.sessionId}] ⚡ QuickReply (no LLM): "${quickReply.text}"`)
+        await this.speak(quickReply.text)
+        return
+      }
 
       const systemPrompt = buildSystemPrompt(this.campaign, this.contact, this.language)
       const history      = this.transcript.slice(-10)
