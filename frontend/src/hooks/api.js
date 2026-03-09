@@ -129,3 +129,38 @@ export const callApi = {
   get:    (campaignId, id)     => api.get(`/campaigns/${campaignId}/calls/${id}`),
   export: (campaignId)         => api.get(`/campaigns/${campaignId}/calls/export`),
 }
+
+// ── Simulate / Simulator ──────────────────────────────────────
+export const simulateApi = {
+  start:    (data)       => api.post('/simulate/start', data),
+  send:     (id, text)   => api.post(`/simulate/${id}/message`, { text }),
+  end:      (id)         => api.post(`/simulate/${id}/end`),
+  getCampaigns: ()       => api.get('/campaigns'),
+}
+
+// ── Analytics ─────────────────────────────────────────────────
+export const analyticsApi = {
+  overview:  (params) => api.get('/analytics/overview', { params }),
+  campaigns: (params) => api.get('/analytics/campaigns', { params }),
+}
+
+// ── Sheets / Integrations ─────────────────────────────────────
+export const sheetsApi = {
+  connect:    (data) => api.post('/integrations/sheets/connect', data),
+  disconnect: ()     => api.post('/integrations/sheets/disconnect'),
+  status:     ()     => api.get('/integrations/sheets/status'),
+}
+
+// ── Team ──────────────────────────────────────────────────────
+export const teamApi = {
+  list:   ()           => api.get('/team'),
+  invite: (email, role) => api.post('/team/invite', { email, role }),
+  remove: (id)         => api.delete(`/team/${id}`),
+}
+
+// ── Notifications ─────────────────────────────────────────────
+export const notificationApi = {
+  list:   ()   => api.get('/notifications'),
+  markRead: (id) => api.put(`/notifications/${id}/read`),
+  markAllRead: () => api.put('/notifications/read-all'),
+}
