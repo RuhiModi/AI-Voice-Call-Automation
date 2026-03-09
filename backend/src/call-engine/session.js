@@ -55,21 +55,19 @@ class CallSession {
         return
       }
 
-      console.log(`[Session ${this.sessionId}] ✅ WebSocket open — speaking greeting`)
-      const greeting = buildGreeting(this.campaign, this.contact, this.language)
-      this.transcript.push({ role: 'assistant', content: greeting })
-      await this.speak(greeting)
+      console.log(`[Session ${this.sessionId}] ✅ WebSocket open — starting state machine flow`)
+
+      // Always use hardcoded state machine (no LLM for scripted states)
+      this.flowExecutor = new ScriptFlowExecutor()
+      console.log(`[Session ${this.sessionId}] 📋 Hardcoded script flow loaded`)
+
+      // Speak opening (intro state text) — then STOP and wait for user
+      const opening = this.flowExecutor.getOpening()
+      this.transcript.push({ role: 'assistant', content: opening })
+      await this.speak(opening)
 
       this._setupSTT()
       this._setupVAD()
-      // Parse campaign script into flow steps
-      if (this.campaign?.script_content) {
-        const steps = parseScript(this.campaign.script_content)
-        if (steps.length > 0) {
-          this.flowExecutor = new ScriptFlowExecutor(steps)
-          console.log(`[Session ${this.sessionId}] 📋 Script flow loaded: ${steps.length} steps`)
-        }
-      }
 
     } catch (err) {
       console.error(`[Session ${this.sessionId}] Start error:`, err)
@@ -148,45 +146,41 @@ class CallSession {
   // ── Process user input through LLM ────────────────────────
   async _processUserInput(userText) {
     try {
-      // Quick intent check — catches obvious DNC/transfer/reschedule before LLM
-      const quickIntent = detectQuickIntent(userText)
+      // ── 1. Hardcoded state machine — ZERO LLM for scripted paths ──
+      const flowResult = this.flowExecutor.process(userText)
 
-      // ⚡ 1. Try structured script flow first (fastest — no LLM)
-      if (this.flowExecutor) {
-        const flowResult = this.flowExecutor.process(userText)
-        if (!flowResult.useLLM && flowResult.text) {
-          // Capture data if needed
-          if (flowResult.capture_field && flowResult.capture_value) {
-            this.collectedData[flowResult.capture_field] = flowResult.capture_value
-          }
-          this.transcript.push({ role: 'assistant', content: flowResult.text })
-          console.log(`[Session ${this.sessionId}] 📋 ScriptFlow (no LLM): "${flowResult.text.substring(0,60)}"`)
-          await this.speak(flowResult.text)
-          if (flowResult.action && flowResult.action !== 'continue') {
-            await this._handleAction(flowResult)
-          }
+      if (!flowResult.useLLM) {
+        // Capture collected data into session
+        const summary = this.flowExecutor.getSummary()
+        this.collectedData = { ...this.collectedData, ...summary.collectedData }
+
+        if (!flowResult.text) {
+          // State machine reached END
+          console.log(`[Session ${this.sessionId}] 📋 ScriptFlow: END reached`)
+          await this._handleAction({ action: 'end' })
           return
         }
-      }
 
-      // ⚡ 2. Try simple ack quick reply (no LLM for "હા", "okay" etc)
-      const quickReply = tryQuickReply(userText, this.campaign?.script_content, this.transcript)
-      if (quickReply) {
-        this.transcript.push({ role: 'assistant', content: quickReply.text })
-        console.log(`[Session ${this.sessionId}] ⚡ QuickReply (no LLM): "${quickReply.text}"`)
-        await this.speak(quickReply.text)
+        this.transcript.push({ role: 'assistant', content: flowResult.text })
+        console.log(`[Session ${this.sessionId}] 📋 ScriptFlow [${flowResult.stateId}] (no LLM): "${flowResult.text.substring(0,60)}"`)
+        await this.speak(flowResult.text)
+
+        if (flowResult.action && flowResult.action !== 'continue') {
+          await this._handleAction(flowResult)
+        }
         return
       }
 
+      // ── 2. LLM fallback — only for genuinely ambiguous/unexpected input ──
+      console.log(`[Session ${this.sessionId}] 🤖 LLM fallback for unexpected: "${userText.substring(0,40)}"`)
+      const quickIntent  = detectQuickIntent(userText)
       const systemPrompt = buildSystemPrompt(this.campaign, this.contact, this.language)
-      const history      = this.transcript.slice(-10)
+      const history      = this.transcript.slice(-6)
 
       const response = await getAIResponse(systemPrompt, history, userText)
 
-      // Quick intent overrides LLM if LLM missed it
       if (quickIntent && response.action === 'continue') {
         response.action = quickIntent
-        console.log(`[Session ${this.sessionId}] Quick intent override: ${quickIntent}`)
       }
 
       if (response.detected_language) this.language = response.detected_language
