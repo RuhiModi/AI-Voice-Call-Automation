@@ -97,7 +97,7 @@ class CallSession {
         this.sttHandler.write(this.audioBuffer)
         this.audioBuffer = Buffer.alloc(0)
       }
-    }, 900)
+    }, 400)  // Reduced from 900ms for faster response
   }
 
   // ── Receive audio from WebSocket ───────────────────────────
