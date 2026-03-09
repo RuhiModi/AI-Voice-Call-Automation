@@ -47,7 +47,7 @@ LANGUAGE RULES (CRITICAL):
 TONE: ${tone} — be respectful, clear, and natural on a phone call
 
 CAMPAIGN CONTEXT / SCRIPT:
-${campaign.script_content || 'Introduce yourself and have a helpful, brief conversation.'}
+${(campaign.script_content || 'Introduce yourself and have a helpful, brief conversation.').slice(0, 500)}
 
 YOUR GOAL:
 Collect the following information: ${dataFields}
