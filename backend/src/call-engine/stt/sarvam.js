@@ -33,7 +33,7 @@ async function transcribeWithSarvam(audioBuffer, hintLang = 'gu') {
   // Sarvam expects WAV/PCM — we send raw PCM with WAV header
   const wavBuffer = _addWavHeader(audioBuffer, 8000, 1, 16)
   form.append('file', wavBuffer, { filename: 'audio.wav', contentType: 'audio/wav' })
-  form.append('model', 'saarika:v2')
+  form.append('model', 'saarika:v2.5')
   form.append('language_code', LANG_MAP[hintLang] || 'gu-IN')
   // Enable multi-language detection
   form.append('with_timestamps', 'false')
