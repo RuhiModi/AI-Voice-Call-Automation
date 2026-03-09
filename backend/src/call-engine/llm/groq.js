@@ -23,18 +23,25 @@ function getClient() {
 async function getGroqResponse(systemPrompt, history, userText) {
   const groq = getClient()
   const completion = await groq.chat.completions.create({
-    model:       config.groqModel,
+    model:       'llama-3.1-8b-instant',  // Fast model — 3x faster than 70b
     messages: [
       { role: 'system', content: systemPrompt },
-      ...history.slice(-10),
+      ...history.slice(-4),  // Only last 4 turns to save tokens
       { role: 'user', content: userText },
     ],
     response_format: { type: 'json_object' },
-    max_tokens:  150,  // Short responses for phone calls
+    max_tokens:  500,  // Must be enough for full JSON object
     temperature: 0.7,
   })
 
-  const parsed = JSON.parse(completion.choices[0].message.content)
+  let parsed = {}
+  try {
+    parsed = JSON.parse(completion.choices[0].message.content)
+  } catch (e) {
+    // If JSON parse fails, extract text directly
+    const raw = completion.choices[0].message.content
+    parsed = { text: raw, action: 'continue' }
+  }
   return {
     text:               parsed.text               || 'માફ કરો, ફરી પ્રયાસ કરો.',
     action:             parsed.action             || 'continue',
