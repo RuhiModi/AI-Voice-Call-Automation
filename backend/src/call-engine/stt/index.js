@@ -44,14 +44,17 @@ class SarvamSTTHandler {
     this.buffer       = Buffer.alloc(0)
     this.destroyed    = false
 
-    // MIN_BUFFER: ~800ms of audio at 8kHz 16-bit = 12800 bytes
-    this.MIN_BUFFER_SIZE = 12800
+    // MIN_BUFFER: ~200ms of audio at 8kHz 16-bit = 3200 bytes
+    this.MIN_BUFFER_SIZE = 3200
   }
 
   // Write audio chunks (called from session.receiveAudio)
   write(audioChunk) {
     if (this.destroyed) return
     this.buffer = Buffer.concat([this.buffer, audioChunk])
+    if (this.buffer.length % 16000 < audioChunk.length) {
+      console.log(`[STT:Sarvam] Buffer: ${(this.buffer.length/1024).toFixed(1)}KB`)
+    }
   }
 
   // Called by VAD when user stops speaking — flush buffer to Sarvam
@@ -87,17 +90,18 @@ class SarvamSTTHandler {
 // Detects when user stops speaking using RMS energy.
 // Works the same regardless of STT provider.
 class VoiceActivityDetector {
-  constructor(onSilenceDetected, silenceThresholdMs = 800) {
+  constructor(onSilenceDetected, silenceThresholdMs = 600) {
     this.onSilenceDetected  = onSilenceDetected
     this.silenceThresholdMs = silenceThresholdMs
     this.isSpeaking         = false
     this.silenceTimer       = null
-    this.ENERGY_THRESHOLD   = 300  // Tune: lower = more sensitive
+    this.ENERGY_THRESHOLD   = 100  // Lowered: mulaw-decoded PCM16 has smaller range
   }
 
   processChunk(audioBuffer) {
     const energy = this._rms(audioBuffer)
     if (energy > this.ENERGY_THRESHOLD) {
+      if (!this.isSpeaking) console.log(`[VAD] 🗣️ Speech detected (energy: ${energy.toFixed(0)})`)
       this.isSpeaking = true
       if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null }
     } else if (this.isSpeaking && !this.silenceTimer) {
@@ -122,4 +126,3 @@ class VoiceActivityDetector {
 }
 
 module.exports = { createSTTHandler, VoiceActivityDetector, SarvamSTTHandler }
-
