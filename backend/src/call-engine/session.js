@@ -113,11 +113,14 @@ class CallSession {
     const { mulawToPcm16 } = require('./tts/audioConvert')
     const buffer = mulawToPcm16(mulawBuffer)
 
+    // VAD decides if user is speaking
     this.vad?.processChunk(buffer)
 
     if (this.sttHandler?.provider === 'sarvam') {
-      // Sarvam: accumulate in handler's internal buffer
-      this.sttHandler.write(buffer)
+      // Only buffer audio when user is actually speaking — prevents huge silent buffers
+      if (this.vad?.isSpeaking) {
+        this.sttHandler.write(buffer)
+      }
     } else {
       // Google: send in 3200-byte chunks (200ms at 8kHz 16-bit)
       this.audioBuffer = Buffer.concat([this.audioBuffer, buffer])
