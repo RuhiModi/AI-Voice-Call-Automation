@@ -89,10 +89,20 @@ function buildGreeting(campaign, contact, lang = 'gu') {
     script = script.replace(/\{\{agent_name\}\}/gi, persona)
     script = script.replace(/\{\{campaign_name\}\}/gi, campaign.name)
 
-    // Extract first 1-2 sentences as greeting (don't read entire script at once)
-    const sentences = script.split(/(?<=[.!?।])\s+/)
-    const greeting  = sentences.slice(0, 2).join(' ')
-    if (greeting.length > 10) return greeting
+    // Extract first clean line as greeting — skip emoji/instruction lines
+    const lines = script.split(/\n/).map(l => l.trim()).filter(l => l.length > 10)
+    // Find first line that looks like speech (not an instruction like "If user...")
+    const greetingLine = lines.find(l =>
+      !l.match(/^[0-9🔢1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣🔟]/u) &&
+      !l.toLowerCase().startsWith('if ') &&
+      !l.toLowerCase().startsWith('when ') &&
+      l.length > 15
+    )
+    if (greetingLine) {
+      // Take first 2 sentences max from this line
+      const sentences = greetingLine.split(/(?<=[.!?।])\s+/)
+      return sentences.slice(0, 2).join(' ')
+    }
   }
 
   // Fallback if no script
