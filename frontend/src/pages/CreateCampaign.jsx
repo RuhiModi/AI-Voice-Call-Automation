@@ -72,13 +72,15 @@ export default function CreateCampaign() {
   const [launched,     setLaunched]     = useState(false)
   const [campaignId,   setCampaignId]   = useState(null)
   const [dragOver,     setDragOver]     = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [advanced, setAdvanced] = useState({
     persona_name:         'Priya',
+    persona_tone:         'friendly',
     max_concurrent_calls: 3,
     calling_hours_start:  '09:00',
     calling_hours_end:    '21:00',
     max_retries:          2,
+    schedule_mode:        'now',    // 'now' | 'schedule'
+    schedule_start:       '',
   })
 
   const selectedMode = MODES.find(m => m.id === mode)
@@ -156,6 +158,9 @@ export default function CreateCampaign() {
     if (mode === 'survey' && !pdfFile) {
       toast.error('Please upload the question PDF'); return
     }
+    if (advanced.schedule_mode === 'schedule' && !advanced.schedule_start) {
+      toast.error('Please set when to start calls'); return
+    }
 
     setLoading(true)
     try {
@@ -169,10 +174,12 @@ export default function CreateCampaign() {
         script_content:       mode === 'announcement' ? message : '',
         announcement_template: mode === 'announcement' ? message : null,
         persona_name:         advanced.persona_name,
+        persona_tone:         advanced.persona_tone,
         max_concurrent_calls: advanced.max_concurrent_calls,
         calling_hours_start:  advanced.calling_hours_start,
         calling_hours_end:    advanced.calling_hours_end,
         max_retries:          advanced.max_retries,
+        schedule_start:       advanced.schedule_mode === 'schedule' ? advanced.schedule_start : null,
         status:               'draft',
       }
 
@@ -240,7 +247,9 @@ export default function CreateCampaign() {
   }
 
   const preview = buildPreview()
-  const canLaunch = mode && contactFile && (mode === 'survey' ? !!pdfFile : !!message.trim())
+  const canLaunch = mode && contactFile && advanced.persona_tone &&
+    (advanced.schedule_mode === 'now' || !!advanced.schedule_start) &&
+    (mode === 'survey' ? !!pdfFile : !!message.trim())
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 pb-32">
@@ -474,49 +483,97 @@ export default function CreateCampaign() {
         </Section>
       )}
 
-      {/* ── ADVANCED (collapsed by default) ──────────────────── */}
+      {/* ── STEP 5: Schedule — MANDATORY ─────────────────────── */}
       {mode && (
-        <div className="mb-6">
-          <button onClick={() => setShowAdvanced(v => !v)}
-            className="flex items-center gap-2 text-xs text-[#8a8a8a] hover:text-[#525252] transition-colors py-2">
-            <svg className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
-              fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-            Advanced settings (agent name, calling hours, retries)
-          </button>
-
-          {showAdvanced && (
-            <div className="bg-white border border-[#ede7dc] rounded-2xl p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Agent Name</label>
-                  <input value={advanced.persona_name}
-                    onChange={e => setAdvanced(a => ({ ...a, persona_name: e.target.value }))}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Concurrent Calls</label>
-                  <input type="number" min={1} max={20} value={advanced.max_concurrent_calls}
-                    onChange={e => setAdvanced(a => ({ ...a, max_concurrent_calls: +e.target.value }))}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call From</label>
-                  <input type="time" value={advanced.calling_hours_start}
-                    onChange={e => setAdvanced(a => ({ ...a, calling_hours_start: e.target.value }))}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call Until</label>
-                  <input type="time" value={advanced.calling_hours_end}
-                    onChange={e => setAdvanced(a => ({ ...a, calling_hours_end: e.target.value }))}
-                    className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
-                </div>
-              </div>
-            </div>
+        <Section label="5. When to start calling?" done={advanced.schedule_mode === 'now' || !!advanced.schedule_start}>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {[
+              { id: 'now',      emoji: '⚡', label: 'Start Now',    sub: 'Calls begin immediately' },
+              { id: 'schedule', emoji: '📅', label: 'Schedule',     sub: 'Pick a date & time' },
+            ].map(opt => (
+              <button key={opt.id}
+                onClick={() => setAdvanced(a => ({ ...a, schedule_mode: opt.id, schedule_start: opt.id === 'now' ? '' : a.schedule_start }))}
+                className={`p-4 rounded-2xl border-2 text-left transition-all
+                  ${advanced.schedule_mode === opt.id
+                    ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
+                    : 'border-[#ede7dc] hover:border-[#bbb] bg-white'}`}>
+                <span className="text-xl block mb-1">{opt.emoji}</span>
+                <p className={`font-bold text-sm ${advanced.schedule_mode === opt.id ? 'text-white' : 'text-[#1a1a1a]'}`}>{opt.label}</p>
+                <p className={`text-xs mt-0.5 ${advanced.schedule_mode === opt.id ? 'text-white/60' : 'text-[#8a8a8a]'}`}>{opt.sub}</p>
+              </button>
+            ))}
+          </div>
+          {advanced.schedule_mode === 'schedule' && (
+            <input type="datetime-local"
+              value={advanced.schedule_start}
+              min={new Date().toISOString().slice(0,16)}
+              onChange={e => setAdvanced(a => ({ ...a, schedule_start: e.target.value }))}
+              className={`w-full border-2 rounded-xl px-4 py-3 text-sm outline-none transition-all
+                ${!advanced.schedule_start ? 'border-orange-300 bg-orange-50' : 'border-[#ede7dc] bg-[#faf8f4] focus:border-[#1a1a1a]'}`} />
           )}
-        </div>
+          {advanced.schedule_mode === 'schedule' && !advanced.schedule_start && (
+            <p className="text-xs text-orange-500 mt-1.5 font-medium">⚠️ Please set a date and time</p>
+          )}
+        </Section>
+      )}
+
+      {/* ── STEP 6: Agent Settings — VISIBLE, MANDATORY tone ──── */}
+      {mode && (
+        <Section label="6. Agent settings" done={!!advanced.persona_tone}>
+          {/* Tone — mandatory */}
+          <div className="mb-5">
+            <label className="block text-xs font-bold text-[#3d3d3d] uppercase tracking-wider mb-2">
+              Agent Tone <span className="text-red-400">*</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'friendly',     emoji: '😊', label: 'Friendly',     desc: 'Warm, approachable' },
+                { id: 'professional', emoji: '💼', label: 'Professional',  desc: 'Formal, structured' },
+                { id: 'empathetic',   emoji: '🤝', label: 'Empathetic',   desc: 'Caring, patient' },
+              ].map(t => (
+                <button key={t.id}
+                  onClick={() => setAdvanced(a => ({ ...a, persona_tone: t.id }))}
+                  className={`p-3 rounded-xl border-2 text-center transition-all
+                    ${advanced.persona_tone === t.id
+                      ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
+                      : 'border-[#ede7dc] hover:border-[#bbb] bg-white'}`}>
+                  <span className="text-xl block mb-1">{t.emoji}</span>
+                  <p className={`font-bold text-xs ${advanced.persona_tone === t.id ? 'text-white' : 'text-[#1a1a1a]'}`}>{t.label}</p>
+                  <p className={`text-[10px] mt-0.5 ${advanced.persona_tone === t.id ? 'text-white/60' : 'text-[#aaa]'}`}>{t.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Agent name + calling window */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Agent Name</label>
+              <input value={advanced.persona_name}
+                onChange={e => setAdvanced(a => ({ ...a, persona_name: e.target.value }))}
+                placeholder="Priya"
+                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Simultaneous Calls</label>
+              <input type="number" min={1} max={20} value={advanced.max_concurrent_calls}
+                onChange={e => setAdvanced(a => ({ ...a, max_concurrent_calls: +e.target.value }))}
+                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call From</label>
+              <input type="time" value={advanced.calling_hours_start}
+                onChange={e => setAdvanced(a => ({ ...a, calling_hours_start: e.target.value }))}
+                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call Until</label>
+              <input type="time" value={advanced.calling_hours_end}
+                onChange={e => setAdvanced(a => ({ ...a, calling_hours_end: e.target.value }))}
+                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+            </div>
+          </div>
+        </Section>
       )}
 
       {/* ── LAUNCH BUTTON — sticky bottom ────────────────────── */}
@@ -526,7 +583,13 @@ export default function CreateCampaign() {
             {!canLaunch ? (
               <div className="flex items-center gap-3 px-5 py-4 bg-[#f5f5f5] rounded-2xl">
                 <div className="flex gap-1">
-                  {[!!mode, !!contactFile, mode === 'survey' ? !!pdfFile : message.trim().length > 10].map((done, i) => (
+                  {[
+                    !!mode,
+                    !!contactFile,
+                    mode === 'survey' ? !!pdfFile : message.trim().length > 10,
+                    advanced.schedule_mode === 'now' || !!advanced.schedule_start,
+                    !!advanced.persona_tone,
+                  ].map((done, i) => (
                     <div key={i} className={`w-2 h-2 rounded-full transition-all ${done ? 'bg-[#228248]' : 'bg-[#ddd]'}`} />
                   ))}
                 </div>
@@ -534,7 +597,10 @@ export default function CreateCampaign() {
                   {!mode ? 'Choose what kind of call to make'
                     : !contactFile ? 'Upload your contact list'
                     : mode === 'survey' && !pdfFile ? 'Upload your question PDF'
-                    : 'Write your message'}
+                    : !message.trim() && mode !== 'survey' ? 'Write your message'
+                    : advanced.schedule_mode === 'schedule' && !advanced.schedule_start ? 'Set a schedule date & time'
+                    : !advanced.persona_tone ? 'Choose agent tone (Step 6)'
+                    : 'Almost there!'}
                 </p>
               </div>
             ) : (
