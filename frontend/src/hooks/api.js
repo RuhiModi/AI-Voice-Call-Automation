@@ -85,3 +85,13 @@ export const campaignApi = {
   extractFromURL: (id, url) =>
     api.post(`/campaigns/${id}/script/url`, { url }),
 }
+
+// ── Password ──────────────────────────────────────────────────
+export const passwordApi = {
+  forgot: (email) =>
+    api.post('/auth/forgot-password', { email }),
+  reset: (token, password) =>
+    api.post('/auth/reset-password', { token, password }),
+  change: (currentPassword, newPassword) =>
+    api.post('/auth/change-password', { currentPassword, newPassword }),
+}
