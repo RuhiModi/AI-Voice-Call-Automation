@@ -56,6 +56,203 @@ function getContactName(variables, fallback = 'Unknown') {
   }
 }
 
+
+// ── Plain-language Results Summary — designed for non-tech clients ──────────
+function ResultsSummary({ calls, campaign, stats }) {
+  if (!calls || calls.length === 0) {
+    return (
+      <div className="p-12 text-center text-gray-400">
+        <div className="text-5xl mb-4">📊</div>
+        <p className="font-semibold text-gray-500">No results yet</p>
+        <p className="text-sm mt-1">Results will appear here as calls complete</p>
+      </div>
+    )
+  }
+
+  const isAnnouncement = campaign?.campaign_type === 'announcement' || campaign?.campaign_type === 'reminder'
+  const total      = calls.length
+  const completed  = calls.filter(c => c.outcome === 'completed').length
+  const rescheduled= calls.filter(c => c.outcome === 'rescheduled').length
+  const noAnswer   = calls.filter(c => c.outcome === 'no_answer' || c.outcome === 'failed').length
+  const dnc        = calls.filter(c => c.outcome === 'dnc').length
+  const acknowledged = calls.filter(c => c.acknowledged === true).length
+  const notAcked   = calls.filter(c => c.acknowledged === false).length
+  const pct = n => total ? Math.round((n / total) * 100) : 0
+
+  // Parse collected_data per call
+  const getCD = c => {
+    if (!c.collected_data) return {}
+    if (typeof c.collected_data === 'object') return c.collected_data
+    try { return JSON.parse(c.collected_data) } catch { return {} }
+  }
+
+  // For survey campaigns — aggregate collected fields
+  const allFields = {}
+  calls.forEach(c => {
+    const cd = getCD(c)
+    Object.entries(cd).forEach(([k, v]) => {
+      if (!allFields[k]) allFields[k] = []
+      if (v) allFields[k].push(String(v))
+    })
+  })
+
+  // Need manual follow-up = confusion ≥ 2 OR not acknowledged
+  const needFollowUp = calls.filter(c =>
+    (c.confusion_count >= 2) || (c.acknowledged === false && c.outcome === 'completed')
+  )
+
+  const getContactName = (call) => {
+    try {
+      const v = typeof call.variables === 'string' ? JSON.parse(call.variables) : (call.variables || {})
+      return v.name || v.Name || v.driver_name || v['Driver Name'] || call.phone
+    } catch { return call.phone }
+  }
+
+  return (
+    <div className="divide-y divide-gray-100">
+
+      {/* ── Hero numbers — big, plain language ─── */}
+      <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <BigStat
+          emoji="📞" value={total}
+          label="Total Calls Made" color="bg-gray-50 border-gray-200" />
+        <BigStat
+          emoji="✅" value={completed}
+          label="Calls Answered" sub={`${pct(completed)}% of total`}
+          color="bg-green-50 border-green-200" textColor="text-green-700" />
+        <BigStat
+          emoji="🔄" value={rescheduled}
+          label="Called Back Later" sub="Requested callback"
+          color="bg-blue-50 border-blue-200" textColor="text-blue-600" />
+        <BigStat
+          emoji="📵" value={noAnswer}
+          label="No Answer" sub={`${pct(noAnswer)}% of total`}
+          color="bg-gray-50 border-gray-200" />
+      </div>
+
+      {/* ── Announcement-specific: acknowledged ── */}
+      {isAnnouncement && (acknowledged > 0 || notAcked > 0) && (
+        <div className="p-6">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">
+            Message Confirmation
+          </h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="p-4 bg-green-50 border border-green-200 rounded-2xl text-center">
+              <p className="text-3xl font-bold text-green-700">{acknowledged}</p>
+              <p className="text-sm font-semibold text-green-600 mt-1">✅ Confirmed</p>
+              <p className="text-xs text-green-500 mt-0.5">Understood the message</p>
+            </div>
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl text-center">
+              <p className="text-3xl font-bold text-orange-700">{notAcked}</p>
+              <p className="text-sm font-semibold text-orange-600 mt-1">❓ Unclear</p>
+              <p className="text-xs text-orange-500 mt-0.5">May need follow-up</p>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-green-500 rounded-full transition-all"
+              style={{ width: `${pct(acknowledged)}%` }} />
+          </div>
+          <p className="text-xs text-gray-500 mt-1.5">
+            {pct(acknowledged)}% confirmed · {pct(notAcked)}% unclear
+          </p>
+        </div>
+      )}
+
+      {/* ── Survey: collected data summary ── */}
+      {!isAnnouncement && Object.keys(allFields).length > 0 && (
+        <div className="p-6">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">
+            What We Learned
+          </h3>
+          <div className="space-y-4">
+            {Object.entries(allFields).map(([field, values]) => {
+              const counts = {}
+              values.forEach(v => { counts[v] = (counts[v] || 0) + 1 })
+              const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1])
+              const fieldLabel = field.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase())
+              return (
+                <div key={field}>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">{fieldLabel}</p>
+                  <div className="space-y-1.5">
+                    {sorted.slice(0, 5).map(([val, count]) => (
+                      <div key={val} className="flex items-center gap-3">
+                        <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-[#1a1a1a] rounded-full transition-all"
+                            style={{ width: `${Math.round((count/values.length)*100)}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-600 w-28 truncate">{val}</span>
+                        <span className="text-xs font-bold text-gray-800 w-8 text-right">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Needs follow-up ── */}
+      {needFollowUp.length > 0 && (
+        <div className="p-6">
+          <h3 className="text-xs font-bold text-orange-600 uppercase tracking-wider mb-1">
+            ⚠️ Needs Manual Follow-up ({needFollowUp.length})
+          </h3>
+          <p className="text-xs text-gray-400 mb-4">
+            These contacts were confused or didn't confirm — call them manually
+          </p>
+          <div className="space-y-2">
+            {needFollowUp.slice(0, 10).map(c => (
+              <div key={c.id} className="flex items-center gap-3 p-3 bg-orange-50 border border-orange-100 rounded-xl">
+                <div className="w-8 h-8 bg-orange-100 rounded-xl flex items-center justify-center text-sm font-bold text-orange-600">
+                  {getContactName(c)[0]?.toUpperCase() || '?'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{getContactName(c)}</p>
+                  <p className="text-xs text-gray-500">{c.phone}</p>
+                </div>
+                <span className="text-xs text-orange-600 font-medium flex-shrink-0">
+                  {c.confusion_count >= 2 ? `${c.confusion_count} confusions` : 'Did not confirm'}
+                </span>
+              </div>
+            ))}
+            {needFollowUp.length > 10 && (
+              <p className="text-xs text-gray-400 text-center pt-1">
+                +{needFollowUp.length - 10} more contacts need follow-up
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── DNC ── */}
+      {dnc > 0 && (
+        <div className="p-6">
+          <div className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+            <span className="text-lg">🚫</span>
+            <p className="text-sm text-gray-600">
+              <span className="font-bold">{dnc} contacts</span> asked not to be called again — removed from future campaigns
+            </p>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+function BigStat({ emoji, value, label, sub, color = 'bg-gray-50 border-gray-200', textColor = 'text-gray-800' }) {
+  return (
+    <div className={`p-4 rounded-2xl border ${color} text-center`}>
+      <div className="text-2xl mb-1">{emoji}</div>
+      <p className={`text-3xl font-bold ${textColor}`}>{value}</p>
+      <p className="text-xs font-semibold text-gray-600 mt-1 leading-tight">{label}</p>
+      {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
 export default function CampaignDetail() {
   const { id }   = useParams()
   const navigate = useNavigate()
@@ -220,6 +417,7 @@ export default function CampaignDetail() {
       {/* Tabs */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
         {[
+          {id:'results',  label:'Results Summary'},
           {id:'calls',    label:`Call Logs (${calls.length})`},
           {id:'contacts', label:`Contacts (${total})`},
           {id:'settings', label:'Settings'},
@@ -233,6 +431,10 @@ export default function CampaignDetail() {
       </div>
 
       {/* Call Logs Tab */}
+      {activeTab==='results' && (
+        <ResultsSummary calls={calls} campaign={campaign} stats={stats} />
+      )}
+
       {activeTab==='calls' && (
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
           {calls.length===0 ? (
