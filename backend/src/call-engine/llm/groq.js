@@ -1,67 +1,96 @@
-// src/call-engine/llm/groq.js
-// Groq — runs Llama 3.1 70B with ultra-low latency (~100ms).
-// Use this with your FREE Groq credits for all trial calls.
-// Sign up at: console.groq.com
-const Groq   = require('groq-sdk')
-const config = require('../../config')
+// ============================================================
+// src/config/index.js
+// Central configuration — all env vars in ONE place.
+// Validates on startup so you get a clear error instead of
+// a cryptic crash 5 minutes later.
+// ============================================================
+require('dotenv').config()
+const path = require('path')
+const fs   = require('fs')
 
-// Lazy init — prevents crash at startup when GROQ_API_KEY is not set
-// (e.g. when running OpenAI-only mode with LLM_PROVIDER=openai).
-let _client = null
-function getClient() {
-  if (!_client) {
-    if (!config.groqApiKey) {
-      throw new Error(
-        'GROQ_API_KEY is not set. ' +
-        'Add it in Render → Environment, ' +
-        'or set LLM_PROVIDER=openai to use OpenAI instead.'
-      )
-    }
-    _client = new Groq({ apiKey: config.groqApiKey })
-  }
-  return _client
+// ── Write Google credentials from env string (for Render) ──
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const credPath = path.join(__dirname, '..', '..', 'google-service-account.json')
+  fs.writeFileSync(credPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON)
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credPath
+  console.log('✅ Google credentials written from env var')
 }
 
-async function getGroqResponse(systemPrompt, history, userText) {
-  const groq = getClient()
-  const completion = await groq.chat.completions.create({
-    model:       config.groqModel,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...history.slice(-10),
-      { role: 'user', content: userText },
-    ],
-    response_format: { type: 'json_object' },
-    max_tokens:  300,
-    temperature: 0.7,
-  })
+// ── Required vars — app won't start without these ──────────
+const REQUIRED = [
+  'DATABASE_URL',
+  'JWT_SECRET',
+]
 
-  const parsed = JSON.parse(completion.choices[0].message.content)
-  return {
-    text:               parsed.text               || 'માફ કરો, ફરી પ્રયાસ કરો.',
-    action:             parsed.action             || 'continue',
-    reschedule_time:    parsed.reschedule_time    || null,
-    collected_data:     parsed.collected_data     || {},
-    detected_language:  parsed.detected_language  || 'gu',
-    provider:           'groq',
-  }
+const missing = REQUIRED.filter(k => !process.env[k])
+if (missing.length) {
+  console.error(`\n❌ Missing required environment variables:\n   ${missing.join('\n   ')}\n`)
+  process.exit(1)
 }
 
-async function parseRescheduleTimeGroq(naturalText) {
-  if (!naturalText) return null
-  const groq = getClient()
-  const completion = await groq.chat.completions.create({
-    model: config.groqModel,
-    messages: [{
-      role: 'user',
-      content: `Parse this reschedule request into ISO datetime.\nCurrent time: ${new Date().toISOString()}\nUser said: "${naturalText}"\nReturn ONLY valid JSON: { "datetime": "<ISO 8601 string or null>" }`,
-    }],
-    response_format: { type: 'json_object' },
-    max_tokens:  60,
-    temperature: 0,
-  })
-  const parsed = JSON.parse(completion.choices[0].message.content)
-  return parsed.datetime || null
+const config = {
+  // ── Server ────────────────────────────────────────────
+  port:        parseInt(process.env.PORT) || 3000,
+  nodeEnv:     process.env.NODE_ENV || 'development',
+  isProduction: process.env.NODE_ENV === 'production',
+  serverUrl:   process.env.SERVER_URL || 'localhost:3000',
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+
+  // ── Database ──────────────────────────────────────────
+  databaseUrl:        process.env.DATABASE_URL,
+  supabaseUrl:        process.env.SUPABASE_URL,
+  supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
+
+  // ── Auth ──────────────────────────────────────────────
+  jwtSecret:      process.env.JWT_SECRET,
+  jwtExpiresIn:   '7d',
+
+  // ── LLM Provider ─────────────────────────────────────
+  // Set LLM_PROVIDER=groq  → use Groq (free credits)
+  // Set LLM_PROVIDER=openai → use OpenAI (paid)
+  llmProvider:    process.env.LLM_PROVIDER || 'groq',
+  groqApiKey:     process.env.GROQ_API_KEY,
+  groqModel:      process.env.LLM_MODEL_GROQ    || 'llama-3.1-8b-instant',
+
+  // OAuth
+  googleClientId: process.env.GOOGLE_CLIENT_ID  || null,
+  openaiApiKey:   process.env.OPENAI_API_KEY,
+  openaiModel:    process.env.LLM_MODEL_OPENAI  || 'gpt-4o-mini',
+
+  // ── STT Provider ─────────────────────────────────────
+  // Set STT_PROVIDER=sarvam → Sarvam AI (Indian, cheaper)
+  // Set STT_PROVIDER=google → Google Cloud STT
+  sttProvider:    process.env.STT_PROVIDER || 'sarvam',
+  sarvamApiKey:   process.env.SARVAM_API_KEY,
+
+  // ── TTS Provider ─────────────────────────────────────
+  ttsProvider:    process.env.TTS_PROVIDER || 'sarvam',
+  ttsVoiceGu:     process.env.TTS_VOICE_GUJARATI || 'anushka',
+  ttsVoiceHi:     process.env.TTS_VOICE_HINDI    || 'anushka',
+  ttsVoiceEn:     process.env.TTS_VOICE_ENGLISH  || 'anushka',
+
+  // ── Telephony ─────────────────────────────────────────
+  telephonyProvider: process.env.TELEPHONY_PROVIDER || 'vobiz',
+  vobizAuthId:       process.env.VOBIZ_AUTH_ID,
+  vobizAuthToken:    process.env.VOBIZ_AUTH_TOKEN,
+  vobizApiUrl:       process.env.VOBIZ_API_URL    || 'https://api.vobiz.ai/api/v1',
+  vobizAppId:        process.env.VOBIZ_APP_ID,
+  vobizFromNumber:   process.env.VOBIZ_FROM_NUMBER,
+  exotelSid:         process.env.EXOTEL_SID,
+  exotelToken:       process.env.EXOTEL_TOKEN,
+  exotelSubdomain:   process.env.EXOTEL_SUBDOMAIN,
+
+  // ── Google Sheets OAuth ───────────────────────────────
+  googleSheetsClientId:     process.env.GOOGLE_SHEETS_CLIENT_ID,
+  googleSheetsClientSecret: process.env.GOOGLE_SHEETS_CLIENT_SECRET,
+  googleSheetsRedirectUri:  process.env.GOOGLE_SHEETS_REDIRECT_URI
+                            || 'http://localhost:3000/auth/google/callback',
+
+  // ── Calling Rules ─────────────────────────────────────
+  humanAgentNumber:    process.env.HUMAN_AGENT_NUMBER,
+  maxConcurrentCalls:  parseInt(process.env.MAX_CONCURRENT_CALLS) || 5,
+  defaultCallingStart: '09:00',
+  defaultCallingEnd:   '21:00',
 }
 
-module.exports = { getGroqResponse, parseRescheduleTimeGroq }
+module.exports = config
