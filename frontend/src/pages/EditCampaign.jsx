@@ -121,6 +121,7 @@ export default function EditCampaign() {
     calling_hours_start: '09:00', calling_hours_end: '21:00',
     schedule_start: '', _scheduleMode: 'now',
     webhook_url: '', webhook_secret: '',
+    google_sheet_url: '', google_sheet_id: '',
   })
 
   const set = (key, val) => {
@@ -156,8 +157,9 @@ export default function EditCampaign() {
           calling_hours_end:     c.calling_hours_end || '21:00',
           schedule_start:        c.schedule_start || '',
           _scheduleMode:         c.schedule_start ? 'schedule' : 'now',
-          webhook_url:           c.webhook_url    || '',
-          webhook_secret:        c.webhook_secret || '',
+          webhook_url:           c.webhook_url     || '',
+          webhook_secret:        c.webhook_secret  || '',
+          google_sheet_url:      c.google_sheet_url || '',
         })
         setContacts(contactRes.data.contacts || [])
         setContactCount(contactRes.data.total || 0)
@@ -580,6 +582,15 @@ export default function EditCampaign() {
               className={inp} placeholder="+919876543210"/>
             <p className="text-xs text-gray-400 mt-1">Leave blank to use default number</p>
           </Field>
+
+          {/* Google Sheets */}
+          <div className="pt-4 border-t border-gray-100">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">📊 Google Sheets</p>
+            <Field label="Google Sheet URL" hint="Call results will be added as new rows after each call">
+              <input value={form.google_sheet_url} onChange={e => set('google_sheet_url', e.target.value)}
+                className={inp} placeholder="https://docs.google.com/spreadsheets/d/..."/>
+            </Field>
+          </div>
 
           {/* Webhook / External API */}
           <div className="pt-4 border-t border-gray-100">
