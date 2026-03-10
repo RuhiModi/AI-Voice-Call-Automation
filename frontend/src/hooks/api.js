@@ -105,6 +105,8 @@ export const billingApi = {
   activity:     ()      => api.get('/billing/activity'),
   invoices:     ()      => api.get('/billing/invoices'),
   invoice:      (id)    => api.get(`/billing/invoices/${id}`),
+  generateInvoice: (month) => api.post('/billing/invoices/generate', { month }),
+  downloadInvoice: (id)    => `${api.defaults.baseURL}/billing/invoices/${id}/download`,
   usageSummary: ()      => api.get('/billing/usage-summary'),
   plans:        ()      => api.get('/billing/plans'),
   upgrade:      (plan)  => api.post('/billing/upgrade', { plan }),
@@ -162,9 +164,12 @@ export const sheetsApi = {
 
 // ── Team ──────────────────────────────────────────────────────
 export const teamApi = {
-  list:   ()           => api.get('/team'),
-  invite: (email, role) => api.post('/team/invite', { email, role }),
-  remove: (id)         => api.delete(`/team/${id}`),
+  list:       ()             => api.get('/team'),
+  invite:     (email, role)  => api.post('/team/invite', { email, role }),
+  updateRole: (id, role)     => api.put(`/team/${id}/role`, { role }),
+  resend:     (id)           => api.post(`/team/${id}/resend`),
+  remove:     (id)           => api.delete(`/team/${id}`),
+  accept:     (token)        => api.post('/team/accept', { token }),
 }
 
 // ── Notifications ─────────────────────────────────────────────
