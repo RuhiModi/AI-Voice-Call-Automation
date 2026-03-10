@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { campaignApi } from '../hooks/api'
+import { campaignApi, contactApi } from '../hooks/api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Save, Trash2, Upload, X, Check,
@@ -99,7 +99,7 @@ export default function EditCampaign() {
       try {
         const [campRes, contactRes] = await Promise.all([
           campaignApi.get(id),
-          campaignApi.getContacts(id),
+          contactApi.list(id),
         ])
         const c = campRes.data.campaign
         setCampaignStatus(c.status || 'draft')
@@ -209,7 +209,7 @@ export default function EditCampaign() {
       toast.success(`${res.data.count} contacts uploaded!`)
       setContactCount(res.data.count)
       setContactFile(null)
-      const cr = await campaignApi.getContacts(id)
+      const cr = await contactApi.list(id)
       setContacts(cr.data.contacts || [])
     } catch (err) {
       toast.error(err.response?.data?.error || 'Upload failed')
