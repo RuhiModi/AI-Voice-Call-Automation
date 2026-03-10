@@ -1,9 +1,10 @@
 // src/telephony/vobiz.js
 const axios = require('axios')
 
-function getClient() {
-  const authId    = process.env.VOBIZ_AUTH_ID
-  const authToken = process.env.VOBIZ_AUTH_TOKEN
+function getClient(credentials = {}) {
+  // Use per-user credentials if provided, fall back to env vars
+  const authId    = credentials.authId    || process.env.VOBIZ_AUTH_ID
+  const authToken = credentials.authToken || process.env.VOBIZ_AUTH_TOKEN
 
   if (!authId || !authToken) throw new Error('VOBIZ_AUTH_ID and VOBIZ_AUTH_TOKEN required')
 
@@ -18,14 +19,13 @@ function getClient() {
   })
 }
 
-async function makeOutboundCall(fromNumber, toNumber, sessionId) {
+async function makeOutboundCall(fromNumber, toNumber, sessionId, credentials = {}) {
   try {
-    const vobiz     = getClient()
-    // Strip any existing protocol prefix so we control it cleanly
+    const vobiz = getClient(credentials)
+
     let serverUrl = process.env.SERVER_URL || 'ai-voice-call-automation.onrender.com'
     serverUrl = serverUrl.replace(/^https?:\/\//, '')
 
-    // Clean phone number — must be E.164 format e.g. +919876543210
     const cleanTo = _cleanPhone(toNumber)
     if (!cleanTo) throw new Error(`Invalid phone number: ${toNumber}`)
 
@@ -51,7 +51,6 @@ async function makeOutboundCall(fromNumber, toNumber, sessionId) {
   }
 }
 
-// Clean and validate phone number → E.164 format (+91XXXXXXXXXX)
 function _cleanPhone(raw) {
   if (!raw) return null
   let phone = String(raw).replace(/[\s\-\.\(\)]/g, '')
@@ -63,19 +62,15 @@ function _cleanPhone(raw) {
 }
 
 function getAnswerXML(sessionId, serverUrl) {
-  // Clean serverUrl — remove any protocol prefix
   const cleanUrl = serverUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')
   const wsUrl    = `wss://${cleanUrl}/ws/call/${sessionId}`
-
   console.log(`[Vobiz] Answer XML → WebSocket: ${wsUrl}`)
-
-  // IMPORTANT: wss:// URL must be inline inside <Stream> tag, no whitespace
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Stream streamTimeout="86400" keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000">${wsUrl}</Stream></Response>`
 }
 
-async function hangupCall(callUuid) {
+async function hangupCall(callUuid, credentials = {}) {
   try {
-    const vobiz = getClient()
+    const vobiz = getClient(credentials)
     await vobiz.delete(`/Call/${callUuid}/`)
     console.log(`[Vobiz] ✅ Call ${callUuid} hung up`)
   } catch (err) {
@@ -83,9 +78,9 @@ async function hangupCall(callUuid) {
   }
 }
 
-async function transferCall(callUuid, targetNumber) {
+async function transferCall(callUuid, targetNumber, credentials = {}) {
   try {
-    const vobiz    = getClient()
+    const vobiz    = getClient(credentials)
     const response = await vobiz.post(`/Call/${callUuid}/`, {
       action:   'transfer',
       legs:     'aleg',
@@ -98,9 +93,9 @@ async function transferCall(callUuid, targetNumber) {
   }
 }
 
-async function getBalance() {
+async function getBalance(credentials = {}) {
   try {
-    const vobiz    = getClient()
+    const vobiz    = getClient(credentials)
     const response = await vobiz.get('/')
     return response.data
   } catch (err) {
