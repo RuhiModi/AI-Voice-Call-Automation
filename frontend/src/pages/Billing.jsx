@@ -104,6 +104,8 @@ export default function Billing() {
   const [usageSummary, setUsageSummary] = useState(null)
   const [plans,        setPlans]        = useState([])
   const [upgrading,    setUpgrading]    = useState(null)
+  const [generating,   setGenerating]   = useState(false)
+  const [genMonth,     setGenMonth]     = useState('')
   const [loading,      setLoading]      = useState(true)
   const [tab,          setTab]          = useState('plan')
 
@@ -490,6 +492,43 @@ export default function Billing() {
 
       {/* ── INVOICES TAB ── */}
       {tab === 'invoices' && (
+        <div>
+          {/* Generate invoice card */}
+          <div className="card p-5 mb-5">
+            <p className="font-semibold text-[14px] mb-1" style={{ color: '#1a1a1a' }}>Generate Invoice</p>
+            <p className="text-[12px] mb-4" style={{ color: '#a8a8a8' }}>Select a month to generate a GST invoice for all completed calls</p>
+            <div className="flex gap-3 flex-wrap">
+              <input
+                type="month"
+                value={genMonth}
+                max={new Date().toISOString().slice(0, 7)}
+                onChange={e => setGenMonth(e.target.value)}
+                className="input-field" style={{ minWidth: '160px' }}
+              />
+              <button
+                disabled={!genMonth || generating}
+                onClick={async () => {
+                  setGenerating(true)
+                  try {
+                    const res = await billingApi.generateInvoice(genMonth)
+                    const { invoice, already_exists } = res.data
+                    setInvoices(prev => {
+                      const exists = prev.find(i => i.id === invoice.id)
+                      if (exists) return prev
+                      return [invoice, ...prev]
+                    })
+                    toast.success(already_exists ? 'Invoice already exists for this month' : `Invoice ${invoice.invoice_number} generated!`)
+                  } catch (err) {
+                    toast.error(err.response?.data?.error || 'Failed to generate invoice')
+                  } finally { setGenerating(false) }
+                }}
+                className="btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {generating ? 'Generating...' : '📄 Generate Invoice'}
+              </button>
+            </div>
+          </div>
+
         <div className="card overflow-hidden">
           <div className="px-6 py-4" style={{ borderBottom: '1px solid #f5f1ea' }}>
             <h2 className="font-semibold text-[15px]" style={{ color: '#1a1a1a' }}>Invoices</h2>
@@ -502,7 +541,7 @@ export default function Billing() {
                 <IndianRupee size={22} style={{ color: '#d0c9be' }} />
               </div>
               <p className="font-semibold text-[14px] mb-1" style={{ color: '#3d3d3d', fontFamily: '"DM Serif Display",serif' }}>No invoices yet</p>
-              <p className="text-[12px]" style={{ color: '#a8a8a8' }}>Invoices will appear here once generated</p>
+              <p className="text-[12px] mb-4" style={{ color: '#a8a8a8' }}>Select a month above and click Generate Invoice</p>
             </div>
           ) : (
             <div>
@@ -536,14 +575,18 @@ export default function Billing() {
                       style={{ background: statusStyle.bg, color: statusStyle.color }}>
                       {inv.status}
                     </span>
-                    <button className="btn-secondary" style={{ padding: '8px' }} title="Download invoice">
+                    <a href={billingApi.downloadInvoice(inv.id)}
+                      target="_blank" rel="noreferrer"
+                      className="btn-secondary" style={{ padding: '8px', display: 'inline-flex', alignItems: 'center' }}
+                      title="View / Print invoice">
                       <Download size={14} style={{ color: '#8a8a8a' }} />
-                    </button>
+                    </a>
                   </div>
                 )
               })}
             </div>
           )}
+        </div>
         </div>
       )}
     </div>
