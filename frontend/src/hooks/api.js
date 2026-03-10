@@ -106,7 +106,7 @@ export const billingApi = {
   invoices:     ()      => api.get('/billing/invoices'),
   invoice:      (id)    => api.get(`/billing/invoices/${id}`),
   generateInvoice: (month) => api.post('/billing/invoices/generate', { month }),
-  downloadInvoice: (id)    => `${api.defaults.baseURL}/billing/invoices/${id}/download`,
+  downloadInvoice: (id)    => `${api.defaults.baseURL}/billing/invoices/${id}/download?token=${localStorage.getItem('token')}`,
   usageSummary: ()      => api.get('/billing/usage-summary'),
   plans:        ()      => api.get('/billing/plans'),
   upgrade:      (plan)  => api.post('/billing/upgrade', { plan }),
