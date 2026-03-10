@@ -84,6 +84,21 @@ async function _processCampaign(campaignId) {
     return
   }
 
+  // Load user's Vobiz credentials — fall back to env if not set
+  if (!campaign._vobizCreds) {
+    const pool = require('../db/supabaseClient')
+    const { rows } = await pool.query(
+      'SELECT vobiz_auth_id, vobiz_auth_token, vobiz_from_number FROM users WHERE id = $1',
+      [campaign.user_id]
+    )
+    const u = rows[0] || {}
+    campaign._vobizCreds = {
+      authId:     u.vobiz_auth_id     || process.env.VOBIZ_AUTH_ID,
+      authToken:  u.vobiz_auth_token  || process.env.VOBIZ_AUTH_TOKEN,
+      fromNumber: u.vobiz_from_number || process.env.VOBIZ_FROM_NUMBER,
+    }
+  }
+
   // TRAI compliance: only call during allowed hours (IST)
   if (!_isWithinCallingHours(campaign)) {
     const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
@@ -142,14 +157,23 @@ async function _makeCall(contactId, campaignId, campaignData = null) {
     session.sessionId = sessionId
     activeSessions.set(sessionId, session)
 
-    // Use campaign caller_id, fall back to env VOBIZ_FROM_NUMBER
-    const fromNumber = campaign.caller_id || config.vobizFromNumber
+    // Use campaign caller_id → user's from_number → env fallback
+    const creds      = campaign._vobizCreds || {}
+    const fromNumber = campaign.caller_id || creds.fromNumber || config.vobizFromNumber
     if (!fromNumber) {
-      console.error('[Scheduler] ❌ No caller_id set! Add VOBIZ_FROM_NUMBER to env or set caller_id on campaign.')
+      console.error('[Scheduler] ❌ No from number — set it in Settings or on the campaign.')
       await contactRepo.updateStatus(contactId, 'failed', 'no_caller_id')
       return
     }
-    await makeOutboundCall(fromNumber, contact.phone, sessionId)
+    if (!creds.authId || !creds.authToken) {
+      console.error('[Scheduler] ❌ No Vobiz credentials — user must add them in Settings.')
+      await contactRepo.updateStatus(contactId, 'failed', 'no_vobiz_creds')
+      return
+    }
+    await makeOutboundCall(fromNumber, contact.phone, sessionId, {
+      authId:    creds.authId,
+      authToken: creds.authToken,
+    })
     console.log(`[Scheduler] 📞 Calling ${contact.phone} — session: ${sessionId}`)
   } catch (err) {
     console.error(`[Scheduler] Failed to call ${contact.phone}:`, err.message)
