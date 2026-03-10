@@ -16,6 +16,64 @@ function Section({ title, desc, badge, children }) {
         </div>
       </div>
       <div className="p-6">{children}</div>
+      {/* ── Pull API Key ────────────────────────────────────── */}
+      <Section title="Pull API — External Access" desc="Let your server fetch results directly from our API">
+        <InfoBanner color="blue">
+          External servers can GET call results using your API key.
+          Pass it as <strong>Authorization: Bearer YOUR_KEY</strong>
+        </InfoBanner>
+
+        <div className="mb-4">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Your API Key</label>
+          {apiKey ? (
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                readOnly
+                className="input-field pr-11"
+                style={{ fontFamily: 'monospace', fontSize: '12px', cursor: 'text' }}
+              />
+              <button onClick={() => setShowApiKey(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#a8a8a8' }}>
+                {showApiKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No API key yet — click Generate below</p>
+          )}
+        </div>
+
+        <div className="mb-5 p-3 rounded-xl text-[11px] space-y-1.5" style={{ background: '#faf8f4', border: '1px solid #ede7dc' }}>
+          <p className="font-bold text-[#2c2c2c] mb-2">Available endpoints:</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id</span> — campaign summary + stats</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/calls</span> — all calls with outcomes</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/contacts</span> — contact statuses</p>
+          <p className="pt-1 text-[#a8a8a8]">Filter by: <span className="font-mono">?outcome=completed</span> <span className="font-mono">?acknowledged=true</span> <span className="font-mono">?page=2&limit=100</span></p>
+        </div>
+
+        <button
+          onClick={async () => {
+            setRegenerating(true)
+            try {
+              const res = await fetch(
+                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
+                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
+              )
+              const data = await res.json()
+              setApiKey(data.api_key)
+              setShowApiKey(true)
+              toast.success('New API key generated ✅')
+            } catch { toast.error('Failed') } finally { setRegenerating(false) }
+          }}
+          disabled={regenerating}
+          className="btn-secondary"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {regenerating ? 'Generating...' : apiKey ? '🔄 Regenerate Key' : '🔑 Generate API Key'}
+        </button>
+        {apiKey && <p className="text-[11px] mt-2" style={{ color: '#a8a8a8' }}>Keep this key secret — anyone with it can read your campaign results</p>}
+      </Section>
+
     </div>
   )
 }
@@ -28,6 +86,64 @@ function Field({ label, value, onChange, placeholder, type = 'text', hint, readO
         onChange={onChange ? e => onChange(e.target.value) : undefined}
         className="input-field" style={readOnly ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
       {hint && <p className="text-[11px] mt-1" style={{ color: '#a8a8a8' }}>{hint}</p>}
+      {/* ── Pull API Key ────────────────────────────────────── */}
+      <Section title="Pull API — External Access" desc="Let your server fetch results directly from our API">
+        <InfoBanner color="blue">
+          External servers can GET call results using your API key.
+          Pass it as <strong>Authorization: Bearer YOUR_KEY</strong>
+        </InfoBanner>
+
+        <div className="mb-4">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Your API Key</label>
+          {apiKey ? (
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                readOnly
+                className="input-field pr-11"
+                style={{ fontFamily: 'monospace', fontSize: '12px', cursor: 'text' }}
+              />
+              <button onClick={() => setShowApiKey(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#a8a8a8' }}>
+                {showApiKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No API key yet — click Generate below</p>
+          )}
+        </div>
+
+        <div className="mb-5 p-3 rounded-xl text-[11px] space-y-1.5" style={{ background: '#faf8f4', border: '1px solid #ede7dc' }}>
+          <p className="font-bold text-[#2c2c2c] mb-2">Available endpoints:</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id</span> — campaign summary + stats</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/calls</span> — all calls with outcomes</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/contacts</span> — contact statuses</p>
+          <p className="pt-1 text-[#a8a8a8]">Filter by: <span className="font-mono">?outcome=completed</span> <span className="font-mono">?acknowledged=true</span> <span className="font-mono">?page=2&limit=100</span></p>
+        </div>
+
+        <button
+          onClick={async () => {
+            setRegenerating(true)
+            try {
+              const res = await fetch(
+                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
+                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
+              )
+              const data = await res.json()
+              setApiKey(data.api_key)
+              setShowApiKey(true)
+              toast.success('New API key generated ✅')
+            } catch { toast.error('Failed') } finally { setRegenerating(false) }
+          }}
+          disabled={regenerating}
+          className="btn-secondary"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {regenerating ? 'Generating...' : apiKey ? '🔄 Regenerate Key' : '🔑 Generate API Key'}
+        </button>
+        {apiKey && <p className="text-[11px] mt-2" style={{ color: '#a8a8a8' }}>Keep this key secret — anyone with it can read your campaign results</p>}
+      </Section>
+
     </div>
   )
 }
@@ -43,6 +159,64 @@ function InfoBanner({ color, children }) {
     <div className="flex items-start gap-2.5 p-3 rounded-xl mb-5 text-[12px]" style={styles[color]}>
       <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
       <div>{children}</div>
+      {/* ── Pull API Key ────────────────────────────────────── */}
+      <Section title="Pull API — External Access" desc="Let your server fetch results directly from our API">
+        <InfoBanner color="blue">
+          External servers can GET call results using your API key.
+          Pass it as <strong>Authorization: Bearer YOUR_KEY</strong>
+        </InfoBanner>
+
+        <div className="mb-4">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Your API Key</label>
+          {apiKey ? (
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                readOnly
+                className="input-field pr-11"
+                style={{ fontFamily: 'monospace', fontSize: '12px', cursor: 'text' }}
+              />
+              <button onClick={() => setShowApiKey(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#a8a8a8' }}>
+                {showApiKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No API key yet — click Generate below</p>
+          )}
+        </div>
+
+        <div className="mb-5 p-3 rounded-xl text-[11px] space-y-1.5" style={{ background: '#faf8f4', border: '1px solid #ede7dc' }}>
+          <p className="font-bold text-[#2c2c2c] mb-2">Available endpoints:</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id</span> — campaign summary + stats</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/calls</span> — all calls with outcomes</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/contacts</span> — contact statuses</p>
+          <p className="pt-1 text-[#a8a8a8]">Filter by: <span className="font-mono">?outcome=completed</span> <span className="font-mono">?acknowledged=true</span> <span className="font-mono">?page=2&limit=100</span></p>
+        </div>
+
+        <button
+          onClick={async () => {
+            setRegenerating(true)
+            try {
+              const res = await fetch(
+                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
+                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
+              )
+              const data = await res.json()
+              setApiKey(data.api_key)
+              setShowApiKey(true)
+              toast.success('New API key generated ✅')
+            } catch { toast.error('Failed') } finally { setRegenerating(false) }
+          }}
+          disabled={regenerating}
+          className="btn-secondary"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {regenerating ? 'Generating...' : apiKey ? '🔄 Regenerate Key' : '🔑 Generate API Key'}
+        </button>
+        {apiKey && <p className="text-[11px] mt-2" style={{ color: '#a8a8a8' }}>Keep this key secret — anyone with it can read your campaign results</p>}
+      </Section>
+
     </div>
   )
 }
@@ -51,6 +225,9 @@ export default function Settings() {
   const user = JSON.parse(localStorage.getItem('user') || '{}')
 
   const [loading,       setLoading]       = useState(true)
+  const [apiKey,        setApiKey]        = useState(null)
+  const [regenerating,  setRegenerating]  = useState(false)
+  const [showApiKey,    setShowApiKey]    = useState(false)
   const [savingVobiz,   setSavingVobiz]   = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [testing,       setTesting]       = useState(false)
@@ -88,6 +265,7 @@ export default function Settings() {
           vobiz_from_number: d.vobiz_from_number || '',
         })
         setOriginalToken(d.vobiz_auth_token || '')
+        setApiKey(d.api_key || null)
       } catch {
         toast.error('Failed to load settings')
       } finally {
@@ -96,6 +274,23 @@ export default function Settings() {
     }
     load()
   }, [])
+
+  // Regenerate pull API key
+  async function handleRegenerateApiKey() {
+    setRegenerating(true)
+    try {
+      const res = await settingsApi.update({ _regenerate_api_key: true })
+      // Call dedicated endpoint
+      const r = await import('../hooks/api').then(m => m.settingsApi.regenerateApiKey())
+      setApiKey(r.data.api_key)
+      setShowApiKey(true)
+      toast.success('New API key generated')
+    } catch {
+      toast.error('Failed to regenerate key')
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   // Save Vobiz credentials to DB
   async function handleSaveVobiz() {
@@ -381,6 +576,64 @@ export default function Settings() {
             </div>
           ))}
         </div>
+      </Section>
+
+      {/* ── Pull API Key ────────────────────────────────────── */}
+      <Section title="Pull API — External Access" desc="Let your server fetch results directly from our API">
+        <InfoBanner color="blue">
+          External servers can GET call results using your API key.
+          Pass it as <strong>Authorization: Bearer YOUR_KEY</strong>
+        </InfoBanner>
+
+        <div className="mb-4">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Your API Key</label>
+          {apiKey ? (
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                readOnly
+                className="input-field pr-11"
+                style={{ fontFamily: 'monospace', fontSize: '12px', cursor: 'text' }}
+              />
+              <button onClick={() => setShowApiKey(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#a8a8a8' }}>
+                {showApiKey ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No API key yet — click Generate below</p>
+          )}
+        </div>
+
+        <div className="mb-5 p-3 rounded-xl text-[11px] space-y-1.5" style={{ background: '#faf8f4', border: '1px solid #ede7dc' }}>
+          <p className="font-bold text-[#2c2c2c] mb-2">Available endpoints:</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id</span> — campaign summary + stats</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/calls</span> — all calls with outcomes</p>
+          <p><span className="font-mono px-1 py-0.5 rounded" style={{ background: '#f0f0f0' }}>GET /results/campaigns/:id/contacts</span> — contact statuses</p>
+          <p className="pt-1 text-[#a8a8a8]">Filter by: <span className="font-mono">?outcome=completed</span> <span className="font-mono">?acknowledged=true</span> <span className="font-mono">?page=2&limit=100</span></p>
+        </div>
+
+        <button
+          onClick={async () => {
+            setRegenerating(true)
+            try {
+              const res = await fetch(
+                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
+                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
+              )
+              const data = await res.json()
+              setApiKey(data.api_key)
+              setShowApiKey(true)
+              toast.success('New API key generated ✅')
+            } catch { toast.error('Failed') } finally { setRegenerating(false) }
+          }}
+          disabled={regenerating}
+          className="btn-secondary"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {regenerating ? 'Generating...' : apiKey ? '🔄 Regenerate Key' : '🔑 Generate API Key'}
+        </button>
+        {apiKey && <p className="text-[11px] mt-2" style={{ color: '#a8a8a8' }}>Keep this key secret — anyone with it can read your campaign results</p>}
       </Section>
 
     </div>
