@@ -7,7 +7,9 @@ const axios        = require('axios')
 const cheerio      = require('cheerio')
 const campaignRepo = require('../repositories/campaign.repo')
 const contactRepo  = require('../repositories/contact.repo')
-const { buildSystemPrompt } = require('../call-engine/prompts')
+const { buildSystemPrompt }    = require('../call-engine/prompts')
+const { parsePdfToFlowConfig } = require('../call-engine/parsePdfScript')
+const supabase                 = require('../db/supabaseClient')
 
 const campaignService = {
 
@@ -31,10 +33,20 @@ const campaignService = {
     if (!data.system_prompt && data.script_content) {
       data.system_prompt = buildSystemPrompt(data)
     }
+    // Auto-extract sheet ID from Google Sheet URL
+    if (data.google_sheet_url && !data.google_sheet_id) {
+      data.google_sheet_id = _extractSheetId(data.google_sheet_url)
+    }
     return campaignRepo.create(userId, data)
   },
 
   async update(id, userId, data) {
+    // Auto-extract sheet ID from Google Sheet URL if provided
+    if (data.google_sheet_url !== undefined) {
+      data.google_sheet_id = data.google_sheet_url
+        ? _extractSheetId(data.google_sheet_url)
+        : null
+    }
     const campaign = await campaignRepo.update(id, userId, data)
     if (!campaign) {
       const err = new Error('Campaign not found'); err.status = 404; throw err
@@ -145,6 +157,28 @@ const campaignService = {
     return data.text.replace(/\s+/g, ' ').trim().substring(0, 8000)
   },
 
+  // Parse PDF script and save flow_config to the campaign in DB.
+  // Called automatically when a script PDF is uploaded via POST /:id/script/pdf
+  async parseCampaignScript(campaignId, pdfBuffer) {
+    try {
+      console.log(`[Campaign] Parsing PDF script for campaign ${campaignId}`)
+      const flowConfig = await parsePdfToFlowConfig(pdfBuffer)
+
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ flow_config: flowConfig })
+        .eq('id', campaignId)
+
+      if (error) throw error
+      console.log(`[Campaign] ✅ flow_config saved — states: ${Object.keys(flowConfig.texts).join(', ')}`)
+      return flowConfig
+    } catch (err) {
+      // Non-fatal: campaign still works with fallback config
+      console.error(`[Campaign] ❌ PDF parse failed for campaign ${campaignId}:`, err.message)
+      return null
+    }
+  },
+
   async extractFromUrl(url) {
     const response = await axios.get(url, {
       timeout: 10000,
@@ -177,6 +211,14 @@ function _cleanPhone(raw) {
   // Must be 10 digits starting with 6-9
   if (!/^[6-9]\d{9}$/.test(phone)) return null
   return '+91' + phone
+}
+
+// ── Extract Google Sheet ID from URL ─────────────────────────
+// Handles: /spreadsheets/d/SHEET_ID/edit  and  /d/SHEET_ID
+function _extractSheetId(url) {
+  if (!url) return null
+  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
+  return match ? match[1] : null
 }
 
 module.exports = campaignService
