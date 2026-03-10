@@ -6,6 +6,7 @@ const XLSX         = require('xlsx')
 const axios        = require('axios')
 const cheerio      = require('cheerio')
 const campaignRepo = require('../repositories/campaign.repo')
+const planService  = require('./plan.service')
 const contactRepo  = require('../repositories/contact.repo')
 const { buildSystemPrompt }    = require('../call-engine/prompts')
 const { parsePdfToFlowConfig } = require('../call-engine/parsePdfScript')
@@ -29,6 +30,11 @@ const campaignService = {
   async create(userId, data) {
     if (!data.name) {
       const err = new Error('Campaign name is required'); err.status = 400; throw err
+    }
+    // Check campaign limit
+    const limitCheck = await planService.checkCampaignLimit(userId)
+    if (!limitCheck.allowed) {
+      const err = new Error(limitCheck.reason); err.status = 403; err.code = 'PLAN_LIMIT'; throw err
     }
     if (!data.system_prompt && data.script_content) {
       data.system_prompt = buildSystemPrompt(data)
@@ -63,6 +69,9 @@ const campaignService = {
     const ext      = (originalName || filePath).split('.').pop().toLowerCase()
     const contacts = []
     const errors   = []
+
+    // Check contact limit before importing
+    // (we'll recheck after parse with actual count)
 
     // ── CSV ───────────────────────────────────────────────────
     if (ext === 'csv') {
