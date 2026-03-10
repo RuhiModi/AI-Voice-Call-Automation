@@ -36,6 +36,7 @@ class CallSession {
     this.llmTurns      = 0      // How many turns LLM handled
     this.isActive      = true
     this.startTime     = Date.now()
+    this.answeredAt    = null   // set when call is actually answered (Vobiz charges from here)
 
     this.sttHandler = null
     this.vad        = null
@@ -289,7 +290,11 @@ class CallSession {
     if (!this.isActive) return
     this.isActive = false
 
-    const duration = Math.floor((Date.now() - this.startTime) / 1000)
+    const duration   = Math.floor((Date.now() - this.startTime) / 1000)
+    // billedSec = time from answer to hangup (what Vobiz charges)
+    const billedSec  = this.answeredAt
+      ? Math.floor((Date.now() - this.answeredAt) / 1000)
+      : null
     console.log(`[Session ${this.sessionId}] 📵 Ended: ${outcome} (${duration}s)`)
 
     try {
@@ -300,6 +305,9 @@ class CallSession {
       await callRepo.update(this.sessionId, {
         outcome,
         duration_sec:      duration,
+        billed_sec:        billedSec,
+        ringing_at:        new Date(this.startTime).toISOString(),
+        answered_at:       this.answeredAt ? new Date(this.answeredAt).toISOString() : null,
         language_detected: this.language,
         transcript:        JSON.stringify(this.transcript),
         collected_data:    JSON.stringify(this.collectedData),
