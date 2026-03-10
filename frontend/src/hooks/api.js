@@ -108,9 +108,11 @@ export const billingApi = {
 
 // ── Settings ──────────────────────────────────────────────────
 export const settingsApi = {
-  get:        ()     => api.get('/settings'),
-  update:     (data) => api.put('/settings', data),
-  testVobiz:  ()     => api.post('/settings/test-vobiz'),
+  get:              ()             => api.get('/settings'),
+  update:           (data)         => api.put('/settings', data),
+  testVobiz:        ()             => api.post('/settings/test-vobiz'),
+  testWebhook:      (url, secret)  => api.post('/settings/test-webhook', { webhook_url: url, webhook_secret: secret }),
+  regenerateApiKey: ()             => api.post('/settings/regenerate-api-key'),
 }
 
 // ── User ──────────────────────────────────────────────────────
