@@ -24,6 +24,7 @@ const billingRoutes  = require('./routes/billing.routes')
 const simulateRoutes = require('./routes/simulate.routes')
 const settingsRoutes = require('./routes/settings.routes')   // ← NEW
 const resultsRoutes  = require('./routes/results.routes')
+const teamRoutes     = require('./routes/team.routes')
 
 // Integrations
 const { getOAuthUrl, exchangeCodeForToken } = require('./integrations/googleSheets')
@@ -95,6 +96,10 @@ app.use('/billing',   billingRoutes)
 app.use('/simulate',  simulateRoutes)
 app.use('/settings',  settingsRoutes)               // ← NEW
 app.use('/results',   resultsRoutes)
+app.use('/team',      teamRoutes)
+
+// ── Start background services ────────────────────────────────
+// In server.js: also call schedulerService.startInvoiceCron()
 
 // ── Google Sheets OAuth ──────────────────────────────────────
 app.get('/auth/google/sheets', (req, res) => {
