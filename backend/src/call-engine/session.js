@@ -15,6 +15,7 @@ const contactRepo  = require('../repositories/contact.repo')
 const campaignRepo = require('../repositories/campaign.repo')
 const userRepo     = require('../repositories/user.repo')
 const { appendToGoogleSheet } = require('../integrations/googleSheets')
+const { deliverWebhook }      = require('../services/webhookDelivery')
 
 // All active call sessions — key: sessionId, value: CallSession
 const activeSessions = new Map()
@@ -274,7 +275,7 @@ class CallSession {
     if (agentNumber) {
       try {
         const { transferCall } = require('../telephony')
-        await transferCall(this.sessionId, agentNumber)
+        await transferCall(this.sessionId, agentNumber, this.campaign?._vobizCreds || {})
         console.log(`[Session ${this.sessionId}] 👤 Transferred to: ${agentNumber}`)
       } catch (err) {
         console.error(`[Session ${this.sessionId}] Transfer error:`, err.message)
@@ -325,12 +326,52 @@ class CallSession {
         }
       }
 
+      // Deliver to external webhook if configured
+      if (this.campaign.webhook_url) {
+        const callLog = {
+          session_id:      this.sessionId,
+          outcome,
+          duration_sec:    duration,
+          language_detected: this.language,
+          collected_data:  JSON.stringify(this.collectedData),
+          acknowledged:    flowSummary.acknowledged ?? null,
+          confusion_count: this.flowExecutor?.confusionCount || 0,
+          llm_used:        this.llmUsed,
+          ended_at:        new Date().toISOString(),
+        }
+        deliverWebhook(this.campaign, this.contact, callLog)
+          .catch(err => console.error('[Webhook] Delivery error:', err.message))
+      }
+
+      // Deliver to external webhook if configured
+      if (this.campaign.webhook_url) {
+        const callLog = {
+          session_id:      this.sessionId,
+          outcome,
+          duration_sec:    duration,
+          language_detected: this.language,
+          collected_data:  JSON.stringify(this.collectedData),
+          acknowledged:    flowSummary.acknowledged ?? null,
+          confusion_count: this.flowExecutor?.confusionCount || 0,
+          llm_used:        this.llmUsed,
+          ended_at:        new Date().toISOString(),
+        }
+        deliverWebhook(this.campaign, this.contact, callLog)
+          .catch(err => console.error('[Webhook] Delivery error:', err.message))
+      }
+
       // Mark campaign complete if no more pending
       const stats   = await campaignRepo.getStats(this.campaign.id)
       const pending = parseInt(stats.pending) + parseInt(stats.calling) + parseInt(stats.scheduled)
       if (pending === 0 && this.campaign.status === 'active') {
         await campaignRepo.updateStatus(this.campaign.id, 'completed')
         console.log(`✅ Campaign completed: ${this.campaign.name}`)
+        // Fire campaign completion webhook
+        if (this.campaign.webhook_url) {
+          const { deliverCampaignWebhook } = require('../services/webhookDelivery')
+          deliverCampaignWebhook(this.campaign)
+            .catch(err => console.error('[Webhook] Campaign summary error:', err.message))
+        }
       }
     } catch (err) {
       console.error(`[Session ${this.sessionId}] Save error:`, err)
