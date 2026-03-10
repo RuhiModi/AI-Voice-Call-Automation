@@ -11,8 +11,8 @@ const billingRepo = {
          camp.name        AS campaign_name,
          camp.status      AS campaign_status,
          COUNT(cl.id)                                  AS total_calls,
-         SUM(cl.duration_sec)                          AS total_seconds,
-         ROUND(SUM(cl.duration_sec)::NUMERIC / 60, 2) AS total_minutes
+         SUM(COALESCE(cl.billed_sec, cl.duration_sec))                          AS total_seconds,
+         ROUND(SUM(COALESCE(cl.billed_sec, cl.duration_sec))::NUMERIC / 60, 2) AS total_minutes
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id  = $1
@@ -33,8 +33,8 @@ const billingRepo = {
     const { rows } = await pool.query(
       `SELECT
          COUNT(cl.id)                                  AS total_calls,
-         SUM(cl.duration_sec)                          AS total_seconds,
-         ROUND(SUM(cl.duration_sec)::NUMERIC / 60, 2) AS total_minutes
+         SUM(COALESCE(cl.billed_sec, cl.duration_sec))                          AS total_seconds,
+         ROUND(SUM(COALESCE(cl.billed_sec, cl.duration_sec))::NUMERIC / 60, 2) AS total_minutes
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id  = $1
@@ -66,7 +66,7 @@ const billingRepo = {
          TO_CHAR(DATE_TRUNC('month', cl.started_at), 'Mon YYYY') AS month,
          DATE_TRUNC('month', cl.started_at)                      AS month_date,
          COUNT(cl.id)                                             AS total_calls,
-         ROUND(SUM(cl.duration_sec)::NUMERIC / 60, 2)            AS total_minutes
+         ROUND(SUM(COALESCE(cl.billed_sec, cl.duration_sec))::NUMERIC / 60, 2)            AS total_minutes
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id = $1
@@ -128,7 +128,7 @@ const billingRepo = {
       `SELECT
          DATE(cl.started_at)  AS day,
          COUNT(cl.id)         AS calls,
-         SUM(cl.duration_sec) AS seconds
+         SUM(COALESCE(cl.billed_sec, cl.duration_sec)) AS seconds
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id = $1
