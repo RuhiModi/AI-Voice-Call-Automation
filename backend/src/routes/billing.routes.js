@@ -33,16 +33,25 @@ router.get('/summary', async (req, res, next) => {
       billingRepo.getUserRate(req.userId),
     ])
 
-    // Calculate amounts using the user's rate
-    const campaignsWithAmount = campaigns.map(c => ({
-      ...c,
-      total_calls:   parseInt(c.total_calls),
-      total_minutes: parseFloat(c.total_minutes),
-      amount:        Math.round(parseFloat(c.total_minutes) * rate * 100) / 100,
-    }))
-
+    const GST_RATE     = 0.18
     const totalMinutes = parseFloat(totals?.total_minutes || 0)
-    const totalAmount  = Math.round(totalMinutes * rate * 100) / 100
+    const subtotal     = Math.round(totalMinutes * rate * 100) / 100
+    const gst          = Math.round(subtotal * GST_RATE * 100) / 100
+    const totalAmount  = Math.round((subtotal + gst) * 100) / 100
+
+    // Add GST to each campaign line too
+    const campaignsWithAmount = campaigns.map(c => {
+      const sub = Math.round(parseFloat(c.total_minutes) * rate * 100) / 100
+      const cgst = Math.round(sub * GST_RATE * 100) / 100
+      return {
+        ...c,
+        total_calls:   parseInt(c.total_calls),
+        total_minutes: parseFloat(c.total_minutes),
+        subtotal:      sub,
+        gst:           cgst,
+        amount:        Math.round((sub + cgst) * 100) / 100,
+      }
+    })
 
     res.json({
       period: {
@@ -51,13 +60,16 @@ router.get('/summary', async (req, res, next) => {
         label: start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
       },
       totals: {
-        calls:   parseInt(totals?.total_calls   || 0),
-        minutes: totalMinutes,
-        amount:  totalAmount,
+        calls:     parseInt(totals?.total_calls    || 0),
+        minutes:   totalMinutes,
+        subtotal,
+        gst,
+        amount:    totalAmount,
         campaigns: parseInt(totals?.campaigns_count || 0),
       },
       campaigns: campaignsWithAmount,
       rate_per_min: rate,
+      gst_rate:     GST_RATE,
     })
   } catch (err) { next(err) }
 })
@@ -71,12 +83,19 @@ router.get('/monthly', async (req, res, next) => {
       billingRepo.getUserRate(req.userId),
     ])
 
-    const withAmount = months.map(m => ({
-      month:        m.month,
-      total_calls:  parseInt(m.total_calls),
-      total_minutes: parseFloat(m.total_minutes),
-      amount:       Math.round(parseFloat(m.total_minutes) * rate * 100) / 100,
-    }))
+    const GST_RATE   = 0.18
+    const withAmount = months.map(m => {
+      const sub  = Math.round(parseFloat(m.total_minutes) * rate * 100) / 100
+      const gst  = Math.round(sub * GST_RATE * 100) / 100
+      return {
+        month:         m.month,
+        total_calls:   parseInt(m.total_calls),
+        total_minutes: parseFloat(m.total_minutes),
+        subtotal:      sub,
+        gst,
+        amount:        Math.round((sub + gst) * 100) / 100,
+      }
+    })
 
     res.json({ months: withAmount, rate_per_min: rate })
   } catch (err) { next(err) }
