@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { campaignApi, contactApi } from '../hooks/api'
+import { campaignApi, contactApi, settingsApi } from '../hooks/api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Save, Trash2, Upload, X, Check,
@@ -56,6 +56,39 @@ function Field({ label, hint, children }) {
   )
 }
 
+// ── Webhook tester inline component ──────────────────────────
+function WebhookTester({ url, secret }) {
+  const [testing,  setTesting]  = useState(false)
+  const [result,   setResult]   = useState(null)
+
+  async function test() {
+    setTesting(true)
+    setResult(null)
+    try {
+      const res = await settingsApi.testWebhook(url, secret)
+      setResult({ success: true, status: res.data.status })
+    } catch (err) {
+      setResult({ success: false, error: err.response?.data?.error || 'Request failed' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-3">
+      <button onClick={test} disabled={testing}
+        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-600 hover:border-gray-500 transition-all disabled:opacity-50">
+        {testing ? <><div className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"/> Testing...</> : '🔌 Send Test'}
+      </button>
+      {result && (
+        <span className={`text-xs font-semibold ${result.success ? 'text-green-600' : 'text-red-500'}`}>
+          {result.success ? `✅ Got ${result.status}` : `❌ ${result.error}`}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function EditCampaign() {
   const { id }   = useParams()
   const navigate = useNavigate()
@@ -87,6 +120,7 @@ export default function EditCampaign() {
     max_concurrent_calls: 5, max_retries: 2,
     calling_hours_start: '09:00', calling_hours_end: '21:00',
     schedule_start: '', _scheduleMode: 'now',
+    webhook_url: '', webhook_secret: '',
   })
 
   const set = (key, val) => {
@@ -122,6 +156,8 @@ export default function EditCampaign() {
           calling_hours_end:     c.calling_hours_end || '21:00',
           schedule_start:        c.schedule_start || '',
           _scheduleMode:         c.schedule_start ? 'schedule' : 'now',
+          webhook_url:           c.webhook_url    || '',
+          webhook_secret:        c.webhook_secret || '',
         })
         setContacts(contactRes.data.contacts || [])
         setContactCount(contactRes.data.total || 0)
@@ -544,6 +580,29 @@ export default function EditCampaign() {
               className={inp} placeholder="+919876543210"/>
             <p className="text-xs text-gray-400 mt-1">Leave blank to use default number</p>
           </Field>
+
+          {/* Webhook / External API */}
+          <div className="pt-4 border-t border-gray-100">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">📡 External API / Webhook</p>
+            <Field label="Webhook URL" hint="We POST call results here after every call">
+              <input value={form.webhook_url} onChange={e => set('webhook_url', e.target.value)}
+                className={inp} placeholder="https://yourserver.com/api/call-results"/>
+            </Field>
+            <Field label="Webhook Secret (optional)" hint="Used to sign requests — verify with X-Webhook-Signature header">
+              <input value={form.webhook_secret} onChange={e => set('webhook_secret', e.target.value)}
+                className={inp} placeholder="your-secret-key" type="password"/>
+            </Field>
+            {form.webhook_url && (
+              <WebhookTester url={form.webhook_url} secret={form.webhook_secret}/>
+            )}
+            <div className="mt-3 p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs text-gray-500 space-y-1">
+              <p className="font-semibold text-gray-700">📦 Payload sent after each call:</p>
+              <p>• <span className="font-mono">event</span>, <span className="font-mono">timestamp</span></p>
+              <p>• <span className="font-mono">campaign</span> — id, name, type</p>
+              <p>• <span className="font-mono">contact</span> — phone + all Excel columns</p>
+              <p>• <span className="font-mono">call</span> — outcome, duration, acknowledged, collected_data</p>
+            </div>
+          </div>
         </>)}
 
       </div>
