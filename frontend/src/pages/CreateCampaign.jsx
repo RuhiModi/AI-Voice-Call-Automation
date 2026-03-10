@@ -80,6 +80,8 @@ export default function CreateCampaign() {
     calling_hours_start:  '09:00',
     calling_hours_end:    '21:00',
     google_sheet_url:     '',
+    webhook_url:          '',
+    webhook_secret:       '',
     max_retries:          2,
     schedule_mode:        'now',    // 'now' | 'schedule'
     schedule_start:       '',
@@ -180,6 +182,8 @@ export default function CreateCampaign() {
         calling_hours_start:  advanced.calling_hours_start,
         calling_hours_end:    advanced.calling_hours_end,
         google_sheet_url:     advanced.google_sheet_url || null,
+        webhook_url:         advanced.webhook_url    || null,
+        webhook_secret:      advanced.webhook_secret || null,
         max_retries:          advanced.max_retries,
         schedule_start:       advanced.schedule_mode === 'schedule' ? advanced.schedule_start : null,
         status:               'draft',
@@ -608,6 +612,31 @@ export default function CreateCampaign() {
             />
             <p className="text-[11px] mt-1.5 text-[#aaa]">
               Paste your Google Sheet link — call results will be added as new rows after each call
+            </p>
+          </div>
+
+          {/* Webhook */}
+          <div className="mt-5 pt-5" style={{ borderTop: '1px solid #ede7dc' }}>
+            <label className="block text-xs font-semibold text-[#6b6b6b] mb-1">
+              📡 Send results to your server <span className="font-normal text-[#aaa]">(optional)</span>
+            </label>
+            <input
+              value={advanced.webhook_url}
+              onChange={e => setAdvanced(a => ({ ...a, webhook_url: e.target.value }))}
+              className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc] mb-2"
+              placeholder="https://yourserver.com/api/call-results"
+            />
+            {advanced.webhook_url && (
+              <input
+                value={advanced.webhook_secret}
+                onChange={e => setAdvanced(a => ({ ...a, webhook_secret: e.target.value }))}
+                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]"
+                placeholder="Webhook secret (optional — for signature verification)"
+                type="password"
+              />
+            )}
+            <p className="text-[11px] mt-1.5 text-[#aaa]">
+              We POST call results here after every call ends — outcome, duration, collected data
             </p>
           </div>
         </Section>
