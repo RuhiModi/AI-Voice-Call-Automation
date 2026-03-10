@@ -108,8 +108,9 @@ export const billingApi = {
 
 // ── Settings ──────────────────────────────────────────────────
 export const settingsApi = {
-  get:    ()     => api.get('/settings'),
-  update: (data) => api.put('/settings', data),
+  get:        ()     => api.get('/settings'),
+  update:     (data) => api.put('/settings', data),
+  testVobiz:  ()     => api.post('/settings/test-vobiz'),
 }
 
 // ── User ──────────────────────────────────────────────────────
