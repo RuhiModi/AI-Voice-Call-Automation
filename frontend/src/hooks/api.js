@@ -100,10 +100,11 @@ export const passwordApi = {
 
 // ── Billing ───────────────────────────────────────────────────
 export const billingApi = {
-  getUsage:   ()     => api.get('/billing/usage'),
-  getHistory: ()     => api.get('/billing/history'),
-  getPlans:   ()     => api.get('/billing/plans'),
-  upgrade:    (plan) => api.post('/billing/upgrade', { plan }),
+  summary:  (month) => api.get('/billing/summary', { params: { month } }),
+  monthly:  ()      => api.get('/billing/monthly'),
+  activity: ()      => api.get('/billing/activity'),
+  invoices: ()      => api.get('/billing/invoices'),
+  invoice:  (id)    => api.get(`/billing/invoices/${id}`),
 }
 
 // ── Settings ──────────────────────────────────────────────────
