@@ -79,6 +79,7 @@ export default function CreateCampaign() {
     max_concurrent_calls: 3,
     calling_hours_start:  '09:00',
     calling_hours_end:    '21:00',
+    google_sheet_url:     '',
     max_retries:          2,
     schedule_mode:        'now',    // 'now' | 'schedule'
     schedule_start:       '',
@@ -178,6 +179,7 @@ export default function CreateCampaign() {
         max_concurrent_calls: advanced.max_concurrent_calls,
         calling_hours_start:  advanced.calling_hours_start,
         calling_hours_end:    advanced.calling_hours_end,
+        google_sheet_url:     advanced.google_sheet_url || null,
         max_retries:          advanced.max_retries,
         schedule_start:       advanced.schedule_mode === 'schedule' ? advanced.schedule_start : null,
         status:               'draft',
@@ -591,6 +593,22 @@ export default function CreateCampaign() {
                 onChange={e => setAdvanced(a => ({ ...a, calling_hours_end: e.target.value }))}
                 className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
             </div>
+          </div>
+
+          {/* Google Sheets sync */}
+          <div className="mt-5 pt-5" style={{ borderTop: '1px solid #ede7dc' }}>
+            <label className="block text-xs font-semibold text-[#6b6b6b] mb-1">
+              📊 Save results to Google Sheet <span className="font-normal text-[#aaa]">(optional)</span>
+            </label>
+            <input
+              value={advanced.google_sheet_url}
+              onChange={e => setAdvanced(a => ({ ...a, google_sheet_url: e.target.value }))}
+              className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]"
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+            />
+            <p className="text-[11px] mt-1.5 text-[#aaa]">
+              Paste your Google Sheet link — call results will be added as new rows after each call
+            </p>
           </div>
         </Section>
       )}
