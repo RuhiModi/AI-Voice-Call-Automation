@@ -9,6 +9,29 @@ const planService = require('../services/plan.service')
 const router = express.Router()
 
 // All billing routes require authentication
+// ── GET /billing/invoices/:id/download — NO AUTH MIDDLEWARE ──
+// Opens directly in browser tab so uses ?token= query param
+router.get('/invoices/:id/download', async (req, res, next) => {
+  try {
+    const jwt = require('jsonwebtoken')
+    const raw = req.query.token || (req.headers.authorization || '').replace('Bearer ', '')
+    if (!raw) return res.status(401).send('<h3>Unauthorized — missing token</h3>')
+    let userId
+    try {
+      const decoded = jwt.verify(raw, process.env.JWT_SECRET)
+      userId = decoded.userId || decoded.id || decoded.sub
+    } catch (e) {
+      return res.status(401).send('<h3>Invalid or expired token</h3>')
+    }
+    const invoice = await invoiceService._getFullInvoice(req.params.id, userId)
+    if (!invoice) return res.status(404).send('<h3>Invoice not found</h3>')
+    const html = invoiceService.generateInvoiceHTML(invoice)
+    res.setHeader('Content-Type', 'text/html')
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.invoice_number}.html"`)
+    res.send(html)
+  } catch (err) { next(err) }
+})
+
 router.use(auth)
 
 // ── GET /billing/summary?month=2026-02 ─────────────────────
@@ -177,17 +200,6 @@ router.post('/invoices/generate', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// ── GET /billing/invoices/:id/download ─────────────────────
-// Returns HTML invoice for browser print/save as PDF
-router.get('/invoices/:id/download', async (req, res, next) => {
-  try {
-    const invoice = await invoiceService._getFullInvoice(req.params.id, req.userId)
-    if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
-    const html = invoiceService.generateInvoiceHTML(invoice)
-    res.setHeader('Content-Type', 'text/html')
-    res.setHeader('Content-Disposition', `inline; filename="${invoice.invoice_number}.html"`)
-    res.send(html)
-  } catch (err) { next(err) }
-})
+
 
 module.exports = router
