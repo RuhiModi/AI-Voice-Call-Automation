@@ -8,7 +8,8 @@ const cron        = require('node-cron')
 const { v4: uuidv4 } = require('uuid')
 const config      = require('../config')
 const campaignRepo  = require('../repositories/campaign.repo')
-const planService   = require('./plan.service')
+const planService    = require('./plan.service')
+const invoiceService = require('./invoice.service')
 const contactRepo  = require('../repositories/contact.repo')
 const callRepo     = require('../repositories/call.repo')
 const { makeOutboundCall } = require('../telephony')
@@ -210,6 +211,28 @@ function _isWithinCallingHours(campaign) {
   return hour >= startHour && hour < endHour
 }
 
+// ── Auto-generate invoices on 1st of each month ─────────────
+function startInvoiceCron() {
+  function scheduleNext() {
+    const next = new Date()
+    next.setMonth(next.getMonth() + 1)
+    next.setDate(1)
+    next.setHours(0, 5, 0, 0)
+    const delay = next.getTime() - Date.now()
+    console.log(`[InvoiceCron] Next run scheduled for ${next.toISOString()}`)
+    setTimeout(async () => {
+      await invoiceService.generateMonthlyInvoices().catch(console.error)
+      scheduleNext()
+    }, delay)
+  }
+  const now = new Date()
+  if (now.getDate() === 1 && now.getHours() < 6) {
+    invoiceService.generateMonthlyInvoices().catch(console.error)
+  }
+  scheduleNext()
+}
+
+schedulerService.startInvoiceCron = startInvoiceCron
 module.exports = schedulerService
 
 // ── Startup recovery ───────────────────────────────────────────
