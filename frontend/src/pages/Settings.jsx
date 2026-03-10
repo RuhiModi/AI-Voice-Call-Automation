@@ -53,19 +53,7 @@ function Section({ title, desc, badge, children }) {
         </div>
 
         <button
-          onClick={async () => {
-            setRegenerating(true)
-            try {
-              const res = await fetch(
-                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
-                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
-              )
-              const data = await res.json()
-              setApiKey(data.api_key)
-              setShowApiKey(true)
-              toast.success('New API key generated ✅')
-            } catch { toast.error('Failed') } finally { setRegenerating(false) }
-          }}
+          onClick={handleRegenerateKey}
           disabled={regenerating}
           className="btn-secondary"
           style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -123,19 +111,7 @@ function Field({ label, value, onChange, placeholder, type = 'text', hint, readO
         </div>
 
         <button
-          onClick={async () => {
-            setRegenerating(true)
-            try {
-              const res = await fetch(
-                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
-                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
-              )
-              const data = await res.json()
-              setApiKey(data.api_key)
-              setShowApiKey(true)
-              toast.success('New API key generated ✅')
-            } catch { toast.error('Failed') } finally { setRegenerating(false) }
-          }}
+          onClick={handleRegenerateKey}
           disabled={regenerating}
           className="btn-secondary"
           style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -196,19 +172,7 @@ function InfoBanner({ color, children }) {
         </div>
 
         <button
-          onClick={async () => {
-            setRegenerating(true)
-            try {
-              const res = await fetch(
-                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
-                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
-              )
-              const data = await res.json()
-              setApiKey(data.api_key)
-              setShowApiKey(true)
-              toast.success('New API key generated ✅')
-            } catch { toast.error('Failed') } finally { setRegenerating(false) }
-          }}
+          onClick={handleRegenerateKey}
           disabled={regenerating}
           className="btn-secondary"
           style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -276,17 +240,15 @@ export default function Settings() {
   }, [])
 
   // Regenerate pull API key
-  async function handleRegenerateApiKey() {
+  async function handleRegenerateKey() {
     setRegenerating(true)
     try {
-      const res = await settingsApi.update({ _regenerate_api_key: true })
-      // Call dedicated endpoint
-      const r = await import('../hooks/api').then(m => m.settingsApi.regenerateApiKey())
-      setApiKey(r.data.api_key)
+      const res = await settingsApi.regenerateApiKey()
+      setApiKey(res.data.api_key)
       setShowApiKey(true)
-      toast.success('New API key generated')
+      toast.success('New API key generated ✅')
     } catch {
-      toast.error('Failed to regenerate key')
+      toast.error('Failed to generate key')
     } finally {
       setRegenerating(false)
     }
@@ -615,19 +577,7 @@ export default function Settings() {
         </div>
 
         <button
-          onClick={async () => {
-            setRegenerating(true)
-            try {
-              const res = await fetch(
-                (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/settings/regenerate-api-key',
-                { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
-              )
-              const data = await res.json()
-              setApiKey(data.api_key)
-              setShowApiKey(true)
-              toast.success('New API key generated ✅')
-            } catch { toast.error('Failed') } finally { setRegenerating(false) }
-          }}
+          onClick={handleRegenerateKey}
           disabled={regenerating}
           className="btn-secondary"
           style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
