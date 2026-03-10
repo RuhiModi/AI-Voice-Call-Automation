@@ -8,7 +8,7 @@ const router  = express.Router()
 router.get('/', auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      'SELECT email, company_name, vobiz_auth_id, vobiz_auth_token, vobiz_from_number FROM users WHERE id = $1',
+      'SELECT email, company_name, vobiz_auth_id, vobiz_auth_token, vobiz_from_number, api_key FROM users WHERE id = $1',
       [req.userId]
     )
     const user = rows[0]
@@ -21,6 +21,7 @@ router.get('/', auth, async (req, res, next) => {
       vobiz_auth_token:  user.vobiz_auth_token  ? '••••••••' + user.vobiz_auth_token.slice(-4) : '',
       vobiz_from_number: user.vobiz_from_number || '',
       has_vobiz_creds:   !!(user.vobiz_auth_id && user.vobiz_auth_token),
+      api_key:           user.api_key           || null,
     })
   } catch (err) { next(err) }
 })
@@ -89,6 +90,33 @@ router.post('/test-vobiz', auth, async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid credentials — check your Auth ID and Token' })
     }
     res.status(400).json({ error: 'Could not connect to Vobiz: ' + (err.response?.data?.error || err.message) })
+  }
+})
+
+// POST /settings/regenerate-api-key — generate a new pull API key
+router.post('/regenerate-api-key', auth, async (req, res, next) => {
+  try {
+    const crypto = require('crypto')
+    const newKey = 'vbz_' + crypto.randomBytes(24).toString('hex')
+    await pool.query('UPDATE users SET api_key = $1 WHERE id = $2', [newKey, req.userId])
+    res.json({ api_key: newKey })
+  } catch (err) { next(err) }
+})
+
+// POST /settings/test-webhook — test user's external webhook URL
+router.post('/test-webhook', auth, async (req, res, next) => {
+  try {
+    const { webhook_url, webhook_secret } = req.body
+    if (!webhook_url) return res.status(400).json({ error: 'webhook_url is required' })
+    const { testWebhook } = require('../services/webhookDelivery')
+    const result = await testWebhook(webhook_url, webhook_secret || '')
+    res.json(result)
+  } catch (err) {
+    const status = err.response?.status || null
+    res.status(400).json({
+      error: `Webhook test failed: ${err.response?.data ? JSON.stringify(err.response.data) : err.message}`,
+      status,
+    })
   }
 })
 
