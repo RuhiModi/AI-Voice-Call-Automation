@@ -1,7 +1,9 @@
 // src/routes/billing.routes.js
+const pool    = require('../db/supabaseClient')
 const express     = require('express')
 const auth        = require('../middleware/auth')
 const billingRepo = require('../repositories/billing.repo')
+const planService = require('../services/plan.service')
 
 const router = express.Router()
 
@@ -124,6 +126,40 @@ router.get('/invoices/:id', async (req, res, next) => {
     const invoice = await billingRepo.getInvoice(req.params.id, req.userId)
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
     res.json({ invoice })
+  } catch (err) { next(err) }
+})
+
+// ── GET /billing/usage-summary ─────────────────────────────
+// Full plan + usage summary for dashboard/billing page
+router.get('/usage-summary', async (req, res, next) => {
+  try {
+    const summary = await planService.getUsageSummary(req.userId)
+    res.json(summary)
+  } catch (err) { next(err) }
+})
+
+// ── GET /billing/plans ──────────────────────────────────────
+// All available plans (for upgrade UI)
+router.get('/plans', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM plans WHERE is_active = TRUE ORDER BY price_monthly ASC'
+    )
+    res.json({ plans: rows })
+  } catch (err) { next(err) }
+})
+
+// ── POST /billing/upgrade ───────────────────────────────────
+// Admin-only plan change (in production, hook this to payment gateway)
+router.post('/upgrade', async (req, res, next) => {
+  try {
+    const { plan } = req.body
+    if (!plan) return res.status(400).json({ error: 'plan is required' })
+    const { rows } = await pool.query('SELECT id FROM plans WHERE id = $1 AND is_active = TRUE', [plan])
+    if (!rows[0]) return res.status(400).json({ error: 'Invalid plan' })
+    await pool.query('UPDATE users SET plan = $1 WHERE id = $2', [plan, req.userId])
+    const summary = await planService.getUsageSummary(req.userId)
+    res.json({ success: true, ...summary })
   } catch (err) { next(err) }
 })
 
