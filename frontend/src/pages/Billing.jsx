@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { billingApi } from '../hooks/api'
+import toast from 'react-hot-toast'
 import { Phone, Clock, IndianRupee, Calendar, TrendingUp, Download, ChevronDown, Receipt } from 'lucide-react'
 
 // ── helpers ───────────────────────────────────────────────────
@@ -96,12 +97,15 @@ function BarChart({ data }) {
 export default function Billing() {
   const months = monthOptions()
   const [selectedMonth, setSelectedMonth] = useState(months[0].val)
-  const [summary,  setSummary]  = useState(null)
-  const [monthly,  setMonthly]  = useState([])
-  const [activity, setActivity] = useState([])
-  const [invoices, setInvoices] = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [tab,      setTab]      = useState('usage')
+  const [summary,      setSummary]      = useState(null)
+  const [monthly,      setMonthly]      = useState([])
+  const [activity,     setActivity]     = useState([])
+  const [invoices,     setInvoices]     = useState([])
+  const [usageSummary, setUsageSummary] = useState(null)
+  const [plans,        setPlans]        = useState([])
+  const [upgrading,    setUpgrading]    = useState(null)
+  const [loading,      setLoading]      = useState(true)
+  const [tab,          setTab]          = useState('plan')
 
   useEffect(() => {
     setLoading(true)
@@ -110,12 +114,16 @@ export default function Billing() {
       billingApi.monthly(),
       billingApi.activity(),
       billingApi.invoices(),
+      billingApi.usageSummary(),
+      billingApi.plans(),
     ])
-      .then(([s, m, a, inv]) => {
+      .then(([s, m, a, inv, us, pl]) => {
         setSummary(s.data)
         setMonthly(m.data.months || [])
         setActivity(a.data.days  || [])
         setInvoices(inv.data.invoices || [])
+        setUsageSummary(us.data)
+        setPlans(pl.data.plans || [])
       })
       .catch(err => console.error('Billing load error:', err))
       .finally(() => setLoading(false))
@@ -154,7 +162,7 @@ export default function Billing() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: '#f5f1ea' }}>
-        {[['usage', 'Usage'], ['invoices', 'Invoices']].map(([key, label]) => (
+        {[['plan', 'Plan & Usage'], ['usage', 'Usage'], ['invoices', 'Invoices']].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className="px-5 py-2 rounded-lg text-[13px] font-medium transition-all"
             style={tab === key
@@ -164,6 +172,199 @@ export default function Billing() {
           </button>
         ))}
       </div>
+
+      {/* ── PLAN & USAGE TAB ── */}
+      {tab === 'plan' && usageSummary && (
+        <>
+          {/* Current plan banner */}
+          <div className="card p-6 mb-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                    style={{ background: usageSummary.plan.id === 'free' ? '#f5f1ea' : '#dcf3e5', color: usageSummary.plan.id === 'free' ? '#6b6b6b' : '#228248' }}>
+                    {usageSummary.plan.name} Plan
+                  </span>
+                  {usageSummary.plan.id === 'free' && (
+                    <span className="text-[11px]" style={{ color: '#a8a8a8' }}>· Limited features</span>
+                  )}
+                </div>
+                <p className="text-[13px] mt-2" style={{ color: '#6b6b6b' }}>
+                  Rate: <strong style={{ color: '#1a1a1a' }}>₹{fmt(usageSummary.plan.rate_per_min)}/min</strong> + 18% GST
+                </p>
+              </div>
+              {usageSummary.plan.id !== 'enterprise' && (
+                <button onClick={() => setTab('upgrade')}
+                  className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
+                  ⬆️ Upgrade Plan
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Usage meters */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            {/* Calls */}
+            <div className="card p-5">
+              <div className="flex justify-between items-center mb-3">
+                <div>
+                  <p className="font-semibold text-[14px]" style={{ color: '#1a1a1a' }}>Calls This Month</p>
+                  <p className="text-[12px]" style={{ color: '#a8a8a8' }}>Resets on 1st of each month</p>
+                </div>
+                <p className="text-[13px] font-bold tabular-nums" style={{ color: usageSummary.at_limit.calls ? '#e11d48' : '#1a1a1a' }}>
+                  {fmtInt(usageSummary.usage.calls_this_month)}
+                  {usageSummary.limits.calls_per_month && ` / ${fmtInt(usageSummary.limits.calls_per_month)}`}
+                </p>
+              </div>
+              {usageSummary.limits.calls_per_month ? (
+                <>
+                  <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: '#f5f1ea' }}>
+                    <div className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(100, usageSummary.percentages.calls || 0)}%`,
+                        background: usageSummary.at_limit.calls ? '#e11d48' : usageSummary.warnings.calls ? '#f5a623' : '#52b87a',
+                      }} />
+                  </div>
+                  {usageSummary.warnings.calls && !usageSummary.at_limit.calls && (
+                    <p className="text-[11px] font-semibold" style={{ color: '#f5a623' }}>
+                      ⚠️ {usageSummary.percentages.calls}% used — running low
+                    </p>
+                  )}
+                  {usageSummary.at_limit.calls && (
+                    <p className="text-[11px] font-semibold" style={{ color: '#e11d48' }}>
+                      ⛔ Limit reached — campaigns paused until next month or upgrade
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[12px]" style={{ color: '#52b87a' }}>✅ Unlimited calls</p>
+              )}
+            </div>
+
+            {/* Campaigns */}
+            <div className="card p-5">
+              <div className="flex justify-between items-center mb-3">
+                <div>
+                  <p className="font-semibold text-[14px]" style={{ color: '#1a1a1a' }}>Total Campaigns</p>
+                  <p className="text-[12px]" style={{ color: '#a8a8a8' }}>All campaigns in your account</p>
+                </div>
+                <p className="text-[13px] font-bold tabular-nums" style={{ color: usageSummary.at_limit.campaigns ? '#e11d48' : '#1a1a1a' }}>
+                  {fmtInt(usageSummary.usage.campaigns_total)}
+                  {usageSummary.limits.campaigns_limit && ` / ${fmtInt(usageSummary.limits.campaigns_limit)}`}
+                </p>
+              </div>
+              {usageSummary.limits.campaigns_limit ? (
+                <>
+                  <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: '#f5f1ea' }}>
+                    <div className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(100, usageSummary.percentages.campaigns || 0)}%`,
+                        background: usageSummary.at_limit.campaigns ? '#e11d48' : usageSummary.warnings.campaigns ? '#f5a623' : '#52b87a',
+                      }} />
+                  </div>
+                  {usageSummary.at_limit.campaigns && (
+                    <p className="text-[11px] font-semibold" style={{ color: '#e11d48' }}>
+                      ⛔ Limit reached — upgrade to create more campaigns
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[12px]" style={{ color: '#52b87a' }}>✅ Unlimited campaigns</p>
+              )}
+            </div>
+          </div>
+
+          {/* Other limits */}
+          <div className="card p-5">
+            <p className="font-semibold text-[14px] mb-4" style={{ color: '#1a1a1a' }}>Plan Limits</p>
+            <div className="space-y-3">
+              {[
+                { label: 'Contacts per campaign', value: usageSummary.limits.contacts_per_campaign },
+                { label: 'Team members',           value: usageSummary.limits.team_members_limit },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid #f5f1ea' }}>
+                  <p className="text-[13px]" style={{ color: '#6b6b6b' }}>{label}</p>
+                  <p className="text-[13px] font-semibold" style={{ color: '#1a1a1a' }}>
+                    {value === null ? '∞ Unlimited' : fmtInt(value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── UPGRADE TAB ── */}
+      {tab === 'upgrade' && (
+        <div>
+          <div className="flex items-center gap-3 mb-6">
+            <button onClick={() => setTab('plan')} className="btn-secondary" style={{ padding: '8px 14px', fontSize: '12px' }}>← Back</button>
+            <div>
+              <h2 className="font-semibold text-[15px]" style={{ color: '#1a1a1a' }}>Choose a Plan</h2>
+              <p className="text-[12px]" style={{ color: '#a8a8a8' }}>Current: <strong>{usageSummary?.plan?.name}</strong></p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {plans.filter(p => p.id !== 'enterprise').map(plan => {
+              const isCurrent = plan.id === usageSummary?.plan?.id
+              const isPopular = plan.id === 'pro'
+              return (
+                <div key={plan.id} className="card p-6 relative"
+                  style={isCurrent ? { border: '2px solid #1a1a1a' } : isPopular ? { border: '2px solid #f5a623' } : {}}>
+                  {isPopular && !isCurrent && (
+                    <span className="absolute -top-3 left-6 text-[11px] font-bold px-3 py-1 rounded-full"
+                      style={{ background: '#f5a623', color: '#fff' }}>Most Popular</span>
+                  )}
+                  {isCurrent && (
+                    <span className="absolute -top-3 left-6 text-[11px] font-bold px-3 py-1 rounded-full"
+                      style={{ background: '#1a1a1a', color: '#fff' }}>Current Plan</span>
+                  )}
+                  <p className="font-bold text-[16px] mb-1" style={{ color: '#1a1a1a' }}>{plan.name}</p>
+                  <p className="text-[24px] font-bold mb-4" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>
+                    {plan.price_monthly > 0 ? `₹${fmtInt(plan.price_monthly)}/mo` : 'Free'}
+                  </p>
+                  <div className="space-y-2 mb-5">
+                    {(plan.features || []).map((f, i) => (
+                      <p key={i} className="text-[12px] flex items-center gap-2" style={{ color: '#3d3d3d' }}>
+                        <span style={{ color: '#52b87a' }}>✓</span> {f}
+                      </p>
+                    ))}
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (isCurrent) return
+                      setUpgrading(plan.id)
+                      try {
+                        await billingApi.upgrade(plan.id)
+                        const us = await billingApi.usageSummary()
+                        setUsageSummary(us.data)
+                        setTab('plan')
+                        toast?.success(`Upgraded to ${plan.name}!`)
+                      } catch (err) {
+                        toast?.error('Upgrade failed')
+                      } finally { setUpgrading(null) }
+                    }}
+                    disabled={isCurrent || upgrading === plan.id}
+                    className={isCurrent ? 'btn-secondary w-full' : 'btn-primary w-full'}
+                    style={{ opacity: isCurrent ? 0.5 : 1 }}>
+                    {upgrading === plan.id ? 'Upgrading...' : isCurrent ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          {/* Enterprise */}
+          <div className="card p-6 mt-4 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="font-bold text-[15px]" style={{ color: '#1a1a1a' }}>Enterprise</p>
+              <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>Unlimited everything · Custom rate · Dedicated support · SLA</p>
+            </div>
+            <button className="btn-secondary" onClick={() => window.open('mailto:sales@vobiz.ai')}>
+              Contact Sales
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── USAGE TAB ── */}
       {tab === 'usage' && (
