@@ -20,8 +20,9 @@ const authRoutes     = require('./routes/auth.routes')
 const campaignRoutes = require('./routes/campaigns.routes')
 const callRoutes     = require('./routes/calls.routes')
 const webhookRoutes  = require('./routes/webhooks.routes')
-const billingRoutes   = require('./routes/billing.routes')
-const simulateRoutes  = require('./routes/simulate.routes')
+const billingRoutes  = require('./routes/billing.routes')
+const simulateRoutes = require('./routes/simulate.routes')
+const settingsRoutes = require('./routes/settings.routes')   // ← NEW
 
 // Integrations
 const { getOAuthUrl, exchangeCodeForToken } = require('./integrations/googleSheets')
@@ -35,8 +36,6 @@ const uploadsDir = path.join(__dirname, '..', 'uploads')
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
 
 // ── CORS ─────────────────────────────────────────────────────
-// Allows: any localhost port (dev), any *.vercel.app, and the
-// explicit FRONTEND_URL set in Render env vars.
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
@@ -46,15 +45,10 @@ if (config.frontendUrl) allowedOrigins.push(config.frontendUrl)
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true)
-    // Allow any vercel.app subdomain
     if (/\.vercel\.app$/.test(origin)) return callback(null, true)
-    // Allow any localhost
     if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true)
-    // Allow exact matches
     if (allowedOrigins.includes(origin)) return callback(null, true)
-    // Allow all in development
     if (config.nodeEnv !== 'production') return callback(null, true)
     callback(new Error(`CORS: ${origin} not allowed`))
   },
@@ -74,8 +68,8 @@ if (config.nodeEnv !== 'test') {
 app.use(logger)
 
 // ── Rate Limiter ─────────────────────────────────────────────
-app.use('/auth', authRateLimiter)  // Tighter limit on auth endpoints
-app.use(rateLimiter)               // General limit on everything else
+app.use('/auth', authRateLimiter)
+app.use(rateLimiter)
 
 // ── Health Check ─────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -98,6 +92,7 @@ app.use('/calls',     callRoutes)
 app.use('/webhooks',  webhookRoutes)
 app.use('/billing',   billingRoutes)
 app.use('/simulate',  simulateRoutes)
+app.use('/settings',  settingsRoutes)               // ← NEW
 
 // ── Google Sheets OAuth ──────────────────────────────────────
 app.get('/auth/google/sheets', (req, res) => {
