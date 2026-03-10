@@ -191,7 +191,7 @@ function generateInvoiceHTML(invoice) {
 <body>
   <div class="header">
     <div>
-      <div class="brand">Vo<span>biz</span></div>
+      <div class="brand">VoiceAI <span>India</span></div>
       <p style="font-size:12px;color:#a8a8a8;margin-top:4px">AI Voice Campaign Platform</p>
     </div>
     <div class="invoice-meta">
@@ -208,9 +208,9 @@ function generateInvoiceHTML(invoice) {
   <div class="parties">
     <div class="party">
       <h4>From</h4>
-      <p class="name">Vobiz AI</p>
+      <p class="name">VoiceAI India</p>
       <p>AI Voice Campaign Platform</p>
-      <p>billing@vobiz.ai</p>
+      <p>billing@voiceai.in</p>
     </div>
     <div class="party">
       <h4>Bill To</h4>
@@ -239,8 +239,8 @@ function generateInvoiceHTML(invoice) {
   </div>
 
   <div class="footer">
-    <p>Thank you for using Vobiz AI · This is a computer-generated invoice</p>
-    <p style="margin-top:4px">For queries: billing@vobiz.ai</p>
+    <p>Thank you for using VoiceAI India · This is a computer-generated invoice</p>
+    <p style="margin-top:4px">For queries: billing@voiceai.in</p>
   </div>
 </body>
 </html>`
