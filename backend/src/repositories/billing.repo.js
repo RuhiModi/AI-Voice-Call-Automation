@@ -29,12 +29,12 @@ const billingRepo = {
 
   // ── Total stats for a user (all time or period) ─────────────
   async getTotals(userId, startDate, endDate) {
+    // Call stats — completed calls only (for billing)
     const { rows } = await pool.query(
       `SELECT
          COUNT(cl.id)                                  AS total_calls,
          SUM(cl.duration_sec)                          AS total_seconds,
-         ROUND(SUM(cl.duration_sec)::NUMERIC / 60, 2) AS total_minutes,
-         COUNT(DISTINCT cl.campaign_id)                AS campaigns_count
+         ROUND(SUM(cl.duration_sec)::NUMERIC / 60, 2) AS total_minutes
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id  = $1
@@ -44,7 +44,19 @@ const billingRepo = {
          AND cl.duration_sec > 0`,
       [userId, startDate, endDate]
     )
-    return rows[0]
+
+    // Campaign count — ALL campaigns belonging to user (not just ones with completed calls)
+    const { rows: campRows } = await pool.query(
+      `SELECT COUNT(*) AS campaigns_count
+       FROM campaigns
+       WHERE user_id = $1`,
+      [userId]
+    )
+
+    return {
+      ...rows[0],
+      campaigns_count: campRows[0]?.campaigns_count || 0,
+    }
   },
 
   // ── Monthly breakdown (last 6 months) ──────────────────────
