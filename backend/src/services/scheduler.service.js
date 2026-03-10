@@ -7,7 +7,8 @@
 const cron        = require('node-cron')
 const { v4: uuidv4 } = require('uuid')
 const config      = require('../config')
-const campaignRepo = require('../repositories/campaign.repo')
+const campaignRepo  = require('../repositories/campaign.repo')
+const planService   = require('./plan.service')
 const contactRepo  = require('../repositories/contact.repo')
 const callRepo     = require('../repositories/call.repo')
 const { makeOutboundCall } = require('../telephony')
@@ -131,6 +132,18 @@ async function _processCampaign(campaignId) {
       }
     }
     return
+  }
+
+  // Check call limit before starting this batch
+  const limitCheck = await planService.checkCallLimit(campaign.user_id)
+  if (!limitCheck.allowed) {
+    console.warn(`[Scheduler] ⛔ Call limit reached for user ${campaign.user_id} — pausing campaign ${campaignId}`)
+    await campaignRepo.updateStatus(campaignId, 'paused')
+    activeCampaigns.delete(campaignId)
+    return
+  }
+  if (limitCheck.warning) {
+    console.warn(`[Scheduler] ⚠️  ${limitCheck.warningMsg}`)
   }
 
   // Make calls — stagger by 2s each to avoid spam detection
