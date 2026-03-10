@@ -60,6 +60,7 @@ export default function CreateCampaign() {
   const fileRef   = useRef(null)
   const pdfRef    = useRef(null)
 
+  const [campaignName, setCampaignName] = useState('')          // user-given campaign name
   const [mode,         setMode]         = useState(null)        // 'announcement' | 'survey' | 'reminder'
   const [lang,         setLang]         = useState('gu')
   const [message,      setMessage]      = useState('')          // announcement template
@@ -165,9 +166,8 @@ export default function CreateCampaign() {
     setLoading(true)
     try {
       // 1. Create campaign
-      const autoName = `${selectedMode.title} — ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' })}`
       const payload = {
-        name:                 autoName,
+        name:                 campaignName.trim() || `${selectedMode.title} — ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' })}`,
         campaign_type:        mode,
         language_priority:    lang,
         script_type:          mode === 'survey' ? 'pdf' : 'manual',
@@ -236,7 +236,7 @@ export default function CreateCampaign() {
               className="w-full py-3.5 bg-[#1a1a1a] text-white rounded-2xl font-semibold text-sm">
               Watch Live Results →
             </button>
-            <button onClick={() => { setLaunched(false); setMode(null); setMessage(''); setContactFile(null); setContactCols([]); setPreviewRow(null); setPdfFile(null) }}
+            <button onClick={() => { setLaunched(false); setCampaignName(''); setMode(null); setMessage(''); setContactFile(null); setContactCols([]); setPreviewRow(null); setPdfFile(null) }}
               className="w-full py-3.5 border-2 border-[#e0d9ce] text-[#525252] rounded-2xl font-semibold text-sm">
               Create Another Campaign
             </button>
@@ -247,7 +247,7 @@ export default function CreateCampaign() {
   }
 
   const preview = buildPreview()
-  const canLaunch = mode && contactFile && advanced.persona_tone &&
+  const canLaunch = campaignName.trim() && mode && contactFile && advanced.persona_tone &&
     (advanced.schedule_mode === 'now' || !!advanced.schedule_start) &&
     (mode === 'survey' ? !!pdfFile : !!message.trim())
 
@@ -260,8 +260,27 @@ export default function CreateCampaign() {
         <p className="text-[#8a8a8a] text-sm">Set up and launch in under 2 minutes</p>
       </div>
 
-      {/* ── STEP 1: Mode ─────────────────────────────────────── */}
-      <Section label="1. What do you want to do?" done={!!mode}>
+      {/* ── STEP 1: Campaign Name ───────────────────────────── */}
+      <Section label="1. Campaign Name" done={campaignName.trim().length > 0}>
+        <input
+          value={campaignName}
+          onChange={e => setCampaignName(e.target.value)}
+          placeholder={
+            !mode ? 'e.g. Bus Driver Route Update — March 2026'
+            : mode === 'announcement' ? 'e.g. Bus Driver Route Update — March 2026'
+            : mode === 'survey' ? 'e.g. Beneficiary Verification — Taluka North'
+            : 'e.g. EMI Reminder — April Batch'
+          }
+          className={`w-full border-2 rounded-2xl px-4 py-3.5 text-sm outline-none transition-all
+            ${!campaignName.trim()
+              ? 'border-[#ede7dc] bg-[#faf8f4] focus:border-[#1a1a1a]'
+              : 'border-[#1a1a1a] bg-white'}`}
+        />
+        <p className="text-xs text-[#aaa] mt-1.5">Give it a specific name so you can find it later</p>
+      </Section>
+
+      {/* ── STEP 2: Mode ─────────────────────────────────────── */}
+      <Section label="2. What do you want to do?" done={!!mode}>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {MODES.map(m => (
             <button key={m.id} onClick={() => setMode(m.id)}
@@ -299,7 +318,7 @@ export default function CreateCampaign() {
 
       {/* ── STEP 2: Language ──────────────────────────────────── */}
       {mode && (
-        <Section label="2. Language" done={true}>
+        <Section label="3. Language" done={true}>
           <div className="flex gap-2">
             {LANGS.map(l => (
               <button key={l.code} onClick={() => setLang(l.code)}
@@ -319,7 +338,7 @@ export default function CreateCampaign() {
 
       {/* ── STEP 3: Contact File ──────────────────────────────── */}
       {mode && (
-        <Section label="3. Upload your contact list" done={!!contactFile}>
+        <Section label="4. Upload your contact list" done={!!contactFile}>
           <div
             onDrop={onDrop}
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
@@ -385,7 +404,7 @@ export default function CreateCampaign() {
 
       {/* ── STEP 4a: Message (Announcement / Reminder) ─────────── */}
       {mode && mode !== 'survey' && (
-        <Section label="4. Write your message" done={message.trim().length > 10}>
+        <Section label="5. Write your message" done={message.trim().length > 10}>
 
           {/* Variable insert buttons — only if columns detected */}
           {contactCols.filter(c => c.toLowerCase() !== 'phone' && c.toLowerCase() !== 'mobile').length > 0 && (
@@ -447,7 +466,7 @@ export default function CreateCampaign() {
 
       {/* ── STEP 4b: PDF Upload (Survey) ─────────────────────── */}
       {mode === 'survey' && (
-        <Section label="4. Upload your question script (PDF)" done={!!pdfFile}>
+        <Section label="5. Upload your question script (PDF)" done={!!pdfFile}>
           <div
             onClick={() => !pdfFile && pdfRef.current?.click()}
             className={`border-2 border-dashed rounded-2xl transition-all
@@ -485,7 +504,7 @@ export default function CreateCampaign() {
 
       {/* ── STEP 5: Schedule — MANDATORY ─────────────────────── */}
       {mode && (
-        <Section label="5. When to start calling?" done={advanced.schedule_mode === 'now' || !!advanced.schedule_start}>
+        <Section label="6. When to start calling?" done={advanced.schedule_mode === 'now' || !!advanced.schedule_start}>
           <div className="grid grid-cols-2 gap-3 mb-3">
             {[
               { id: 'now',      emoji: '⚡', label: 'Start Now',    sub: 'Calls begin immediately' },
@@ -519,7 +538,7 @@ export default function CreateCampaign() {
 
       {/* ── STEP 6: Agent Settings — VISIBLE, MANDATORY tone ──── */}
       {mode && (
-        <Section label="6. Agent settings" done={!!advanced.persona_tone}>
+        <Section label="7. Agent settings" done={!!advanced.persona_tone}>
           {/* Tone — mandatory */}
           <div className="mb-5">
             <label className="block text-xs font-bold text-[#3d3d3d] uppercase tracking-wider mb-2">
@@ -584,6 +603,7 @@ export default function CreateCampaign() {
               <div className="flex items-center gap-3 px-5 py-4 bg-[#f5f5f5] rounded-2xl">
                 <div className="flex gap-1">
                   {[
+                    !!campaignName.trim(),
                     !!mode,
                     !!contactFile,
                     mode === 'survey' ? !!pdfFile : message.trim().length > 10,
@@ -594,12 +614,13 @@ export default function CreateCampaign() {
                   ))}
                 </div>
                 <p className="text-sm text-[#8a8a8a]">
-                  {!mode ? 'Choose what kind of call to make'
+                  {!campaignName.trim() ? 'Give your campaign a name (Step 1)'
+                    : !mode ? 'Choose what kind of call to make'
                     : !contactFile ? 'Upload your contact list'
                     : mode === 'survey' && !pdfFile ? 'Upload your question PDF'
                     : !message.trim() && mode !== 'survey' ? 'Write your message'
                     : advanced.schedule_mode === 'schedule' && !advanced.schedule_start ? 'Set a schedule date & time'
-                    : !advanced.persona_tone ? 'Choose agent tone (Step 6)'
+                    : !advanced.persona_tone ? 'Choose agent tone (Step 7)'
                     : 'Almost there!'}
                 </p>
               </div>
