@@ -123,6 +123,12 @@ async function _processCampaign(campaignId) {
       await campaignRepo.updateStatus(campaignId, 'completed')
       activeCampaigns.delete(campaignId)
       console.log(`✅ Campaign completed: ${campaign.name}`)
+      // Fire campaign completion webhook
+      if (campaign.webhook_url) {
+        const { deliverCampaignWebhook } = require('../services/webhookDelivery')
+        deliverCampaignWebhook(campaign)
+          .catch(err => console.error('[Webhook] Campaign summary error:', err.message))
+      }
     }
     return
   }
