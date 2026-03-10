@@ -2,7 +2,8 @@
 const pool    = require('../db/supabaseClient')
 const express     = require('express')
 const auth        = require('../middleware/auth')
-const billingRepo = require('../repositories/billing.repo')
+const billingRepo    = require('../repositories/billing.repo')
+const invoiceService = require('../services/invoice.service')
 const planService = require('../services/plan.service')
 
 const router = express.Router()
@@ -160,6 +161,32 @@ router.post('/upgrade', async (req, res, next) => {
     await pool.query('UPDATE users SET plan = $1 WHERE id = $2', [plan, req.userId])
     const summary = await planService.getUsageSummary(req.userId)
     res.json({ success: true, ...summary })
+  } catch (err) { next(err) }
+})
+
+// ── POST /billing/invoices/generate ────────────────────────
+// Generate invoice for a given month (format: 2026-03)
+router.post('/invoices/generate', async (req, res, next) => {
+  try {
+    const { month } = req.body
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'month is required in YYYY-MM format' })
+    }
+    const { invoice, alreadyExists } = await invoiceService.generateInvoice(req.userId, month)
+    res.json({ invoice, already_exists: alreadyExists })
+  } catch (err) { next(err) }
+})
+
+// ── GET /billing/invoices/:id/download ─────────────────────
+// Returns HTML invoice for browser print/save as PDF
+router.get('/invoices/:id/download', async (req, res, next) => {
+  try {
+    const invoice = await invoiceService._getFullInvoice(req.params.id, req.userId)
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' })
+    const html = invoiceService.generateInvoiceHTML(invoice)
+    res.setHeader('Content-Type', 'text/html')
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.invoice_number}.html"`)
+    res.send(html)
   } catch (err) { next(err) }
 })
 
