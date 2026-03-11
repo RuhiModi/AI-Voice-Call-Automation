@@ -104,10 +104,10 @@ async function generateInvoice(userId, month) {
   for (const item of lineItems) {
     await pool.query(
       `INSERT INTO invoice_line_items
-         (invoice_id, campaign_id, description, calls, minutes, rate, line_total)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+         (invoice_id, campaign_id, campaign_name, description, calls_count, total_minutes, rate_per_min, line_total)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [invoice.id, item.campaign_id, item.description,
-       item.calls, item.minutes, item.rate, item.line_total]
+       item.description, item.calls, item.minutes, item.rate, item.line_total]
     )
   }
 
@@ -151,10 +151,10 @@ function generateInvoiceHTML(invoice) {
 
   const rows = (invoice.line_items || []).map(l => `
     <tr>
-      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea">${l.description || l.campaign_name}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${fmtInt(l.calls)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${Number(l.minutes).toFixed(1)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">₹${Number(l.rate).toFixed(2)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea">${l.campaign_name || l.description}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${fmtInt(l.calls_count)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${Number(l.total_minutes).toFixed(1)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">₹${Number(l.rate_per_min).toFixed(2)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">${fmt(Number(l.line_total)/1.18)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;font-weight:600">${fmt(l.line_total)}</td>
     </tr>`).join('')
