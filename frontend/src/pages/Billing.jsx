@@ -192,10 +192,15 @@ export default function Billing() {
                   )}
                 </div>
                 <p className="text-[13px] mt-2" style={{ color: '#6b6b6b' }}>
-                  Rate: <strong style={{ color: '#1a1a1a' }}>₹{fmt(usageSummary.plan.rate_per_min)}/min</strong> + 18% GST
+                  Rate: <strong style={{ color: '#1a1a1a' }}>₹{fmt(usageSummary.plan.rate_per_min)}/min</strong> + 18% GST · Billed from ringing
+                  {usageSummary.plan.id === 'free' && (
+                    <span className="ml-2 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#dcf3e5', color: '#228248' }}>
+                      ₹10 free credit included
+                    </span>
+                  )}
                 </p>
               </div>
-              {usageSummary.plan.id !== 'enterprise' && (
+              {true && (
                 <button onClick={() => setTab('upgrade')}
                   className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
                   ⬆️ Upgrade Plan
@@ -307,9 +312,9 @@ export default function Billing() {
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {plans.filter(p => p.id !== 'enterprise').map(plan => {
+            {plans.filter(p => p.id !== 'enterprise' && p.id !== 'pro' && p.id !== 'starter').map(plan => {
               const isCurrent = plan.id === usageSummary?.plan?.id
-              const isPopular = plan.id === 'pro'
+              const isPopular = plan.id === 'growth'
               return (
                 <div key={plan.id} className="card p-6 relative"
                   style={isCurrent ? { border: '2px solid #1a1a1a' } : isPopular ? { border: '2px solid #f5a623' } : {}}>
@@ -355,14 +360,14 @@ export default function Billing() {
               )
             })}
           </div>
-          {/* Enterprise */}
+          {/* Contact for enterprise */}
           <div className="card p-6 mt-4 flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <p className="font-bold text-[15px]" style={{ color: '#1a1a1a' }}>Enterprise</p>
-              <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>Unlimited everything · Custom rate · Dedicated support · SLA</p>
+              <p className="font-bold text-[15px]" style={{ color: '#1a1a1a' }}>Need a custom rate?</p>
+              <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>High volume? Contact us for a custom per-minute rate.</p>
             </div>
-            <button className="btn-secondary" onClick={() => window.open('mailto:sales@vobiz.ai')}>
-              Contact Sales
+            <button className="btn-secondary" onClick={() => window.open('mailto:billing@voiceai.in')}>
+              Contact Us
             </button>
           </div>
         </div>
@@ -381,7 +386,7 @@ export default function Billing() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <StatCard label="Total Calls"   value={fmtInt(totals?.calls)}     sub="completed calls"       icon={Phone}       accent="#f5a623" />
+            <StatCard label="Total Calls"   value={fmtInt(totals?.calls)}     sub="answered & billable"       icon={Phone}       accent="#f5a623" />
             <StatCard label="Total Minutes" value={fmt(totals?.minutes, 1)}   sub="billed duration"       icon={Clock}       accent="#8b5cf6" />
             <StatCard label="Campaigns"     value={fmtInt(totals?.campaigns)} sub="all your campaigns"    icon={TrendingUp}  accent="#2fa05c" />
             <StatCard label="Amount + GST"  value={fmtINR(totals?.amount)}    sub={`₹${fmt(usageSummary?.plan?.rate_per_min || rate_per_min)}/min + 18% GST`} icon={IndianRupee} accent="#f43f5e" />
