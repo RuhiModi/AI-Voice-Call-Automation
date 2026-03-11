@@ -291,9 +291,9 @@ class CallSession {
     this.isActive = false
 
     const duration   = Math.floor((Date.now() - this.startTime) / 1000)
-    // billedSec = time from answer to hangup (what Vobiz charges)
+    // billedSec = full duration from ringing start (billing starts when call is initiated)
     const billedSec  = this.answeredAt
-      ? Math.floor((Date.now() - this.answeredAt) / 1000)
+      ? Math.floor((Date.now() - this.startTime) / 1000)  // ringing-start billing
       : null
     console.log(`[Session ${this.sessionId}] 📵 Ended: ${outcome} (${duration}s)`)
 
