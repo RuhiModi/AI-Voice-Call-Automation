@@ -250,15 +250,20 @@ export default function Dashboard() {
         <StatCard
           icon={CheckCircle2}
           label="Answer Rate"
-          value={today.answer_rate != null ? `${today.answer_rate}%` : '—'}
-          sub={today.total_calls ? `${today.completed} answered of ${today.total_calls}` : 'No data yet'}
+          value={today.answer_rate != null ? `${today.answer_rate}%`
+            : month.total_calls > 0
+              ? `${Math.round((parseInt(month.completed||0) / parseInt(month.total_calls)) * 100)}%`
+              : '—'}
+          sub={today.total_calls
+            ? `${today.completed} answered today`
+            : month.total_calls > 0 ? 'This month avg' : 'No data yet'}
           accent="bg-green-100"
         />
         <StatCard
           icon={Clock}
           label="Avg Duration"
-          value={fmtDuration(today.avg_duration_sec)}
-          sub="Per answered call"
+          value={fmtDuration(today.avg_duration_sec || (month.total_calls > 0 ? Math.round((month.total_minutes * 60) / month.total_calls) : 0))}
+          sub={today.total_calls ? 'Per call today' : month.total_calls > 0 ? 'Per call this month' : 'Per answered call'}
         />
         <StatCard
           icon={BarChart2}
