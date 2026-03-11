@@ -84,9 +84,16 @@ const billingRepo = {
   async getUserRate(userId) {
     const { rows } = await pool.query(
       `SELECT COALESCE(
+         -- 1. Custom per-user rate (manually set override)
          (SELECT rate_per_min FROM billing_rates
           WHERE user_id = $1 ORDER BY effective_from DESC LIMIT 1),
+         -- 2. Rate from user's current plan
+         (SELECT p.rate_per_min FROM plans p
+          JOIN users u ON u.plan = p.id
+          WHERE u.id = $1 LIMIT 1),
+         -- 3. Default rate table fallback
          (SELECT rate_per_min FROM billing_rates_default LIMIT 1),
+         -- 4. Hardcoded fallback
          6.00
        ) AS rate_per_min`,
       [userId]
