@@ -85,7 +85,8 @@ export const campaignApi = {
   extractFromURL: (id, url) =>
     api.post(`/campaigns/${id}/script/url`, { url }),
   delete: (id) => api.delete(`/campaigns/${id}`),
-  getStats: (id) => api.get(`/campaigns/${id}/stats`),
+  getStats:    (id)            => api.get(`/campaigns/${id}/stats`),
+  getContacts: (id, page=1, limit=50) => api.get(`/campaigns/${id}/contacts`, { params: { page, limit } }),
 }
 
 // ── Password ──────────────────────────────────────────────────
