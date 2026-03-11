@@ -37,7 +37,14 @@ function StatCard({ label, value, sub, icon: Icon, accent }) {
 }
 
 // ── GST Summary box ───────────────────────────────────────────
-function GSTBox({ subtotal, gst, total }) {
+function GSTBox({ subtotal, gst, total, breakdown, breakdownRates, minutes }) {
+  const rows = breakdown ? [
+    { label: 'Calling & Connectivity',  rate: breakdownRates?.calling,      amt: breakdown?.calling },
+    { label: 'AI Processing',            rate: breakdownRates?.ai,           amt: breakdown?.ai },
+    { label: 'Platform & Infrastructure',rate: breakdownRates?.infra,        amt: breakdown?.infra },
+    { label: 'Service Fee',              rate: breakdownRates?.service_fee,  amt: breakdown?.service_fee },
+  ] : []
+
   return (
     <div className="card overflow-hidden mb-6">
       <div className="px-6 py-4" style={{ borderBottom: '1px solid #f5f1ea' }}>
@@ -47,10 +54,32 @@ function GSTBox({ subtotal, gst, total }) {
         </div>
         <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>Charges for selected period including 18% GST</p>
       </div>
+
+      {/* Breakdown table */}
+      {rows.length > 0 && (
+        <div style={{ borderBottom: '1px solid #f5f1ea' }}>
+          <div className="grid px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider"
+            style={{ gridTemplateColumns: '1fr 100px 100px', background: '#1a1a1a', color: '#fff' }}>
+            <span>Component</span>
+            <span className="text-right">Rate/min</span>
+            <span className="text-right">Amount</span>
+          </div>
+          {rows.map((row, i) => (
+            <div key={i} className="grid px-6 py-3 text-[13px]"
+              style={{ gridTemplateColumns: '1fr 100px 100px', borderBottom: i < rows.length - 1 ? '1px solid #f5f1ea' : 'none', background: '#faf8f4' }}>
+              <span style={{ color: '#3d3d3d' }}>{row.label}</span>
+              <span className="text-right" style={{ color: '#a8a8a8' }}>₹{Number(row.rate||0).toFixed(2)}</span>
+              <span className="text-right font-medium">{fmtINR(row.amt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Totals */}
       <div className="px-6 py-5">
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <p className="text-[13px]" style={{ color: '#6b6b6b' }}>Subtotal (call charges)</p>
+            <p className="text-[13px]" style={{ color: '#6b6b6b' }}>Subtotal</p>
             <p className="text-[14px] font-semibold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtINR(subtotal)}</p>
           </div>
           <div className="flex justify-between items-center">
@@ -59,7 +88,7 @@ function GSTBox({ subtotal, gst, total }) {
           </div>
           <div className="flex justify-between items-center pt-3" style={{ borderTop: '2px solid #f0f0f0' }}>
             <p className="text-[14px] font-bold" style={{ color: '#1a1a1a' }}>Total (incl. GST)</p>
-            <p className="text-[20px] font-bold tabular-nums" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>{fmtINR(total)}</p>
+            <p className="text-[20px] font-bold tabular-nums" style={{ color: '#f5a623', fontFamily: '"DM Serif Display",serif' }}>{fmtINR(total)}</p>
           </div>
         </div>
       </div>
@@ -397,6 +426,9 @@ export default function Billing() {
             subtotal={totals?.subtotal}
             gst={totals?.gst}
             total={totals?.amount}
+            breakdown={summary?.breakdown}
+            breakdownRates={summary?.breakdown_rates}
+            minutes={totals?.minutes}
           />
 
           {/* Campaign breakdown table */}
