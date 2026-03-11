@@ -96,7 +96,7 @@ router.get('/overview', async (req, res, next) => {
        JOIN campaigns c  ON cl.campaign_id = c.id
        JOIN contacts  ct ON cl.contact_id  = ct.id
        WHERE c.user_id = $1
-       ORDER BY COALESCE(cl.started_at, cl.created_at) DESC
+       ORDER BY COALESCE(cl.started_at, cl.ended_at) DESC
        LIMIT 10`,
       [userId]
     )
