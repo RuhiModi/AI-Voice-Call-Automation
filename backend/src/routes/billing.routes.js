@@ -53,11 +53,17 @@ router.get('/summary', async (req, res, next) => {
       end   = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     }
 
-    const [campaigns, totals, rate] = await Promise.all([
+    const [campaigns, totals, rate, planInfo] = await Promise.all([
       billingRepo.getUsageSummary(req.userId, start, end),
       billingRepo.getTotals(req.userId, start, end),
       billingRepo.getUserRate(req.userId),
+      pool.query(
+        `SELECT cost_calling, cost_ai, cost_infra, cost_service_fee
+         FROM plans p JOIN users u ON u.plan = p.id
+         WHERE u.id = $1`, [req.userId]
+      ),
     ])
+    const costs = planInfo.rows[0] || { cost_calling:0.90, cost_ai:1.00, cost_infra:0.60, cost_service_fee:1.50 }
 
     const GST_RATE     = 0.18
     const totalMinutes = parseFloat(totals?.total_minutes || 0)
@@ -79,6 +85,19 @@ router.get('/summary', async (req, res, next) => {
       }
     })
 
+    const breakdown = {
+      calling:     Math.round(totalMinutes * parseFloat(costs.cost_calling)     * 100) / 100,
+      ai:          Math.round(totalMinutes * parseFloat(costs.cost_ai)          * 100) / 100,
+      infra:       Math.round(totalMinutes * parseFloat(costs.cost_infra)       * 100) / 100,
+      service_fee: Math.round(totalMinutes * parseFloat(costs.cost_service_fee) * 100) / 100,
+    }
+    const breakdownRates = {
+      calling:     parseFloat(costs.cost_calling),
+      ai:          parseFloat(costs.cost_ai),
+      infra:       parseFloat(costs.cost_infra),
+      service_fee: parseFloat(costs.cost_service_fee),
+    }
+
     res.json({
       period: {
         start: start.toISOString(),
@@ -94,8 +113,10 @@ router.get('/summary', async (req, res, next) => {
         campaigns: parseInt(totals?.campaigns_count || 0),
       },
       campaigns: campaignsWithAmount,
-      rate_per_min: rate,
-      gst_rate:     GST_RATE,
+      rate_per_min:    rate,
+      gst_rate:        GST_RATE,
+      breakdown,
+      breakdown_rates: breakdownRates,
     })
   } catch (err) { next(err) }
 })
