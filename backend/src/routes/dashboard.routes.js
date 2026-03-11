@@ -12,7 +12,7 @@ router.use(auth)
 // GET /dashboard/overview
 router.get('/overview', async (req, res, next) => {
   try {
-    const userId = req.ownerId
+    const userId = req.userId || req.ownerId
 
     // ── 1. Active campaigns with live progress ────────────────
     const { rows: activeCampaigns } = await pool.query(
