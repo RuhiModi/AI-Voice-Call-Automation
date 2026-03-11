@@ -62,7 +62,7 @@ router.get('/overview', async (req, res, next) => {
          ROUND(SUM(COALESCE(cl.billed_sec, cl.duration_sec))::NUMERIC / 60, 1) AS total_minutes
        FROM call_logs cl
        JOIN campaigns c ON cl.campaign_id = c.id
-       WHERE c.user_id = $1 AND cl.started_at >= $2`,
+       WHERE c.user_id = $1 AND COALESCE(cl.started_at, cl.ended_at) >= $2`,
       [userId, todayStart]
     )
     const today = todayRows[0]
@@ -79,7 +79,7 @@ router.get('/overview', async (req, res, next) => {
          ROUND(SUM(COALESCE(cl.billed_sec, cl.duration_sec))::NUMERIC / 60, 1) AS total_minutes
        FROM call_logs cl
        JOIN campaigns c ON cl.campaign_id = c.id
-       WHERE c.user_id = $1 AND cl.started_at >= $2`,
+       WHERE c.user_id = $1 AND COALESCE(cl.started_at, cl.ended_at) >= $2`,
       [userId, monthStart]
     )
     const month = monthRows[0]
