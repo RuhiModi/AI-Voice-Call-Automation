@@ -327,11 +327,11 @@ export default function Billing() {
                       style={{ background: '#1a1a1a', color: '#fff' }}>Current Plan</span>
                   )}
                   <p className="font-bold text-[16px] mb-1" style={{ color: '#1a1a1a' }}>{plan.name}</p>
-                  <p className="text-[24px] font-bold mb-4" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>
-                    {plan.price_monthly > 0 ? `₹${fmtInt(plan.price_monthly)}/mo` : 'Free'}
+                  <p className="text-[13px] mb-4" style={{ color: '#6b6b6b' }}>
+                    Usage-based · ₹{fmt(plan.rate_per_min)}/min · No monthly fee
                   </p>
                   <div className="space-y-2 mb-5">
-                    {(plan.features || []).map((f, i) => (
+                    {(plan.features || []).filter(f => !f.toLowerCase().includes('team member')).map((f, i) => (
                       <p key={i} className="text-[12px] flex items-center gap-2" style={{ color: '#3d3d3d' }}>
                         <span style={{ color: '#52b87a' }}>✓</span> {f}
                       </p>
@@ -346,7 +346,7 @@ export default function Billing() {
                         const us = await billingApi.usageSummary()
                         setUsageSummary(us.data)
                         setTab('plan')
-                        toast?.success(`Upgraded to ${plan.name}!`)
+                        toast?.success(`Switched to ${plan.name} plan!`)
                       } catch (err) {
                         toast?.error('Upgrade failed')
                       } finally { setUpgrading(null) }
@@ -354,7 +354,7 @@ export default function Billing() {
                     disabled={isCurrent || upgrading === plan.id}
                     className={isCurrent ? 'btn-secondary w-full' : 'btn-primary w-full'}
                     style={{ opacity: isCurrent ? 0.5 : 1 }}>
-                    {upgrading === plan.id ? 'Upgrading...' : isCurrent ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                    {upgrading === plan.id ? 'Upgrading...' : isCurrent ? 'Current Plan' : plan.id === 'growth' ? `Switch to ${plan.name} (₹4/min)` : `Switch to ${plan.name} (₹6/min)`}
                   </button>
                 </div>
               )
@@ -386,7 +386,7 @@ export default function Billing() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <StatCard label="Total Calls"   value={fmtInt(totals?.calls)}     sub="answered & billable"       icon={Phone}       accent="#f5a623" />
+            <StatCard label="Total Calls"   value={fmtInt(totals?.calls)}     sub="calls with duration (billed)"       icon={Phone}       accent="#f5a623" />
             <StatCard label="Total Minutes" value={fmt(totals?.minutes, 1)}   sub="billed duration"       icon={Clock}       accent="#8b5cf6" />
             <StatCard label="Campaigns"     value={fmtInt(totals?.campaigns)} sub="all your campaigns"    icon={TrendingUp}  accent="#2fa05c" />
             <StatCard label="Amount + GST"  value={fmtINR(totals?.amount)}    sub={`₹${fmt(usageSummary?.plan?.rate_per_min || rate_per_min)}/min + 18% GST`} icon={IndianRupee} accent="#f43f5e" />
