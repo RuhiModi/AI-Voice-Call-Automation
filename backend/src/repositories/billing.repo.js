@@ -16,7 +16,7 @@ const billingRepo = {
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id  = $1
-         AND cl.started_at >= $2
+         AND COALESCE(cl.started_at, cl.ended_at) >= $2
          AND COALESCE(cl.started_at, cl.ended_at) < $3
          AND cl.outcome = 'completed'
          AND cl.duration_sec > 0
@@ -38,7 +38,7 @@ const billingRepo = {
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id  = $1
-         AND cl.started_at >= $2
+         AND COALESCE(cl.started_at, cl.ended_at) >= $2
          AND COALESCE(cl.started_at, cl.ended_at) < $3
          AND cl.outcome = 'completed'
          AND cl.duration_sec > 0`,
@@ -63,17 +63,17 @@ const billingRepo = {
   async getMonthlyBreakdown(userId) {
     const { rows } = await pool.query(
       `SELECT
-         TO_CHAR(DATE_TRUNC('month', cl.started_at), 'Mon YYYY') AS month,
-         DATE_TRUNC('month', cl.started_at)                      AS month_date,
+         TO_CHAR(DATE_TRUNC('month', COALESCE(cl.started_at, cl.ended_at)), 'Mon YYYY') AS month,
+         DATE_TRUNC('month', COALESCE(cl.started_at, cl.ended_at))                      AS month_date,
          COUNT(cl.id)                                             AS total_calls,
          ROUND(SUM(COALESCE(cl.billed_sec, cl.duration_sec))::NUMERIC / 60, 2)            AS total_minutes
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id = $1
-         AND cl.started_at >= NOW() - INTERVAL '6 months'
+         AND COALESCE(cl.started_at, cl.ended_at) >= NOW() - INTERVAL '6 months'
          AND cl.outcome = 'completed'
          AND cl.duration_sec > 0
-       GROUP BY DATE_TRUNC('month', cl.started_at)
+       GROUP BY DATE_TRUNC('month', COALESCE(cl.started_at, cl.ended_at))
        ORDER BY month_date DESC`,
       [userId]
     )
@@ -126,15 +126,15 @@ const billingRepo = {
   async getDailyActivity(userId) {
     const { rows } = await pool.query(
       `SELECT
-         DATE(cl.started_at)  AS day,
+         DATE(COALESCE(cl.started_at, cl.ended_at))  AS day,
          COUNT(cl.id)         AS calls,
          SUM(COALESCE(cl.billed_sec, cl.duration_sec)) AS seconds
        FROM call_logs cl
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id = $1
-         AND cl.started_at >= NOW() - INTERVAL '30 days'
+         AND COALESCE(cl.started_at, cl.ended_at) >= NOW() - INTERVAL '30 days'
          AND cl.outcome = 'completed'
-       GROUP BY DATE(cl.started_at)
+       GROUP BY DATE(COALESCE(cl.started_at, cl.ended_at))
        ORDER BY day ASC`,
       [userId]
     )
