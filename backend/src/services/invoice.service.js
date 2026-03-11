@@ -220,7 +220,7 @@ function generateInvoiceHTML(invoice) {
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: 'Helvetica Neue', Arial, sans-serif; color:#1a1a1a; background:#fff; padding:40px; max-width:820px; margin:0 auto; }
     .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px; padding-bottom:24px; border-bottom:2px solid #1a1a1a; }
-    .brand { font-size:24px; font-weight:800; letter-spacing:-0.5px; }
+    .brand { font-size:22px; font-weight:900; letter-spacing:0.5px; font-family:'Raleway','Helvetica Neue',Arial,sans-serif; }
     .brand span { color:#f5a623; }
     .invoice-meta { text-align:right; }
     .invoice-number { font-size:20px; font-weight:700; margin-bottom:4px; }
@@ -249,9 +249,23 @@ function generateInvoiceHTML(invoice) {
 <body>
   <!-- Header -->
   <div class="header">
-    <div>
-      <div class="brand">VoiceAI <span>India</span></div>
-      <p style="font-size:12px;color:#a8a8a8;margin-top:4px">AI Voice Campaign Platform</p>
+    <div style="display:flex;align-items:center;gap:14px">
+      <!-- Sonar logo icon -->
+      <div style="width:44px;height:44px;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <div style="position:absolute;width:44px;height:44px;border-radius:50%;border:1.5px solid #f5a623;opacity:0.6"></div>
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(145deg,#f5a623,#d4880a);display:flex;align-items:center;justify-content:center;position:relative;z-index:2;box-shadow:0 0 16px rgba(245,166,35,0.4)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="2" width="6" height="11" rx="3" fill="white"/>
+            <path d="M5 10C5 14.418 8.134 18 12 18C15.866 18 19 14.418 19 10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="12" y1="18" x2="12" y2="22" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="9" y1="22" x2="15" y2="22" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <div class="brand">VoiceAI <span>India</span></div>
+        <p style="font-size:10px;color:#a8a8a8;margin-top:2px;letter-spacing:1.5px;text-transform:uppercase">By RiseAscend Tech</p>
+      </div>
     </div>
     <div class="invoice-meta">
       <div class="invoice-number">${invoice.invoice_number}</div>
@@ -269,7 +283,7 @@ function generateInvoiceHTML(invoice) {
     <div class="party">
       <h4>From</h4>
       <p class="name">VoiceAI India</p>
-      <p>AI Voice Campaign Platform</p>
+      <p style="font-size:11px;color:#a8a8a8;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">By RiseAscend Tech</p>
       <p>billing@voiceai.in</p>
     </div>
     <div class="party">
