@@ -46,8 +46,8 @@ async function generateInvoice(userId, month) {
      FROM call_logs cl
      JOIN campaigns camp ON cl.campaign_id = camp.id
      WHERE camp.user_id  = $1
-       AND cl.started_at >= $2
-       AND cl.started_at <  $3
+       AND COALESCE(cl.started_at, cl.created_at) >= $2
+       AND COALESCE(cl.started_at, cl.created_at) < $3
        AND cl.outcome    = 'completed'
        AND COALESCE(cl.billed_sec, cl.duration_sec) > 0
      GROUP BY camp.id, camp.name
