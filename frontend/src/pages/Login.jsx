@@ -1,8 +1,46 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Eye, EyeOff, ArrowRight, Mic2 } from 'lucide-react'
+import { Eye, EyeOff, ArrowRight } from 'lucide-react'
 import { authApi, passwordApi } from '../hooks/api'
+
+// ── Sonar Logo ─────────────────────────────────────────────────
+function Logo({ dark = false, size = 'md' }) {
+  const s = {
+    sm: { icon: 32, core: 24, mic: 11, t1: 13, t2: 9,  gap: 9  },
+    md: { icon: 44, core: 34, mic: 16, t1: 18, t2: 10, gap: 13 },
+    lg: { icon: 52, core: 40, mic: 19, t1: 22, t2: 11, gap: 16 },
+  }[size]
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
+      <div style={{ width: s.icon, height: s.icon, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {[0, 0.8, 1.6].map((delay, i) => (
+          <div key={i} style={{ position: 'absolute', width: s.icon, height: s.icon, borderRadius: '50%', border: '1.5px solid #f5a623', animation: `voiceai-sonar 2.4s cubic-bezier(0.4,0,0.6,1) ${delay}s infinite` }} />
+        ))}
+        <div style={{ width: s.core, height: s.core, borderRadius: '50%', background: 'linear-gradient(145deg,#f5a623,#d4880a)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 2, boxShadow: '0 0 20px rgba(245,166,35,0.45)' }}>
+          <svg width={s.mic} height={s.mic} viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="2" width="6" height="11" rx="3" fill="white"/>
+            <path d="M5 10C5 14.418 8.134 18 12 18C15.866 18 19 14.418 19 10" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+            <line x1="12" y1="18" x2="12" y2="22" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+            <line x1="9"  y1="22" x2="15" y2="22" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <div style={{ fontFamily: '"Raleway",sans-serif', fontWeight: 900, fontSize: s.t1, letterSpacing: '0.5px', lineHeight: 1, color: dark ? '#fff' : '#1a1a1a' }}>
+          VoiceAI <span style={{ color: '#f5a623' }}>India</span>
+        </div>
+        <div style={{ fontFamily: '"Raleway",sans-serif', fontWeight: 500, fontSize: s.t2, color: dark ? '#666' : '#b0b0b0', letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: 3 }}>
+          By RiseAscend Tech
+        </div>
+      </div>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@500;900&display=swap');
+        @keyframes voiceai-sonar { 0%{transform:scale(0.3);opacity:1} 100%{transform:scale(2.2);opacity:0} }
+      `}</style>
+    </div>
+  )
+}
 
 // ── Social button ──────────────────────────────────────────────
 function SocialBtn({ icon, label, onClick }) {
@@ -15,7 +53,6 @@ function SocialBtn({ icon, label, onClick }) {
   )
 }
 
-// ── Google SVG ──────────────────────────────────────────────────
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24">
@@ -27,7 +64,6 @@ function GoogleIcon() {
   )
 }
 
-// ── Apple SVG ───────────────────────────────────────────────────
 function AppleIcon() {
   return (
     <svg width="16" height="18" viewBox="0 0 814 1000" fill="currentColor">
@@ -37,7 +73,7 @@ function AppleIcon() {
 }
 
 export default function Login() {
-  const [view,     setView]     = useState('login') // 'login' | 'signup' | 'forgot'
+  const [view,     setView]     = useState('login')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [company,  setCompany]  = useState('')
@@ -80,38 +116,24 @@ export default function Login() {
   }
 
   function handleSocialAuth(provider) {
-    // OAuth flow — redirect to backend which handles the provider
-    const base = import.meta.env.VITE_API_URL || 'http://localhost:3000'
     toast(`${provider} login coming soon!`, { icon: '🔜' })
-    // Uncomment when backend OAuth is set up:
-    // window.location.href = `${base}/auth/${provider.toLowerCase()}`
   }
 
   return (
     <div className="min-h-screen flex" style={{ background: '#fdfcfa' }}>
 
-      {/* ── Left panel — only desktop ── */}
+      {/* ── Left panel — desktop only ── */}
       <div className="hidden lg:flex flex-col w-[460px] relative overflow-hidden"
         style={{ background: 'linear-gradient(145deg, #1a1a1a 0%, #2c2c2c 60%, #3d2600 100%)' }}>
-
-        {/* Texture overlay */}
         <div className="absolute inset-0 opacity-[0.04]"
           style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '28px 28px' }} />
-
-        {/* Glow */}
         <div className="absolute bottom-0 left-0 w-80 h-80 rounded-full opacity-20 blur-3xl"
           style={{ background: 'radial-gradient(circle, #f5a623 0%, transparent 70%)' }} />
 
         <div className="relative z-10 flex flex-col h-full p-12">
-          {/* Logo */}
-          <div className="flex items-center gap-3 mb-auto">
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: '#f5a623' }}>
-              <Mic2 size={18} className="text-white" />
-            </div>
-            <div>
-              <p className="text-white font-semibold text-[15px] leading-none">VoiceAI India</p>
-              <p className="text-[11px] mt-0.5" style={{ color: '#8a8a8a' }}>by Rise Ascend Tech</p>
-            </div>
+          {/* ── Logo ── */}
+          <div className="mb-auto">
+            <Logo dark size="md" />
           </div>
 
           {/* Main copy */}
@@ -150,14 +172,11 @@ export default function Login() {
         <div className="w-full max-w-[400px] animate-fade-in">
 
           {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2 mb-10 justify-center">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#f5a623' }}>
-              <Mic2 size={16} className="text-white" />
-            </div>
-            <span className="font-semibold text-[#2c2c2c] text-lg">VoiceAI India</span>
+          <div className="lg:hidden flex justify-center mb-10">
+            <Logo size="md" />
           </div>
 
-          {/* ── FORGOT PASSWORD VIEW ── */}
+          {/* ── FORGOT PASSWORD ── */}
           {view === 'forgot' ? (
             <div>
               <h2 className="text-2xl text-[#1a1a1a] mb-1" style={{ fontFamily: '"DM Serif Display",serif' }}>Reset password</h2>
@@ -180,7 +199,7 @@ export default function Login() {
             </div>
 
           ) : (
-            /* ── LOGIN / SIGNUP VIEW ── */
+            /* ── LOGIN / SIGNUP ── */
             <div>
               <h2 className="text-2xl text-[#1a1a1a] mb-1" style={{ fontFamily: '"DM Serif Display",serif' }}>
                 {view === 'login' ? 'Welcome back' : 'Create account'}
@@ -189,13 +208,11 @@ export default function Login() {
                 {view === 'login' ? 'Sign in to your dashboard' : 'Start your free account today'}
               </p>
 
-              {/* Social buttons */}
               <div className="flex gap-3 mb-6">
                 <SocialBtn icon={<GoogleIcon />} label="Google" onClick={() => handleSocialAuth('Google')} />
                 <SocialBtn icon={<AppleIcon />}  label="Apple"  onClick={() => handleSocialAuth('Apple')}  />
               </div>
 
-              {/* Divider */}
               <div className="flex items-center gap-3 mb-6">
                 <div className="flex-1 h-px" style={{ background: '#e8e3db' }} />
                 <span className="text-xs text-[#a8a8a8] font-medium">or continue with email</span>
@@ -210,13 +227,11 @@ export default function Login() {
                       placeholder="Your company or org name" className="input-field" />
                   </div>
                 )}
-
                 <div>
                   <label className="block text-xs font-semibold text-[#6b6b6b] uppercase tracking-wider mb-1.5">Email</label>
                   <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                     placeholder="you@company.com" required className="input-field" />
                 </div>
-
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-semibold text-[#6b6b6b] uppercase tracking-wider">Password</label>
@@ -238,7 +253,6 @@ export default function Login() {
                     </button>
                   </div>
                 </div>
-
                 <button type="submit" disabled={loading} className="btn-primary w-full justify-center" style={{ marginTop: '8px' }}>
                   {loading
                     ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Please wait...</>
@@ -247,7 +261,6 @@ export default function Login() {
                 </button>
               </form>
 
-              {/* Toggle mode */}
               <p className="text-center text-sm text-[#8a8a8a] mt-6">
                 {view === 'login' ? "Don't have an account?" : 'Already have an account?'}
                 {' '}
