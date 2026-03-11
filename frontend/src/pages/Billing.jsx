@@ -384,7 +384,7 @@ export default function Billing() {
             <StatCard label="Total Calls"   value={fmtInt(totals?.calls)}     sub="completed calls"       icon={Phone}       accent="#f5a623" />
             <StatCard label="Total Minutes" value={fmt(totals?.minutes, 1)}   sub="billed duration"       icon={Clock}       accent="#8b5cf6" />
             <StatCard label="Campaigns"     value={fmtInt(totals?.campaigns)} sub="all your campaigns"    icon={TrendingUp}  accent="#2fa05c" />
-            <StatCard label="Amount + GST"  value={fmtINR(totals?.amount)}    sub={`₹${fmt(rate_per_min)}/min + 18% GST`} icon={IndianRupee} accent="#f43f5e" />
+            <StatCard label="Amount + GST"  value={fmtINR(totals?.amount)}    sub={`₹${fmt(usageSummary?.plan?.rate_per_min || rate_per_min)}/min + 18% GST`} icon={IndianRupee} accent="#f43f5e" />
           </div>
 
           {/* GST Breakdown */}
