@@ -103,7 +103,7 @@ export default function Layout() {
       <div
         className="flex items-center px-5 py-4 cursor-pointer border-b"
         style={{ borderColor: '#ede7dc' }}
-        onClick={() => navigate('/')}
+        onClick={() => navigate('/dashboard')}
       >
         <Logo size="sm" />
       </div>
