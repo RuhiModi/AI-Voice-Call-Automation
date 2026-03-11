@@ -27,14 +27,22 @@ async function generateInvoice(userId, month) {
 
   // Get user info
   const { rows: userRows } = await pool.query(
-    `SELECT email, company_name, u.plan, p.rate_per_min
+    `SELECT email, company_name, u.plan,
+            p.rate_per_min,
+            p.cost_calling, p.cost_ai, p.cost_infra, p.cost_service_fee
      FROM users u LEFT JOIN plans p ON p.id = u.plan
      WHERE u.id = $1`,
     [userId]
   )
   const user = userRows[0]
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 })
-  const rate = parseFloat(user.rate_per_min || 6.00)
+  const rate        = parseFloat(user.rate_per_min     || 4.00)
+  const costBreakdown = {
+    calling:     parseFloat(user.cost_calling     || 0.90),
+    ai:          parseFloat(user.cost_ai          || 1.00),
+    infra:       parseFloat(user.cost_infra       || 0.60),
+    service_fee: parseFloat(user.cost_service_fee || 1.50),
+  }
 
   // Get usage per campaign for the period
   const { rows: campRows } = await pool.query(
@@ -73,6 +81,11 @@ async function generateInvoice(userId, month) {
       subtotal,
       gst,
       line_total:    lineTotal,
+      // cost breakdown per campaign line
+      cost_calling:     Math.round(minutes * costBreakdown.calling * 100) / 100,
+      cost_ai:          Math.round(minutes * costBreakdown.ai * 100) / 100,
+      cost_infra:       Math.round(minutes * costBreakdown.infra * 100) / 100,
+      cost_service_fee: Math.round(minutes * costBreakdown.service_fee * 100) / 100,
     }
   })
 
@@ -81,6 +94,13 @@ async function generateInvoice(userId, month) {
   const subtotal     = Math.round(lineItems.reduce((s, l) => s + l.subtotal, 0) * 100) / 100
   const totalGst     = Math.round(subtotal * GST_RATE * 100) / 100
   const totalAmount  = Math.round((subtotal + totalGst) * 100) / 100
+  // Overall cost breakdown totals (for invoice display)
+  const totalBreakdown = {
+    calling:     Math.round(totalMinutes * costBreakdown.calling * 100) / 100,
+    ai:          Math.round(totalMinutes * costBreakdown.ai * 100) / 100,
+    infra:       Math.round(totalMinutes * costBreakdown.infra * 100) / 100,
+    service_fee: Math.round(totalMinutes * costBreakdown.service_fee * 100) / 100,
+  }
 
   // Generate invoice number: INV-YYYYMM-XXXX
   const { rows: countRows } = await pool.query(
@@ -112,6 +132,10 @@ async function generateInvoice(userId, month) {
   }
 
   const full = await _getFullInvoice(invoice.id, userId)
+  // Attach breakdown for HTML generation (not stored in DB, computed fresh)
+  full.cost_breakdown  = totalBreakdown
+  full.cost_rates      = costBreakdown
+  full.total_minutes_all = Math.round(totalMinutes * 100) / 100
   return { invoice: full, alreadyExists: false }
 }
 
@@ -148,16 +172,44 @@ function generateInvoiceHTML(invoice) {
   const fmtInt = n => Number(n || 0).toLocaleString('en-IN')
   const subtotal = invoice.subtotal || (parseFloat(invoice.total_amount) / 1.18)
   const gst      = invoice.gst      || (subtotal * 0.18)
+  const minutes  = parseFloat(invoice.total_minutes_all || invoice.total_minutes || 0)
 
-  const rows = (invoice.line_items || []).map(l => `
+  // Cost breakdown (from plan config)
+  const bd = invoice.cost_breakdown || {}
+  const cr = invoice.cost_rates     || {}
+  const hasBd = bd.calling != null
+
+  // Campaign rows
+  const campRows = (invoice.line_items || []).map(l => `
     <tr>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea">${l.campaign_name || l.description}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${fmtInt(l.calls_count)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${Number(l.total_minutes).toFixed(1)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">₹${Number(l.rate_per_min).toFixed(2)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">${fmt(Number(l.line_total)/1.18)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;font-weight:600">${fmt(l.line_total)}</td>
     </tr>`).join('')
+
+  // Breakdown rows
+  const breakdownRows = hasBd ? `
+    <tr style="background:#faf8f4">
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea">Calling &amp; Connectivity</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;color:#6b6b6b">₹${Number(cr.calling||0).toFixed(2)}/min</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">${fmt(bd.calling)}</td>
+    </tr>
+    <tr style="background:#faf8f4">
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea">AI Processing</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;color:#6b6b6b">₹${Number(cr.ai||0).toFixed(2)}/min</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">${fmt(bd.ai)}</td>
+    </tr>
+    <tr style="background:#faf8f4">
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea">Platform &amp; Infrastructure</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;color:#6b6b6b">₹${Number(cr.infra||0).toFixed(2)}/min</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">${fmt(bd.infra)}</td>
+    </tr>
+    <tr style="background:#faf8f4">
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;font-weight:600">Service Fee</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;color:#6b6b6b">₹${Number(cr.service_fee||0).toFixed(2)}/min</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;font-weight:600">${fmt(bd.service_fee)}</td>
+    </tr>` : ''
 
   return `<!DOCTYPE html>
 <html>
@@ -166,7 +218,7 @@ function generateInvoiceHTML(invoice) {
   <title>Invoice ${invoice.invoice_number}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Helvetica Neue', Arial, sans-serif; color:#1a1a1a; background:#fff; padding:40px; max-width:800px; margin:0 auto; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; color:#1a1a1a; background:#fff; padding:40px; max-width:820px; margin:0 auto; }
     .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px; padding-bottom:24px; border-bottom:2px solid #1a1a1a; }
     .brand { font-size:24px; font-weight:800; letter-spacing:-0.5px; }
     .brand span { color:#f5a623; }
@@ -178,17 +230,24 @@ function generateInvoiceHTML(invoice) {
     .party h4 { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#a8a8a8; margin-bottom:8px; }
     .party p { font-size:13px; line-height:1.6; color:#3d3d3d; }
     .party .name { font-size:15px; font-weight:700; color:#1a1a1a; margin-bottom:2px; }
-    table { width:100%; border-collapse:collapse; margin-bottom:24px; }
-    thead tr { background:#faf8f4; }
-    thead th { padding:10px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#6b6b6b; }
-    thead th:last-child { text-align:right; }
-    .totals { margin-left:auto; width:280px; }
+    .section-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#a8a8a8; margin:28px 0 10px; }
+    table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+    thead tr { background:#1a1a1a; }
+    thead th { padding:10px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#fff; }
+    thead th:last-child, thead th.right { text-align:right; }
+    .totals { margin-left:auto; width:300px; margin-top:24px; }
     .totals-row { display:flex; justify-content:space-between; padding:8px 0; font-size:13px; border-bottom:1px solid #f5f1ea; }
-    .totals-row.total { font-size:16px; font-weight:800; padding-top:12px; border-bottom:none; }
-    .footer { margin-top:40px; padding-top:20px; border-top:1px solid #f5f1ea; font-size:11px; color:#a8a8a8; text-align:center; }
+    .totals-row.total { font-size:17px; font-weight:800; padding-top:12px; border-bottom:none; color:#1a1a1a; }
+    .totals-row.gst { color:#6b6b6b; }
+    .divider { border:none; border-top:1px solid #f5f1ea; margin:20px 0; }
+    .footer { margin-top:40px; padding-top:20px; border-top:1px solid #f5f1ea; font-size:11px; color:#a8a8a8; text-align:center; line-height:1.8; }
+    .summary-box { background:#faf8f4; border-radius:12px; padding:16px 20px; margin-bottom:24px; display:flex; gap:32px; flex-wrap:wrap; }
+    .summary-item { font-size:12px; color:#6b6b6b; }
+    .summary-item strong { display:block; font-size:15px; font-weight:700; color:#1a1a1a; margin-bottom:2px; }
   </style>
 </head>
 <body>
+  <!-- Header -->
   <div class="header">
     <div>
       <div class="brand">VoiceAI <span>India</span></div>
@@ -205,6 +264,7 @@ function generateInvoiceHTML(invoice) {
     </div>
   </div>
 
+  <!-- Parties -->
   <div class="parties">
     <div class="party">
       <h4>From</h4>
@@ -219,30 +279,55 @@ function generateInvoiceHTML(invoice) {
     </div>
   </div>
 
+  <!-- Summary bar -->
+  <div class="summary-box">
+    <div class="summary-item"><strong>${fmtInt(invoice.total_calls)}</strong>Total Calls</div>
+    <div class="summary-item"><strong>${Number(minutes).toFixed(1)} min</strong>Total Duration</div>
+    <div class="summary-item"><strong>${fmt(subtotal)}</strong>Subtotal</div>
+    <div class="summary-item"><strong>${fmt(gst)}</strong>GST (18%)</div>
+    <div class="summary-item"><strong style="color:#f5a623">${fmt(invoice.total_amount)}</strong>Total Due</div>
+  </div>
+
+  <!-- Campaign breakdown -->
+  <div class="section-label">Campaign Breakdown</div>
   <table>
     <thead>
       <tr>
         <th>Campaign</th>
         <th style="text-align:center">Calls</th>
         <th style="text-align:center">Minutes</th>
-        <th style="text-align:right">Rate/min</th>
-        <th style="text-align:right">Subtotal</th>
-        <th style="text-align:right">Incl. GST</th>
+        <th class="right">Amount (incl. GST)</th>
       </tr>
     </thead>
-    <tbody>${rows}</tbody>
+    <tbody>${campRows}</tbody>
   </table>
 
+  <!-- Charges breakdown -->
+  ${hasBd ? `
+  <div class="section-label" style="margin-top:24px">Charges Breakdown · ${Number(minutes).toFixed(1)} minutes</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th class="right">Rate/min</th>
+        <th class="right">Amount</th>
+      </tr>
+    </thead>
+    <tbody>${breakdownRows}</tbody>
+  </table>` : ''}
+
+  <!-- Totals -->
   <div class="totals">
     <div class="totals-row"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
-    <div class="totals-row"><span>GST (18%)</span><span>${fmt(gst)}</span></div>
-    <div class="totals-row total"><span>Total</span><span>${fmt(invoice.total_amount)}</span></div>
+    <div class="totals-row gst"><span>GST @ 18%</span><span>${fmt(gst)}</span></div>
+    <div class="totals-row total"><span>Total Due</span><span>${fmt(invoice.total_amount)}</span></div>
   </div>
 
+  <!-- Footer -->
   <div class="footer">
-    <p>Thank you for using VoiceAI India · This is a computer-generated invoice</p>
-    <p style="margin-top:4px">Billing starts from call initiation (ringing) · GST @ 18% included in all amounts</p>
-    <p style="margin-top:4px">For queries: billing@voiceai.in</p>
+    <p>Thank you for using VoiceAI India &nbsp;·&nbsp; This is a computer-generated invoice</p>
+    <p>Billing starts from call initiation (ringing) &nbsp;·&nbsp; GST @ 18% applied on all charges</p>
+    <p>For billing queries: billing@voiceai.in</p>
   </div>
 </body>
 </html>`
