@@ -48,7 +48,6 @@ async function generateInvoice(userId, month) {
      WHERE camp.user_id  = $1
        AND COALESCE(cl.started_at, cl.ended_at) >= $2
        AND COALESCE(cl.started_at, cl.ended_at) < $3
-       AND cl.outcome    = 'completed'
        AND COALESCE(cl.billed_sec, cl.duration_sec) > 0
      GROUP BY camp.id, camp.name
      ORDER BY total_calls DESC`,
@@ -56,7 +55,7 @@ async function generateInvoice(userId, month) {
   )
 
   if (campRows.length === 0) {
-    throw Object.assign(new Error('No completed calls in this period — nothing to invoice'), { status: 400 })
+    throw Object.assign(new Error('No billed calls in this period — nothing to invoice'), { status: 400 })
   }
 
   // Calculate totals
@@ -156,6 +155,7 @@ function generateInvoiceHTML(invoice) {
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${fmtInt(l.calls)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:center">${Number(l.minutes).toFixed(1)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">₹${Number(l.rate).toFixed(2)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right">${fmt(Number(l.line_total)/1.18)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f5f1ea;text-align:right;font-weight:600">${fmt(l.line_total)}</td>
     </tr>`).join('')
 
@@ -226,7 +226,8 @@ function generateInvoiceHTML(invoice) {
         <th style="text-align:center">Calls</th>
         <th style="text-align:center">Minutes</th>
         <th style="text-align:right">Rate/min</th>
-        <th style="text-align:right">Amount</th>
+        <th style="text-align:right">Subtotal</th>
+        <th style="text-align:right">Incl. GST</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -240,6 +241,7 @@ function generateInvoiceHTML(invoice) {
 
   <div class="footer">
     <p>Thank you for using VoiceAI India · This is a computer-generated invoice</p>
+    <p style="margin-top:4px">Billing starts from call initiation (ringing) · GST @ 18% included in all amounts</p>
     <p style="margin-top:4px">For queries: billing@voiceai.in</p>
   </div>
 </body>
