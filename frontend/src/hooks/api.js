@@ -178,3 +178,8 @@ export const notificationApi = {
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
 }
+
+// ── Dashboard ──────────────────────────────────────────────────
+export const dashboardApi = {
+  overview: () => api.get('/dashboard/overview'),
+}
