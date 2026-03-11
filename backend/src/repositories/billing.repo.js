@@ -18,7 +18,6 @@ const billingRepo = {
        WHERE camp.user_id  = $1
          AND COALESCE(cl.started_at, cl.ended_at) >= $2
          AND COALESCE(cl.started_at, cl.ended_at) < $3
-         AND cl.outcome = 'completed'
          AND cl.duration_sec > 0
        GROUP BY camp.id, camp.name, camp.status
        ORDER BY total_calls DESC`,
@@ -40,7 +39,6 @@ const billingRepo = {
        WHERE camp.user_id  = $1
          AND COALESCE(cl.started_at, cl.ended_at) >= $2
          AND COALESCE(cl.started_at, cl.ended_at) < $3
-         AND cl.outcome = 'completed'
          AND cl.duration_sec > 0`,
       [userId, startDate, endDate]
     )
@@ -71,7 +69,6 @@ const billingRepo = {
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id = $1
          AND COALESCE(cl.started_at, cl.ended_at) >= NOW() - INTERVAL '6 months'
-         AND cl.outcome = 'completed'
          AND cl.duration_sec > 0
        GROUP BY DATE_TRUNC('month', COALESCE(cl.started_at, cl.ended_at))
        ORDER BY month_date DESC`,
@@ -140,7 +137,7 @@ const billingRepo = {
        JOIN campaigns camp ON cl.campaign_id = camp.id
        WHERE camp.user_id = $1
          AND COALESCE(cl.started_at, cl.ended_at) >= NOW() - INTERVAL '30 days'
-         AND cl.outcome = 'completed'
+         AND cl.duration_sec > 0
        GROUP BY DATE(COALESCE(cl.started_at, cl.ended_at))
        ORDER BY day ASC`,
       [userId]
