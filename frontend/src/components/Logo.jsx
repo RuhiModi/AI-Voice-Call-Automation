@@ -54,7 +54,7 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
           <div style={{
             fontFamily: '"Raleway", sans-serif',
             fontWeight: 1000,
-            fontSize: lg.t1,
+            fontSize: 40px.t1,
             letterSpacing: '0.5px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
