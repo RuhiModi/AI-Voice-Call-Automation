@@ -263,11 +263,31 @@ class CallSession {
         break
       }
       case 'end': {
-        await this.endCall('completed')
+        await this._sayGoodbyeAndHangup()
         break
       }
       // 'continue' → do nothing, wait for next user input
     }
+  }
+
+  // ── Say goodbye then hang up ───────────────────────────────
+  async _sayGoodbyeAndHangup() {
+    try {
+      const goodbyes = {
+        gu: 'આભાર! તમારો સમય આપવા બદલ ધન્યવાદ. આવજો!',
+        hi: 'धन्यवाद! आपका समय देने के लिए शुक्रिया। नमस्ते!',
+        en: 'Thank you for your time. Have a great day. Goodbye!',
+      }
+      const goodbye = goodbyes[this.language] || goodbyes.en
+      console.log(`[Session ${this.sessionId}] 👋 Saying goodbye: "${goodbye}"`)
+      this.transcript.push({ role: 'assistant', content: goodbye })
+      await this.speak(goodbye)
+      // Wait for audio to finish playing before hanging up
+      await new Promise(r => setTimeout(r, 1500))
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Goodbye error:`, err.message)
+    }
+    await this.endCall('completed')
   }
 
   // ── Transfer to human agent ────────────────────────────────
@@ -332,23 +352,6 @@ class CallSession {
             this.contact, outcome, this.language, duration, this.collectedData
           ).catch(err => console.error('[Sheets] Error:', err.message))
         }
-      }
-
-      // Deliver to external webhook if configured
-      if (this.campaign.webhook_url) {
-        const callLog = {
-          session_id:      this.sessionId,
-          outcome,
-          duration_sec:    duration,
-          language_detected: this.language,
-          collected_data:  JSON.stringify(this.collectedData),
-          acknowledged:    flowSummary.acknowledged ?? null,
-          confusion_count: this.flowExecutor?.confusionCount || 0,
-          llm_used:        this.llmUsed,
-          ended_at:        new Date().toISOString(),
-        }
-        deliverWebhook(this.campaign, this.contact, callLog)
-          .catch(err => console.error('[Webhook] Delivery error:', err.message))
       }
 
       // Deliver to external webhook if configured
