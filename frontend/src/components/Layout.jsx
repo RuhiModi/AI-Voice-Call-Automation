@@ -55,7 +55,7 @@ function Logo({ size = 'lg' }) {
           fontFamily: '"Raleway", sans-serif',
           fontWeight: 1000,
           fontSize: lg.t1,
-          letterSpacing: '1px',
+          letterSpacing: '1.5px',
           lineHeight: 1,
           color: '#2c2c2c',
         }}>
