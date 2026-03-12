@@ -77,8 +77,19 @@ class CallSession {
         console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src})`)
       }
 
-      // Speak opening — then STOP and wait for user
-      const opening = this.flowExecutor.getOpening()
+      // Give executor the contact info for name verification
+      if (this.flowExecutor.setContact) {
+        this.flowExecutor.setContact(
+          this.contact,
+          this.campaign.persona_name,
+          this.language
+        )
+      }
+
+      // Speak name verification opening — then STOP and wait for user
+      const opening = this.flowExecutor.getNameVerifyOpening
+        ? this.flowExecutor.getNameVerifyOpening()
+        : this.flowExecutor.getOpening()
       this.transcript.push({ role: 'assistant', content: opening })
       await this.speak(opening)
 
