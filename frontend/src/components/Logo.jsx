@@ -8,16 +8,19 @@
 
 export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
   const s = {
-    sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 15, t2: 8,  gap: 10 },
-    md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 22, t2: 10, gap: 15 },
-    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 30, t2: 12, gap: 20 },
-  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 22, t2: 10, gap: 15 }
+    sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 17, t2: 8,  gap: 10 },
+    md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 26, t2: 10, gap: 15 },
+    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 34, t2: 12, gap: 20 },
+  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 26, t2: 10, gap: 15 }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
+
       {/* Animated sonar icon */}
-      <div style={{ width: s.icon, height: s.icon, position: 'relative',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <div style={{
+        width: s.icon, height: s.icon, position: 'relative',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
         {[0, 0.8, 1.6].map((delay, i) => (
           <div key={i} style={{
             position: 'absolute',
@@ -44,24 +47,27 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
         </div>
       </div>
 
+      {/* Text */}
       {!iconOnly && (
         <div>
+          {/* VoiceAI India — stretched letter spacing to match subtitle width */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
             fontWeight: 900,
             fontSize: s.t1,
-            letterSpacing: '0.5px',
+            letterSpacing: '1.5px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
           }}>
             VoiceAI <span style={{ color: '#f5a623' }}>India</span>
           </div>
+          {/* By RiseAscend Tech — wide spacing to match title width */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
-            fontWeight: 500,
+            fontWeight: 600,
             fontSize: s.t2,
             color: dark ? '#555555' : '#b0b0b0',
-            letterSpacing: '1.5px',
+            letterSpacing: '5.8px',
             textTransform: 'uppercase',
             marginTop: 4,
           }}>
@@ -71,7 +77,7 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
       )}
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@500;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@600;900&display=swap');
         @keyframes voiceai-sonar {
           0%   { transform: scale(0.3); opacity: 1; }
           100% { transform: scale(2.2); opacity: 0; }
