@@ -1,30 +1,28 @@
 // src/routes/simulate.routes.js
-// 🧪 CALL SIMULATOR — Full test without Vobiz/phone
-// Supports: custom script text, PDF upload, website URL scraping
 const express      = require('express')
 const multer       = require('multer')
-const path         = require('path')
 const fs           = require('fs')
+const axios        = require('axios')        // ✅ use axios — fetch() not reliable in Node
+const cheerio      = require('cheerio')      // ✅ use cheerio for clean text extraction
+const pdfParse     = require('pdf-parse')    // ✅ top-level require — not inside try/catch
 const auth         = require('../middleware/auth')
 const campaignRepo = require('../repositories/campaign.repo')
 const contactRepo  = require('../repositories/contact.repo')
 const callRepo     = require('../repositories/call.repo')
-const { getAIResponse }    = require('../call-engine/llm/index')
+const { getAIResponse }     = require('../call-engine/llm/index')
 const { buildSystemPrompt } = require('../call-engine/prompts')
 
-const router  = express.Router()
-const upload  = multer({ dest: 'uploads/sim/', limits: { fileSize: 5 * 1024 * 1024 } })
+const router      = express.Router()
+const upload      = multer({ dest: 'uploads/sim/', limits: { fileSize: 5 * 1024 * 1024 } })
 const simSessions = new Map()
 
 router.use(auth)
 
 // ── helpers ──────────────────────────────────────────────────
 function buildSimGreeting(campaign, contact, lang, customScript) {
-  const persona = campaign?.persona_name || 'Priya'
-  const name    = contact?.variables?.name || ''
-  const script  = customScript || campaign?.script_content || ''
-
-  // Extract first sentence of script as the opening line if available
+  const persona   = campaign?.persona_name || 'Priya'
+  const name      = contact?.variables?.name || ''
+  const script    = customScript || campaign?.script_content || ''
   const firstLine = script.split(/[.।\n]/)[0]?.trim()
 
   const greetings = {
@@ -36,9 +34,9 @@ function buildSimGreeting(campaign, contact, lang, customScript) {
 }
 
 function buildSimSystemPrompt(campaign, contact, lang, customScript, customPersona) {
-  const script  = customScript || campaign?.script_content || 'Have a helpful conversation.'
-  const persona = customPersona || campaign?.persona_name || 'Priya'
-  const name    = contact?.variables?.name || 'the contact'
+  const script    = customScript || campaign?.script_content || 'Have a helpful conversation.'
+  const persona   = customPersona || campaign?.persona_name || 'Priya'
+  const name      = contact?.variables?.name || 'the contact'
   const langNames = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }
   const langName  = langNames[lang] || 'English'
   const contactVars = contact?.variables ? JSON.stringify(contact.variables) : '{}'
@@ -57,7 +55,7 @@ STRICT RULES:
 2. Follow the script naturally — do NOT ask for name if you already know it (${name})
 3. Do NOT introduce yourself again after greeting
 4. If user says stop/remove/nahi chahiye → action = "dnc"
-5. If user says busy/call later → ask when → action = "reschedule"  
+5. If user says busy/call later → ask when → action = "reschedule"
 6. If user asks for human/agent → action = "transfer"
 7. If goal is complete → action = "end_call"
 8. Never say you are an AI unless directly asked
@@ -73,57 +71,91 @@ ALWAYS respond with valid JSON only:
 }
 
 // ── POST /simulate/extract-url ────────────────────────────────
-// Scrape text from a website URL to use as script
 router.post('/extract-url', async (req, res, next) => {
   try {
     const { url } = req.body
     if (!url) return res.status(400).json({ error: 'url is required' })
 
-    // Simple fetch — no puppeteer needed for most sites
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VoiceAI-Bot/1.0)' },
-      signal: AbortSignal.timeout(8000),
+    // Use axios instead of fetch() — works on all Node versions
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; VoiceAI-Bot/1.0)',
+        'Accept':     'text/html,application/xhtml+xml',
+      },
+      maxRedirects: 5,
     })
-    const html = await response.text()
 
-    // Strip HTML tags, get readable text
-    const text = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
+    const html = response.data
+
+    // Use cheerio to extract clean readable text
+    const $ = cheerio.load(html)
+
+    // Remove noise elements
+    $('script, style, nav, footer, header, iframe, noscript, svg, img').remove()
+
+    // Get meaningful text from content areas
+    let text = ''
+    const contentSelectors = ['main', 'article', '.content', '#content', '.post', 'body']
+    for (const sel of contentSelectors) {
+      const el = $(sel)
+      if (el.length) {
+        text = el.text()
+        break
+      }
+    }
+    if (!text) text = $('body').text()
+
+    // Clean up whitespace
+    text = text
       .replace(/\s+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
       .trim()
-      .slice(0, 3000) // Max 3000 chars
+      .slice(0, 3000)
 
+    if (!text) return res.status(400).json({ error: 'No readable content found on this page' })
+
+    console.log(`[Simulator] 🌐 URL extracted: ${url} → ${text.length} chars`)
     res.json({ text, length: text.length })
+
   } catch (err) {
-    res.status(400).json({ error: 'Could not fetch URL: ' + err.message })
+    console.error('[Simulator] URL fetch error:', err.message)
+    const msg = err.response
+      ? `Site returned ${err.response.status} — try a different URL`
+      : err.code === 'ECONNABORTED'
+        ? 'URL timed out — site took too long to respond'
+        : `Could not fetch URL: ${err.message}`
+    res.status(400).json({ error: msg })
   }
 })
 
 // ── POST /simulate/extract-pdf ────────────────────────────────
-// Extract text from uploaded PDF
 router.post('/extract-pdf', upload.single('pdf'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No PDF uploaded' })
 
-    // Use pdf-parse if available, else return placeholder
-    let text = ''
-    try {
-      const pdfParse = require('pdf-parse')
-      const buffer   = fs.readFileSync(req.file.path)
-      const data     = await pdfParse(buffer)
-      text = data.text?.slice(0, 3000) || ''
-    } catch (parseErr) {
-      // pdf-parse not installed — install it or fallback
-      text = `[PDF uploaded: ${req.file.originalname}] — pdf-parse package needed. Run: npm install pdf-parse`
-    }
+    const buffer = fs.readFileSync(req.file.path)
+
+    // pdf-parse is required at top level — no silent failure
+    const data = await pdfParse(buffer)
+    const text = (data.text || '').slice(0, 3000).trim()
 
     // Clean up temp file
     fs.unlinkSync(req.file.path)
 
-    res.json({ text: text.trim(), filename: req.file.originalname })
-  } catch (err) { next(err) }
+    if (!text) return res.status(400).json({ error: 'PDF appears to be empty or image-only (no text found)' })
+
+    console.log(`[Simulator] 📄 PDF extracted: ${req.file.originalname} → ${text.length} chars`)
+    res.json({ text, filename: req.file.originalname })
+
+  } catch (err) {
+    // Clean up temp file on error too
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path)
+    }
+    console.error('[Simulator] PDF parse error:', err.message)
+    res.status(400).json({ error: 'Could not read PDF: ' + err.message })
+  }
 })
 
 // ── POST /simulate/start ──────────────────────────────────────
@@ -131,26 +163,23 @@ router.post('/start', async (req, res, next) => {
   try {
     const {
       campaign_id,
-      custom_script,   // Text typed/pasted by user
-      custom_persona,  // Override agent name
-      language,        // Override language
-      contact_name,    // Dummy contact name for simulation
+      custom_script,
+      custom_persona,
+      language,
+      contact_name,
     } = req.body
 
-    // Load campaign if provided
     let campaign = null
     if (campaign_id) {
       campaign = await campaignRepo.findById(campaign_id, req.userId)
     }
 
-    // Build dummy contact
     const contact = {
       id:        'sim-contact',
       phone:     '+919876543210',
       variables: { name: contact_name || 'Rajesh Bhai' },
     }
 
-    // Try to load a real contact if campaign exists
     if (campaign_id && campaign) {
       try {
         const realContacts = await contactRepo.getPending(campaign_id, 1)
@@ -174,9 +203,9 @@ router.post('/start', async (req, res, next) => {
       lang,
       systemPrompt,
       custom_script,
-      transcript:   [{ role: 'assistant', content: greeting, timestamp: new Date().toISOString() }],
-      startTime:    Date.now(),
-      status:       'active',
+      transcript:    [{ role: 'assistant', content: greeting, timestamp: new Date().toISOString() }],
+      startTime:     Date.now(),
+      status:        'active',
       collectedData: {},
     }
 
@@ -203,12 +232,12 @@ router.post('/message', async (req, res, next) => {
     if (!session_id || !message) return res.status(400).json({ error: 'session_id and message required' })
 
     const session = simSessions.get(session_id)
-    if (!session) return res.status(404).json({ error: 'Session expired. Start a new simulation.' })
+    if (!session)                    return res.status(404).json({ error: 'Session expired. Start a new simulation.' })
     if (session.status !== 'active') return res.status(400).json({ error: 'Session already ended' })
 
     session.transcript.push({ role: 'user', content: message, timestamp: new Date().toISOString() })
 
-    const history = session.transcript.slice(0, -1).map(t => ({ role: t.role, content: t.content }))
+    const history  = session.transcript.slice(0, -1).map(t => ({ role: t.role, content: t.content }))
     const aiResult = await getAIResponse(session.systemPrompt, history, message)
 
     const aiEntry = {
@@ -250,7 +279,6 @@ router.post('/end', async (req, res, next) => {
     session.status = 'ended'
     const durationSec = Math.round((Date.now() - session.startTime) / 1000)
 
-    // Save to call_logs if real contact
     if (session.contact.id !== 'sim-contact') {
       try {
         await callRepo.create(session.contact.id, session.campaign?.id, session.sessionId)
