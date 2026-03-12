@@ -134,7 +134,7 @@ export default function LandingPage() {
 
           {/* ── Logo ── */}
           <div style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
-            <Logo size="sm" />
+            <Logo size="md" />
           </div>
 
           {/* Desktop links */}
