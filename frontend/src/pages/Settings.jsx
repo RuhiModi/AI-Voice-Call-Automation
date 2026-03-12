@@ -83,8 +83,6 @@ export default function Settings() {
     vobiz_from_number: '',
   })
   const [apiKey, setApiKey] = useState(null)
-  const [groq,   setGroq]   = useState({ api_key: '', model: 'llama-3.1-8b-instant' })
-  const [sarvam, setSarvam] = useState({ api_key: '', tts_voice: 'kavya' })
 
   // ── Load settings from DB ──────────────────────────────────
   useEffect(() => {
@@ -145,7 +143,7 @@ export default function Settings() {
       await settingsApi.update(payload)
       const res = await settingsApi.testVobiz()
       setTestResult({ success: true, account: res.data.account })
-      toast.success('Connected to Vobiz ✅')
+      toast.success('Connected successfully ✅')
     } catch (err) {
       const msg = err.response?.data?.error || 'Connection failed'
       setTestResult({ success: false, error: msg })
@@ -197,8 +195,8 @@ export default function Settings() {
         </button>
       </Section>
 
-      {/* ── Vobiz Credentials ─────────────────────────────── */}
-      <Section title="Vobiz — Telephony" desc="Your calling account — saved securely to your profile">
+      {/* ── Telephony ─────────────────────────────────────── */}
+      <Section title="Telephony" desc="Your calling account — saved securely to your profile">
 
         {/* Status */}
         <div className="flex items-center gap-3 p-3 rounded-xl mb-4"
@@ -207,21 +205,17 @@ export default function Settings() {
             style={{ background: hasVobizCreds ? '#52b87a' : '#f59e0b' }}/>
           <p className="text-[12px] font-semibold" style={{ color: hasVobizCreds ? '#1c673a' : '#8f540f' }}>
             {hasVobizCreds
-              ? 'Credentials configured — campaigns will use your Vobiz account'
+              ? 'Credentials configured — campaigns can make calls'
               : 'Credentials not set — campaigns cannot make calls'}
           </p>
         </div>
-
-        <InfoBanner color="blue">
-          Find credentials at <strong>app.vobiz.ai</strong> → Account → API Access. Auth ID starts with <strong>SA</strong>.
-        </InfoBanner>
 
         {/* Auth ID */}
         <div className="mb-4">
           <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Auth ID *</label>
           <input value={vobiz.vobiz_auth_id}
             onChange={e => setVobiz(v => ({ ...v, vobiz_auth_id: e.target.value }))}
-            placeholder="SAXXXXXXXXXXXXXXXXXX" className="input-field" />
+            placeholder="Your Auth ID" className="input-field" />
         </div>
 
         {/* Auth Token */}
@@ -232,7 +226,7 @@ export default function Settings() {
               type={showToken ? 'text' : 'password'}
               value={vobiz.vobiz_auth_token}
               onChange={e => setVobiz(v => ({ ...v, vobiz_auth_token: e.target.value }))}
-              placeholder="Your Vobiz auth token"
+              placeholder="Your auth token"
               className="input-field" style={{ paddingRight: '44px' }}
             />
             <button onClick={() => setShowToken(s => !s)}
@@ -265,7 +259,7 @@ export default function Settings() {
               {testResult.success ? (
                 <>
                   <p className="font-semibold" style={{ color: '#1c673a' }}>Connected successfully!</p>
-                  {testResult.account?.username    && <p style={{ color: '#4a9e6a' }}>Account: {testResult.account.username}</p>}
+                  {testResult.account?.username      && <p style={{ color: '#4a9e6a' }}>Account: {testResult.account.username}</p>}
                   {testResult.account?.cash_credits !== undefined && <p style={{ color: '#4a9e6a' }}>Balance: ₹{testResult.account.cash_credits}</p>}
                 </>
               ) : (
@@ -326,52 +320,6 @@ export default function Settings() {
           {regenerating ? 'Generating...' : apiKey ? '🔄 Regenerate Key' : '🔑 Generate API Key'}
         </button>
         {apiKey && <p className="text-[11px] mt-2" style={{ color: '#a8a8a8' }}>Keep this secret — anyone with it can read your campaign results</p>}
-      </Section>
-
-      {/* ── Groq ──────────────────────────────────────────── */}
-      <Section title="Groq — AI Brain" desc="Powers all AI conversations" badge="FREE">
-        <InfoBanner color="green">
-          Free tier: 14,400 requests/day. Get your key at{' '}
-          <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="font-semibold underline">console.groq.com</a>
-        </InfoBanner>
-        <Field label="API Key" value={groq.api_key} type="password"
-          onChange={v => setGroq(p => ({ ...p, api_key: v }))} placeholder="gsk_..." />
-        <div className="mb-4">
-          <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Model</label>
-          <select value={groq.model} onChange={e => setGroq(p => ({ ...p, model: e.target.value }))}
-            className="input-field" style={{ cursor: 'pointer' }}>
-            <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Faster — Recommended)</option>
-            <option value="llama-3.1-70b-versatile">llama-3.1-70b-versatile (Smarter)</option>
-          </select>
-        </div>
-        <p className="text-[11px] mb-4" style={{ color: '#a8a8a8' }}>
-          Add as <code className="px-1 py-0.5 rounded" style={{ background: '#f5f1ea' }}>GROQ_API_KEY</code> in Render → Environment
-        </p>
-        <button onClick={() => toast.success('Add GROQ_API_KEY to Render env vars to activate')} className="btn-primary">Save</button>
-      </Section>
-
-      {/* ── Sarvam ────────────────────────────────────────── */}
-      <Section title="Sarvam AI — Voice" desc="Speech recognition & synthesis for Indian languages" badge="₹1K FREE">
-        <InfoBanner color="amber">
-          Free ₹1,000 credits at{' '}
-          <a href="https://sarvam.ai" target="_blank" rel="noopener noreferrer" className="font-semibold underline">sarvam.ai</a>
-          {' '}— covers ~40 hours of calls
-        </InfoBanner>
-        <Field label="API Key" value={sarvam.api_key} type="password"
-          onChange={v => setSarvam(p => ({ ...p, api_key: v }))} placeholder="Your Sarvam API key" />
-        <div className="mb-4">
-          <label className="block text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#6b6b6b' }}>Voice</label>
-          <select value={sarvam.tts_voice} onChange={e => setSarvam(p => ({ ...p, tts_voice: e.target.value }))}
-            className="input-field" style={{ cursor: 'pointer' }}>
-            <option value="kavya">Kavya — Female, Gujarati</option>
-            <option value="neha">Neha — Female, Hindi</option>
-            <option value="amelia">Amelia — Female, English</option>
-          </select>
-        </div>
-        <p className="text-[11px] mb-4" style={{ color: '#a8a8a8' }}>
-          Add as <code className="px-1 py-0.5 rounded" style={{ background: '#f5f1ea' }}>SARVAM_API_KEY</code> in Render → Environment
-        </p>
-        <button onClick={() => toast.success('Add SARVAM_API_KEY to Render env vars to activate')} className="btn-primary">Save</button>
       </Section>
 
       {/* ── Google Sheets ──────────────────────────────────── */}
