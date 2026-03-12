@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { LayoutDashboard, Radio, Settings, LogOut, Plus, Menu, ChevronRight, IndianRupee, FlaskConical } from 'lucide-react'
-import Logo from '../components/Logo'
+import Logo from './Logo'
 
 const NAV = [
   { to: '/dashboard',           icon: LayoutDashboard, label: 'Dashboard', end: true  },
