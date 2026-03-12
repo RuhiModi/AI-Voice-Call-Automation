@@ -47,49 +47,75 @@ router.post('/script/preview', auth, async (req, res, next) => {
     const { text, language, campaign_type } = req.body
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' })
 
-    const { parseTextToFlow } = require('../call-engine/parsePdfScript')
-    const { getAIResponse }   = require('../call-engine/llm/index')
-
+    const Groq     = require('groq-sdk')
+    const groq     = new Groq({ apiKey: process.env.GROQ_API_KEY })
     const langName = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }[language] || 'Gujarati'
-    const persona  = 'Priya'
 
-    const systemPrompt = `You are an expert voice call script writer for Indian outbound calling campaigns.
-Convert the given document/text into a structured voice call conversation script.
+    const prompt = `You are a voice call script writer. Convert this document into a phone conversation script in ${langName}.
 
-RULES:
-1. Write ALL prompts in ${langName} — natural spoken language, not written
-2. Keep each prompt SHORT — max 2-3 sentences (phone call)
-3. Create logical flow: greeting → questions → closing
-4. Each state has 0-4 options (short phrases user would speak)
-5. Last state must have empty options [] (ends call)
-6. Agent name is ${persona}
+STRICT RULES:
+- Write every prompt in ${langName} — spoken, natural, short (max 2 sentences)
+- options = short phrases the caller would say in response
+- Last state must have "options": []
+- Return ONLY valid JSON, no explanation, no markdown fences
 
-OUTPUT: valid JSON only, no markdown:
-{
-  "flow": [
-    { "id": "intro", "prompt": "<greeting in ${langName}>", "options": ["<yes>", "<no/busy>"] },
-    { "id": "step_1", "prompt": "<question in ${langName}>", "options": ["<opt1>", "<opt2>"] },
-    { "id": "closing", "prompt": "<thank you in ${langName}>", "options": [] }
-  ]
-}`
+Document:
+${text.slice(0, 3000)}
 
-    const result = await getAIResponse(systemPrompt, [], `Convert this into a voice call script:
+Return this exact structure:
+{"flow":[{"id":"intro","prompt":"...","options":["...","..."]},{"id":"q1","prompt":"...","options":["...","..."]},{"id":"closing","prompt":"...","options":[]}]}`
 
-${text.slice(0, 4000)}`)
-    const raw    = result.text || ''
-
-    // Extract JSON
-    const jsonMatch = raw.match(/\{[\s\S]*"flow"[\s\S]*\}/)
-    if (!jsonMatch) return res.status(500).json({ error: 'Could not generate script — try again' })
-
-    const parsed = JSON.parse(jsonMatch[0])
-    if (!parsed.flow?.length) return res.status(500).json({ error: 'Empty script generated' })
-
-    res.json({
-      flow:        parsed.flow,
-      state_count: parsed.flow.length,
-      language,
+    const completion = await groq.chat.completions.create({
+      model:       'llama-3.1-8b-instant',
+      messages:    [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+      max_tokens:  2000,
     })
+
+    const raw = completion.choices[0]?.message?.content || ''
+    console.log('[Script Preview] LLM raw:', raw.slice(0, 200))
+
+    // Try to extract JSON — handle markdown fences and extra text
+    let jsonStr = raw
+      .replace(/```json/g, '').replace(/```/g, '')  // strip markdown
+      .replace(/^[^{]*/, '')                          // strip leading text
+      .replace(/[^}]*$/, match => {                  // strip trailing text after last }
+        const last = match.lastIndexOf('}')
+        return last >= 0 ? match.slice(0, last + 1) : match
+      })
+      .trim()
+
+    // Find outermost { }
+    const start = jsonStr.indexOf('{')
+    const end   = jsonStr.lastIndexOf('}')
+    if (start === -1 || end === -1) {
+      console.error('[Script Preview] No JSON found in:', raw)
+      return res.status(500).json({ error: 'Script generation failed — try again' })
+    }
+    jsonStr = jsonStr.slice(start, end + 1)
+
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStr)
+    } catch (parseErr) {
+      console.error('[Script Preview] JSON parse error:', parseErr.message, '| raw:', jsonStr.slice(0, 200))
+      return res.status(500).json({ error: 'Script generation failed — try again' })
+    }
+
+    if (!parsed.flow?.length) {
+      return res.status(500).json({ error: 'Empty script generated — try again' })
+    }
+
+    // Normalize
+    const flow = parsed.flow.map((s, i) => ({
+      id:      (s.id || `step_${i}`).toString().toLowerCase().replace(/\s+/g, '_'),
+      prompt:  (s.prompt || '').trim(),
+      options: Array.isArray(s.options) ? s.options.map(o => String(o).trim()).filter(Boolean) : [],
+    }))
+
+    console.log(`[Script Preview] ✅ Generated ${flow.length} states for language: ${language}`)
+    res.json({ flow, state_count: flow.length, language })
+
   } catch (err) {
     console.error('[Script Preview] Error:', err.message)
     next(err)
