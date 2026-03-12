@@ -8,10 +8,10 @@
 
 export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
   const s = {
-    sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 17, t2: 8,  gap: 10 },
-    md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 26, t2: 10, gap: 15 },
-    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 34, t2: 12, gap: 20 },
-  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 26, t2: 10, gap: 15 }
+    sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 20, t2: 8,  gap: 10 },
+    md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 },
+    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 40, t2: 12, gap: 20 },
+  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
@@ -50,24 +50,24 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
       {/* Text */}
       {!iconOnly && (
         <div>
-          {/* VoiceAI India — stretched letter spacing to match subtitle width */}
+          {/* VoiceAI India — bigger, normal spacing */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
             fontWeight: 900,
             fontSize: s.t1,
-            letterSpacing: '1.5px',
+            letterSpacing: '0.5px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
           }}>
             VoiceAI <span style={{ color: '#f5a623' }}>India</span>
           </div>
-          {/* By RiseAscend Tech — wide spacing to match title width */}
+          {/* Tagline — unchanged, exactly as before */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
-            fontWeight: 600,
+            fontWeight: 500,
             fontSize: s.t2,
             color: dark ? '#555555' : '#b0b0b0',
-            letterSpacing: '5.8px',
+            letterSpacing: '1.5px',
             textTransform: 'uppercase',
             marginTop: 4,
           }}>
@@ -77,7 +77,7 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
       )}
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@600;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@500;900&display=swap');
         @keyframes voiceai-sonar {
           0%   { transform: scale(0.3); opacity: 1; }
           100% { transform: scale(2.2); opacity: 0; }
