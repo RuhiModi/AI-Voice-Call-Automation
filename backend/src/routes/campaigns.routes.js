@@ -89,11 +89,28 @@ router.post('/:id/contacts', auth, upload.single('file'), async (req, res, next)
 })
 
 // POST /campaigns/:id/script/pdf
+// Extracts PDF → LLM generates full conversation script → saved to flow_config
 router.post('/:id/script/pdf', auth, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
-    const text = await campaignService.extractFromPdf(req.file.path)
-    res.json({ text })
+
+    const fs     = require('fs')
+    const buffer = fs.readFileSync(req.file.path)
+    try { fs.unlinkSync(req.file.path) } catch {}
+
+    const flowConfig = await campaignService.parseCampaignScript(
+      req.params.id, buffer,
+      { language: req.body.language, campaignType: req.body.campaign_type }
+    )
+
+    if (!flowConfig) return res.status(500).json({ error: 'Script generation failed — try again' })
+
+    res.json({
+      message:     `Script generated — ${flowConfig.flow?.length || 0} conversation states`,
+      flow:        flowConfig.flow,
+      source:      flowConfig.source,
+      state_count: flowConfig.flow?.length || 0,
+    })
   } catch (err) {
     if (req.file) require('fs').unlink(req.file.path, () => {})
     next(err)
@@ -101,12 +118,49 @@ router.post('/:id/script/pdf', auth, upload.single('file'), async (req, res, nex
 })
 
 // POST /campaigns/:id/script/url
+// Fetches URL → LLM generates full conversation script → saved to flow_config
 router.post('/:id/script/url', auth, async (req, res, next) => {
   try {
     const { url } = req.body
     if (!url) return res.status(400).json({ error: 'URL is required' })
+
     const text = await campaignService.extractFromUrl(url)
-    res.json({ text })
+    const flowConfig = await campaignService.parseCampaignScript(
+      req.params.id, text,
+      { language: req.body.language, campaignType: req.body.campaign_type }
+    )
+
+    if (!flowConfig) return res.status(500).json({ error: 'Script generation failed — try again' })
+
+    res.json({
+      message:     `Script generated — ${flowConfig.flow?.length || 0} conversation states`,
+      flow:        flowConfig.flow,
+      source:      flowConfig.source,
+      state_count: flowConfig.flow?.length || 0,
+    })
+  } catch (err) { next(err) }
+})
+
+// POST /campaigns/:id/script/text
+// Converts plain typed script → LLM generates conversation flow → saved to flow_config
+router.post('/:id/script/text', auth, async (req, res, next) => {
+  try {
+    const { text, language, campaign_type } = req.body
+    if (!text?.trim()) return res.status(400).json({ error: 'text is required' })
+
+    const flowConfig = await campaignService.parseCampaignScript(
+      req.params.id, text,
+      { language, campaignType: campaign_type }
+    )
+
+    if (!flowConfig) return res.status(500).json({ error: 'Script generation failed — try again' })
+
+    res.json({
+      message:     `Script generated — ${flowConfig.flow?.length || 0} conversation states`,
+      flow:        flowConfig.flow,
+      source:      flowConfig.source,
+      state_count: flowConfig.flow?.length || 0,
+    })
   } catch (err) { next(err) }
 })
 
