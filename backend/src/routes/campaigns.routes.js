@@ -40,6 +40,62 @@ router.get('/', auth, async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// POST /campaigns/script/preview  ← no campaign ID needed
+// Generates a script preview from text — called during campaign creation before saving
+router.post('/script/preview', auth, async (req, res, next) => {
+  try {
+    const { text, language, campaign_type } = req.body
+    if (!text?.trim()) return res.status(400).json({ error: 'text is required' })
+
+    const { parseTextToFlow } = require('../call-engine/parsePdfScript')
+    const { getAIResponse }   = require('../call-engine/llm/index')
+
+    const langName = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }[language] || 'Gujarati'
+    const persona  = 'Priya'
+
+    const systemPrompt = `You are an expert voice call script writer for Indian outbound calling campaigns.
+Convert the given document/text into a structured voice call conversation script.
+
+RULES:
+1. Write ALL prompts in ${langName} — natural spoken language, not written
+2. Keep each prompt SHORT — max 2-3 sentences (phone call)
+3. Create logical flow: greeting → questions → closing
+4. Each state has 0-4 options (short phrases user would speak)
+5. Last state must have empty options [] (ends call)
+6. Agent name is ${persona}
+
+OUTPUT: valid JSON only, no markdown:
+{
+  "flow": [
+    { "id": "intro", "prompt": "<greeting in ${langName}>", "options": ["<yes>", "<no/busy>"] },
+    { "id": "step_1", "prompt": "<question in ${langName}>", "options": ["<opt1>", "<opt2>"] },
+    { "id": "closing", "prompt": "<thank you in ${langName}>", "options": [] }
+  ]
+}`
+
+    const result = await getAIResponse(systemPrompt, [], `Convert this into a voice call script:
+
+${text.slice(0, 4000)}`)
+    const raw    = result.text || ''
+
+    // Extract JSON
+    const jsonMatch = raw.match(/\{[\s\S]*"flow"[\s\S]*\}/)
+    if (!jsonMatch) return res.status(500).json({ error: 'Could not generate script — try again' })
+
+    const parsed = JSON.parse(jsonMatch[0])
+    if (!parsed.flow?.length) return res.status(500).json({ error: 'Empty script generated' })
+
+    res.json({
+      flow:        parsed.flow,
+      state_count: parsed.flow.length,
+      language,
+    })
+  } catch (err) {
+    console.error('[Script Preview] Error:', err.message)
+    next(err)
+  }
+})
+
 // GET /campaigns/:id
 router.get('/:id', auth, async (req, res, next) => {
   try {
@@ -163,6 +219,7 @@ router.post('/:id/script/text', auth, async (req, res, next) => {
     })
   } catch (err) { next(err) }
 })
+
 
 // DELETE /campaigns/:id
 router.delete('/:id', auth, async (req, res, next) => {
