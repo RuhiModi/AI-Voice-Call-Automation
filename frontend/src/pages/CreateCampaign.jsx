@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { campaignApi, simulateApi } from '../hooks/api'
+import { campaignApi } from '../hooks/api'
 import { FileText, Globe, Upload, Loader } from 'lucide-react'
 
 // ── Campaign "modes" ──────────────────────────────────────────
@@ -157,7 +157,7 @@ export default function CreateCampaign() {
     if (!urlInput.trim()) return
     setUrlLoading(true)
     try {
-      const res = await simulateApi.extractUrl(urlInput.trim())
+      const res = await campaignApi.extractUrl(urlInput.trim())
       setScriptText(res.data.text || '')
       setScriptTab('text')
       toast.success('Website content extracted!')
@@ -173,9 +173,7 @@ export default function CreateCampaign() {
     setPdfFile(file)
     setPdfLoading(true)
     try {
-      const form = new FormData()
-      form.append('pdf', file)
-      const res = await simulateApi.extractPdf(form)
+      const res = await campaignApi.extractPdf(file)
       if (res.data.text) {
         setScriptText(res.data.text)
         toast.success(`PDF extracted: ${file.name}`)
