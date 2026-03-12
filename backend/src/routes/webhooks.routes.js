@@ -50,6 +50,7 @@ router.post('/vobiz/hangup', async (req, res, next) => {
     console.log(`[Vobiz] 📴 Hangup | CallSID: ${callSid} | Status: ${status} | Duration: ${duration}s | Cause: ${hangupCause}`)
 
     const outcome = _mapHangupCause(status, hangupCause)
+    console.log(`[Vobiz] 🎯 Mapped outcome: ${outcome} (status=${status}, cause=${hangupCause})`)
     await _handleCallEnd(sessionId, outcome)
 
     res.json({ status: 'ok' })
@@ -100,13 +101,21 @@ router.post('/exotel', async (req, res, next) => {
 
 // ── Helpers ───────────────────────────────────────────────────
 function _mapHangupCause(status, cause) {
-  if (status === 'completed')  return 'completed'
+  // ⚠️ IMPORTANT: Check HangupCause FIRST — VoBiz sends CallStatus="completed"
+  // even for busy/no-answer calls, so HangupCause is the source of truth
+  if (cause === 'USER_BUSY')        return 'busy'
+  if (cause === 'NO_ANSWER')        return 'no_answer'
+  if (cause === 'NORMAL_CLEARING')  return 'completed'
+  if (cause === 'CALL_REJECTED')    return 'busy'
+  if (cause === 'UNALLOCATED_NUMBER') return 'failed'
+  if (cause === 'INVALID_NUMBER_FORMAT') return 'failed'
+
+  // Fallback to CallStatus only if HangupCause is missing
   if (status === 'no-answer')  return 'no_answer'
   if (status === 'busy')       return 'busy'
   if (status === 'failed')     return 'failed'
-  if (cause  === 'NORMAL_CLEARING') return 'completed'
-  if (cause  === 'NO_ANSWER')       return 'no_answer'
-  if (cause  === 'USER_BUSY')       return 'busy'
+  if (status === 'completed')  return 'completed'
+
   return 'failed'
 }
 
