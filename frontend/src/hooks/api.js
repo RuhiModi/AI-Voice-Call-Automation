@@ -92,6 +92,10 @@ export const campaignApi = {
   generateScript: (id, text, language, campaignType) =>
     api.post(`/campaigns/${id}/script/text`, { text, language, campaign_type: campaignType }, { timeout: 60000 }),
 
+  // Preview script from text — NO campaign ID needed (called during creation)
+  previewScript: (text, language, campaignType) =>
+    api.post('/campaigns/script/preview', { text, language, campaign_type: campaignType }, { timeout: 60000 }),
+
   extractUrl: (url) =>
     api.post('/simulate/extract-url', { url }),
   extractPdf: (file) => {
