@@ -53,8 +53,8 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
           {/* VoiceAI India — bigger, normal spacing */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
-            fontWeight: 900,
-            fontSize: s.t1,
+            fontWeight: 1000,
+            fontSize: m.t1,
             letterSpacing: '0.5px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
