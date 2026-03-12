@@ -166,12 +166,26 @@ const campaignService = {
     return data.text.replace(/\s+/g, ' ').trim().substring(0, 8000)
   },
 
-  // Parse PDF script and save flow_config to the campaign in DB.
-  // Called automatically when a script PDF is uploaded via POST /:id/script/pdf
-  async parseCampaignScript(campaignId, pdfBuffer) {
+  // Parse PDF/text script → LLM generates full conversation → saved to flow_config
+  // Called when script PDF uploaded OR script text submitted
+  // Returns flowConfig so frontend can preview the generated script
+  async parseCampaignScript(campaignId, pdfBufferOrText, options = {}) {
     try {
-      console.log(`[Campaign] Parsing PDF script for campaign ${campaignId}`)
-      const flowConfig = await parsePdfToFlowConfig(pdfBuffer)
+      console.log(`[Campaign] 🤖 Generating script for campaign ${campaignId}`)
+
+      // Get campaign details for language/type context
+      let campaign = null
+      try {
+        campaign = await campaignRepo.findById(campaignId)
+      } catch {}
+
+      const parseOptions = {
+        language:     options.language     || campaign?.language_priority || 'gu',
+        campaignType: options.campaignType || campaign?.campaign_type     || 'survey',
+        personaName:  options.personaName  || campaign?.persona_name      || 'Priya',
+      }
+
+      const flowConfig = await parsePdfToFlowConfig(pdfBufferOrText, parseOptions)
 
       const { error } = await supabase
         .from('campaigns')
@@ -179,11 +193,12 @@ const campaignService = {
         .eq('id', campaignId)
 
       if (error) throw error
-      console.log(`[Campaign] ✅ flow_config saved — states: ${Object.keys(flowConfig.texts).join(', ')}`)
+
+      console.log(`[Campaign] ✅ Script generated — ${flowConfig.flow?.length || 0} states saved`)
       return flowConfig
+
     } catch (err) {
-      // Non-fatal: campaign still works with fallback config
-      console.error(`[Campaign] ❌ PDF parse failed for campaign ${campaignId}:`, err.message)
+      console.error(`[Campaign] ❌ Script generation failed for ${campaignId}:`, err.message)
       return null
     }
   },
