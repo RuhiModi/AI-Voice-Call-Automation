@@ -11,7 +11,7 @@ const NAV = [
 ]
 
 // ── Inline Logo Component (Raleway + Sonar Pulse) ──
-function Logo({ size = 'md' }) {
+function Logo({ size = 'lg' }) {
   const s = {
     sm: { icon: 32, core: 24, mic: 11, t1: 13, t2: 9,  gap: 9  },
     md: { icon: 40, core: 30, mic: 14, t1: 16, t2: 10, gap: 11 },
