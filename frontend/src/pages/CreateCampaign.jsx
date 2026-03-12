@@ -252,10 +252,16 @@ export default function CreateCampaign() {
       const id  = res.data.campaign.id
       setCampaignId(id)
 
-      // Save generated script to campaign DB — truly non-fatal, never blocks launch
+      // Save edited script to campaign DB — non-fatal, never blocks launch
       try {
-        if (mode === 'survey' && scriptText && scriptText.length > 20) {
-          await campaignApi.generateScript(id, scriptText, lang, mode)
+        if (mode === 'survey') {
+          if (generatedFlow?.length) {
+            // User reviewed/edited the generated flow — save it directly
+            await campaignApi.update(id, { flow_config: { flow: generatedFlow, source: 'llm_edited', parsed_at: new Date().toISOString() } })
+          } else if (scriptText && scriptText.length > 20) {
+            // No preview yet — generate from text on backend
+            await campaignApi.generateScript(id, scriptText, lang, mode)
+          }
         }
       } catch (e) { console.warn('[Script] Save non-fatal:', e.message) }
 
@@ -598,31 +604,73 @@ export default function CreateCampaign() {
           </div>
         )}
 
-        {/* ── Generated Script Preview ── */}
+        {/* ── Generated Script — Editable ── */}
         {!scriptGenerating && generatedFlow && generatedFlow.length > 0 && (
-          <div className="mt-4 p-4 rounded-2xl border-2 border-[#4f7ef0] bg-[#f0f4ff]">
-            <p className="text-xs font-bold text-[#4f7ef0] uppercase tracking-wider mb-3">
-              🤖 AI-Generated Script — {generatedFlow.length} conversation states
-            </p>
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <div className="mt-4 rounded-2xl border-2 border-[#4f7ef0] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-[#f0f4ff]">
+              <p className="text-xs font-bold text-[#4f7ef0] uppercase tracking-wider">
+                🤖 AI Script — {generatedFlow.length} states
+              </p>
+              <button onClick={() => generatePreview(scriptText)}
+                className="text-[11px] text-[#4f7ef0] hover:underline flex items-center gap-1">
+                <Loader size={10}/> Regenerate
+              </button>
+            </div>
+            <div className="divide-y divide-[#e8eeff] max-h-96 overflow-y-auto">
               {generatedFlow.map((state, i) => (
-                <div key={state.id} className="bg-white rounded-xl p-3 border border-[#c0d0ff]">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-mono bg-[#e8eeff] text-[#4f7ef0] px-2 py-0.5 rounded-full">{state.id}</span>
-                    {state.options?.length === 0 && <span className="text-[10px] text-[#aaa]">end</span>}
+                <div key={i} className="p-3 bg-white hover:bg-[#fafbff] transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-mono bg-[#e8eeff] text-[#4f7ef0] px-2 py-0.5 rounded-full flex-shrink-0">{state.id}</span>
+                    {state.options?.length === 0 && <span className="text-[10px] text-[#aaa] bg-[#f5f5f5] px-2 py-0.5 rounded-full">ends call</span>}
                   </div>
-                  <p className="text-xs text-[#2c2c2c] leading-relaxed">{state.prompt}</p>
+                  {/* Editable prompt */}
+                  <textarea
+                    value={state.prompt}
+                    onChange={e => {
+                      const updated = [...generatedFlow]
+                      updated[i] = { ...updated[i], prompt: e.target.value }
+                      setGeneratedFlow(updated)
+                    }}
+                    rows={2}
+                    className="w-full text-xs text-[#2c2c2c] leading-relaxed bg-[#fafbff] border border-[#e8eeff] rounded-lg px-2 py-1.5 outline-none focus:border-[#4f7ef0] resize-none"
+                  />
+                  {/* Editable options */}
                   {state.options?.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[10px] text-[#aaa] uppercase tracking-wide">Expected responses</p>
                       {state.options.map((opt, j) => (
-                        <span key={j} className="text-[10px] px-2 py-0.5 bg-[#f0f4ff] border border-[#c0d0ff] text-[#4f7ef0] rounded-full">{opt}</span>
+                        <div key={j} className="flex items-center gap-1">
+                          <input
+                            value={opt}
+                            onChange={e => {
+                              const updated = [...generatedFlow]
+                              const opts    = [...updated[i].options]
+                              opts[j]       = e.target.value
+                              updated[i]    = { ...updated[i], options: opts }
+                              setGeneratedFlow(updated)
+                            }}
+                            className="flex-1 text-[11px] px-2 py-1 bg-[#f0f4ff] border border-[#c0d0ff] text-[#4f7ef0] rounded-lg outline-none focus:border-[#4f7ef0]"
+                          />
+                          <button onClick={() => {
+                            const updated = [...generatedFlow]
+                            updated[i]    = { ...updated[i], options: updated[i].options.filter((_, k) => k !== j) }
+                            setGeneratedFlow(updated)
+                          }} className="text-[#ccc] hover:text-red-400 text-xs px-1">✕</button>
+                        </div>
                       ))}
+                      <button onClick={() => {
+                        const updated = [...generatedFlow]
+                        updated[i]    = { ...updated[i], options: [...updated[i].options, ''] }
+                        setGeneratedFlow(updated)
+                      }} className="text-[10px] text-[#4f7ef0] hover:underline mt-1">+ Add option</button>
                     </div>
                   )}
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-[#8a8a8a] mt-3">This script will be followed exactly during calls — no AI needed per call</p>
+            <div className="px-4 py-2 bg-[#f0f4ff] border-t border-[#c0d0ff]">
+              <p className="text-[11px] text-[#6b7ef0]">✏️ Edit any prompt or option above — this is exactly what the AI will say</p>
+            </div>
           </div>
         )}
         </Section>
