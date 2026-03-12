@@ -3,15 +3,17 @@
 //   <Logo />              — default, dark text (light bg)
 //   <Logo dark />         — white text (dark bg)
 //   <Logo size="sm" />    — small (sidebar)
+//   <Logo size="md" />    — medium
 //   <Logo size="lg" />    — large (landing/login)
 //   <Logo iconOnly />     — icon only, no text
 
-export default function Logo({ dark = false, size = 'lg', iconOnly = false }) {
+export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
   const s = {
     sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 20, t2: 8,  gap: 10 },
     md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 },
     lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 40, t2: 12, gap: 20 },
-  }[size] || lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 40, t2: 12, gap: 20 },
+  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 }
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
 
@@ -49,18 +51,18 @@ export default function Logo({ dark = false, size = 'lg', iconOnly = false }) {
       {/* Text */}
       {!iconOnly && (
         <div>
-          {/* VoiceAI India — bigger, normal spacing */}
+          {/* VoiceAI India — big & bold */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
-            fontWeight: 1000,
-            fontSize: lg.t1,
-            letterSpacing: '1.5px',
+            fontWeight: 900,
+            fontSize: s.t1,
+            letterSpacing: '0.5px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
           }}>
             VoiceAI <span style={{ color: '#f5a623' }}>India</span>
           </div>
-          {/* Tagline — unchanged, exactly as before */}
+          {/* Tagline — as is */}
           <div style={{
             fontFamily: '"Raleway", sans-serif',
             fontWeight: 500,
