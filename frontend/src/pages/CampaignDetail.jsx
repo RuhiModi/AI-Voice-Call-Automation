@@ -73,6 +73,7 @@ function ResultsSummary({ calls, campaign, stats }) {
   const total      = calls.length
   const completed  = calls.filter(c => c.outcome === 'completed').length
   const rescheduled= calls.filter(c => c.outcome === 'rescheduled').length
+  const busy       = calls.filter(c => c.outcome === 'busy').length
   const noAnswer   = calls.filter(c => c.outcome === 'no_answer' || c.outcome === 'failed').length
   const dnc        = calls.filter(c => c.outcome === 'dnc').length
   const acknowledged = calls.filter(c => c.acknowledged === true).length
@@ -112,22 +113,26 @@ function ResultsSummary({ calls, campaign, stats }) {
     <div className="divide-y divide-gray-100">
 
       {/* ── Hero numbers — big, plain language ─── */}
-      <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <BigStat
           emoji="📞" value={total}
-          label="Total Calls Made" color="bg-gray-50 border-gray-200" />
+          label="Total Contacts" color="bg-gray-50 border-gray-200" />
         <BigStat
           emoji="✅" value={completed}
           label="Calls Answered" sub={`${pct(completed)}% of total`}
           color="bg-green-50 border-green-200" textColor="text-green-700" />
         <BigStat
-          emoji="🔄" value={rescheduled}
-          label="Called Back Later" sub="Requested callback"
-          color="bg-blue-50 border-blue-200" textColor="text-blue-600" />
-        <BigStat
           emoji="📵" value={noAnswer}
           label="No Answer" sub={`${pct(noAnswer)}% of total`}
           color="bg-gray-50 border-gray-200" />
+        <BigStat
+          emoji="📳" value={busy}
+          label="Line Busy" sub="Number was busy"
+          color="bg-yellow-50 border-yellow-200" textColor="text-yellow-700" />
+        <BigStat
+          emoji="🔄" value={rescheduled}
+          label="Called Back Later" sub="Requested callback"
+          color="bg-blue-50 border-blue-200" textColor="text-blue-600" />
       </div>
 
       {/* ── Announcement-specific: acknowledged ── */}
@@ -354,8 +359,14 @@ export default function CampaignDetail() {
   if (!campaign) return <div className="p-10 text-center"><p className="text-gray-500">Campaign not found</p><Link to="/dashboard/campaigns" className="font-semibold mt-2 block">← Back</Link></div>
 
   const total = campaign.total_contacts || 0
+  // Progress = all processed calls (completed + busy + no_answer + failed + rescheduled)
+  // NOT just completed — a busy call was still attempted
   const done  = parseInt(stats?.completed || 0)
-  const pct   = total > 0 ? Math.round((done/total)*100) : 0
+    + parseInt(stats?.busy      || 0)
+    + parseInt(stats?.no_answer || 0)
+    + parseInt(stats?.failed    || 0)
+    + parseInt(stats?.rescheduled || 0)
+  const pct   = total > 0 ? Math.round((Math.min(done, total)/total)*100) : 0
   const meta  = statusMeta[campaign.status] || statusMeta.draft
 
   return (
