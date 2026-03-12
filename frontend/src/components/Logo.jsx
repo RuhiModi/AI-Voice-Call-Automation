@@ -6,7 +6,7 @@
 //   <Logo size="lg" />    — large (landing/login)
 //   <Logo iconOnly />     — icon only, no text
 
-export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
+export default function Logo({ dark = false, size = 'lg', iconOnly = false }) {
   const s = {
     sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 20, t2: 8,  gap: 10 },
     md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 },
@@ -55,7 +55,7 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
             fontFamily: '"Raleway", sans-serif',
             fontWeight: 1000,
             fontSize: lg.t1,
-            letterSpacing: '1px',
+            letterSpacing: '1.5px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
           }}>
