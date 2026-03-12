@@ -15,6 +15,7 @@ function Logo({ size = 'md' }) {
   const s = {
     sm: { icon: 32, core: 24, mic: 11, t1: 13, t2: 9,  gap: 9  },
     md: { icon: 40, core: 30, mic: 14, t1: 16, t2: 10, gap: 11 },
+    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 30, t2: 12, gap: 20 },
   }[size]
 
   return (
@@ -54,7 +55,7 @@ function Logo({ size = 'md' }) {
           fontFamily: '"Raleway", sans-serif',
           fontWeight: 1000,
           fontSize: lg.t1,
-          letterSpacing: '0.5px',
+          letterSpacing: '1px',
           lineHeight: 1,
           color: '#2c2c2c',
         }}>
