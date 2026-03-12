@@ -55,7 +55,7 @@ export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
             fontFamily: '"Raleway", sans-serif',
             fontWeight: 1000,
             fontSize: lg.t1,
-            letterSpacing: '0.5px',
+            letterSpacing: '1px',
             lineHeight: 1,
             color: dark ? '#ffffff' : '#1a1a1a',
           }}>
