@@ -1,43 +1,7 @@
+import Logo from '../components/Logo'
 import { useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 
-// ── Sonar Logo ─────────────────────────────────────────────────
-function Logo({ dark = false, size = 'md' }) {
-  const s = {
-    sm: { icon: 32, core: 24, mic: 11, t1: 13, t2: 9,  gap: 9  },
-    md: { icon: 40, core: 30, mic: 14, t1: 16, t2: 10, gap: 12 },
-    lg: { icon: 48, core: 36, mic: 17, t1: 20, t2: 11, gap: 14 },
-  }[size]
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
-      <div style={{ width: s.icon, height: s.icon, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {[0, 0.8, 1.6].map((delay, i) => (
-          <div key={i} style={{ position: 'absolute', width: s.icon, height: s.icon, borderRadius: '50%', border: '1.5px solid #f5a623', animation: `voiceai-sonar 2.4s cubic-bezier(0.4,0,0.6,1) ${delay}s infinite` }} />
-        ))}
-        <div style={{ width: s.core, height: s.core, borderRadius: '50%', background: 'linear-gradient(145deg,#f5a623,#d4880a)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 2, boxShadow: '0 0 18px rgba(245,166,35,0.45)' }}>
-          <svg width={s.mic} height={s.mic} viewBox="0 0 24 24" fill="none">
-            <rect x="9" y="2" width="6" height="11" rx="3" fill="white"/>
-            <path d="M5 10C5 14.418 8.134 18 12 18C15.866 18 19 14.418 19 10" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-            <line x1="12" y1="18" x2="12" y2="22" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-            <line x1="9"  y1="22" x2="15" y2="22" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
-          </svg>
-        </div>
-      </div>
-      <div>
-        <div style={{ fontFamily: '"Raleway",sans-serif', fontWeight: 900, fontSize: s.t1, letterSpacing: '0.5px', lineHeight: 1, color: dark ? '#fff' : '#1a1a1a' }}>
-          VoiceAI <span style={{ color: '#f5a623' }}>India</span>
-        </div>
-        <div style={{ fontFamily: '"Raleway",sans-serif', fontWeight: 500, fontSize: s.t2, color: dark ? '#555' : '#b0b0b0', letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: 3 }}>
-          By RiseAscend Tech
-        </div>
-      </div>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@500;900&display=swap');
-        @keyframes voiceai-sonar { 0%{transform:scale(0.3);opacity:1} 100%{transform:scale(2.2);opacity:0} }
-      `}</style>
-    </div>
-  )
-}
 
 // ── Icons ─────────────────────────────────────────────────────
 function CheckIcon() {
