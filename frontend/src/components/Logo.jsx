@@ -9,10 +9,10 @@
 
 export default function Logo({ dark = false, size = 'md', iconOnly = false }) {
   const s = {
-    sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 20, t2: 8,  gap: 10 },
-    md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 },
-    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 40, t2: 12, gap: 20 },
-  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 }
+    sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 26, t2: 8,  gap: 10 },
+    md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 36, t2: 10, gap: 15 },
+    lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 48, t2: 12, gap: 20 },
+     }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 48, t2: 10, gap: 15 }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
