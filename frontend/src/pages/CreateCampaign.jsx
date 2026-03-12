@@ -80,6 +80,7 @@ export default function CreateCampaign() {
   const [urlInput,    setUrlInput]    = useState('')
   const [urlLoading,  setUrlLoading]  = useState(false)
   const [pdfLoading,  setPdfLoading]  = useState(false)
+  const [generatedFlow, setGeneratedFlow] = useState(null)  // LLM-generated script preview
 
   const [advanced, setAdvanced] = useState({
     persona_name:         'Priya',
@@ -228,8 +229,11 @@ export default function CreateCampaign() {
       const id  = res.data.campaign.id
       setCampaignId(id)
 
-      // Upload PDF if provided and text not already extracted
-      if (mode === 'survey' && pdfFile && !scriptText) {
+      // Generate AI conversation script from uploaded content
+      if (mode === 'survey' && scriptText) {
+        await generateScriptFromContent(id)
+      } else if (mode === 'survey' && pdfFile && !scriptText) {
+        // PDF uploaded but text not extracted — parse on backend
         try { await campaignApi.extractFromPDF(id, pdfFile) }
         catch (e) { console.warn('PDF parse non-fatal:', e.message) }
       }
@@ -564,6 +568,33 @@ export default function CreateCampaign() {
               )}
             </div>
           )}
+        {/* ── Generated Script Preview ── */}
+        {generatedFlow && generatedFlow.length > 0 && (
+          <div className="mt-4 p-4 rounded-2xl border-2 border-[#4f7ef0] bg-[#f0f4ff]">
+            <p className="text-xs font-bold text-[#4f7ef0] uppercase tracking-wider mb-3">
+              🤖 AI-Generated Script — {generatedFlow.length} conversation states
+            </p>
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {generatedFlow.map((state, i) => (
+                <div key={state.id} className="bg-white rounded-xl p-3 border border-[#c0d0ff]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-mono bg-[#e8eeff] text-[#4f7ef0] px-2 py-0.5 rounded-full">{state.id}</span>
+                    {state.options?.length === 0 && <span className="text-[10px] text-[#aaa]">end</span>}
+                  </div>
+                  <p className="text-xs text-[#2c2c2c] leading-relaxed">{state.prompt}</p>
+                  {state.options?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {state.options.map((opt, j) => (
+                        <span key={j} className="text-[10px] px-2 py-0.5 bg-[#f0f4ff] border border-[#c0d0ff] text-[#4f7ef0] rounded-full">{opt}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#8a8a8a] mt-3">This script will be followed exactly during calls — no AI needed per call</p>
+          </div>
+        )}
         </Section>
       )}
 
