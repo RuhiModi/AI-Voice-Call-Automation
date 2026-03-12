@@ -8,7 +8,7 @@ const { getAIResponse, parseRescheduleTime } = require('./llm/index')
 const { buildSystemPrompt, buildGreeting }   = require('./prompts')
 const { detectQuickIntent }  = require('./intent')
 const { tryQuickReply }       = require('./quickReply')
-const { parseScript, ScriptFlowExecutor }  = require('./scriptFlow')
+const { parseScript, ScriptFlowExecutor, buildConfusionPrompt }  = require('./scriptFlow')
 const { AnnouncementFlowExecutor }         = require('./announcementFlow')
 const callRepo     = require('../repositories/call.repo')
 const contactRepo  = require('../repositories/contact.repo')
@@ -198,14 +198,21 @@ class CallSession {
       }
 
       // ── 2. LLM fallback — confusion threshold reached ────────
+      // Minimal focused prompt only — NOT the full script.
+      // LLM just needs to redirect user back on track.
       this.llmUsed = true
       this.llmTurns++
       console.log(`[Session ${this.sessionId}] 🤖 LLM fallback #${this.llmTurns}: "${userText.substring(0,40)}"`)
-      const quickIntent  = detectQuickIntent(userText)
-      const systemPrompt = buildSystemPrompt(this.campaign, this.contact, this.language)
-      const history      = this.transcript.slice(-6)
+      const quickIntent = detectQuickIntent(userText)
 
-      const response = await getAIResponse(systemPrompt, history, userText)
+      // Get the last question the AI asked
+      const currentStateText = this.flowExecutor?.states?.[this.flowExecutor?.currentStateId]?.text
+        || this.transcript.filter(t => t.role === 'assistant').slice(-1)[0]?.content
+        || ''
+
+      // Minimal prompt — just redirect, no full script context needed
+      const confusionPrompt = buildConfusionPrompt(currentStateText, userText, this.language)
+      const response = await getAIResponse(confusionPrompt, [], userText)
 
       if (quickIntent && response.action === 'continue') response.action = quickIntent
       if (response.detected_language) this.language = response.detected_language
