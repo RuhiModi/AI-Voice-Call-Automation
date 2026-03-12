@@ -88,6 +88,10 @@ export const campaignApi = {
     api.post(`/campaigns/${id}/script/url`, { url }),
 
   // Used DURING campaign creation (no ID yet) — standalone extract endpoints
+  // Generate full AI conversation script from text/PDF content (called after campaign created)
+  generateScript: (id, text, language, campaignType) =>
+    api.post(`/campaigns/${id}/script/text`, { text, language, campaign_type: campaignType }, { timeout: 60000 }),
+
   extractUrl: (url) =>
     api.post('/simulate/extract-url', { url }),
   extractPdf: (file) => {
