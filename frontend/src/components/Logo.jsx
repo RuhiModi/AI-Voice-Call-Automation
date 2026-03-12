@@ -11,8 +11,7 @@ export default function Logo({ dark = false, size = 'lg', iconOnly = false }) {
     sm: { icon: 36, core: 26, mic: 12, ring: 36, t1: 20, t2: 8,  gap: 10 },
     md: { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 },
     lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 40, t2: 12, gap: 20 },
-  }[size] || { icon: 52, core: 38, mic: 18, ring: 52, t1: 30, t2: 10, gap: 15 }
-
+  }[size] || lg: { icon: 64, core: 48, mic: 22, ring: 64, t1: 40, t2: 12, gap: 20 },
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: s.gap }}>
 
