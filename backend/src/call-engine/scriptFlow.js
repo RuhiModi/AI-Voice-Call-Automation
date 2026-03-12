@@ -221,14 +221,119 @@ class ScriptFlowExecutor {
       console.log(`[ScriptFlow] ⚠️ No script provided — using minimal fallback`)
     }
 
-    // Start at first state
-    this.currentStateId = this.stateOrder[0] || 'intro'
+    // ── Prepend name verification state ─────────────────────
+    // Injected automatically before every campaign script.
+    // Uses contact.name from variables — set via session.js setContact()
+    this._prependNameVerification()
+
+    // Start at name verification
+    this.currentStateId = '__name_verify'
+  }
+
+  // ── Inject name verification as first state ───────────────
+  // Called in constructor — runs before user's script
+  _prependNameVerification() {
+    this.states['__name_verify'] = {
+      text:         null,  // built dynamically in getOpening() with contact name
+      options: [
+        { text: 'હા',    next_state: this.stateOrder[0] },
+        { text: 'yes',   next_state: this.stateOrder[0] },
+        { text: 'han',   next_state: this.stateOrder[0] },
+        { text: 'haa',   next_state: this.stateOrder[0] },
+        { text: 'ना',    next_state: '__wrong_number'    },
+        { text: 'no',    next_state: '__wrong_number'    },
+        { text: 'nahi',  next_state: '__wrong_number'    },
+        { text: 'naa',   next_state: '__wrong_number'    },
+        { text: 'wrong', next_state: '__wrong_number'    },
+        { text: 'khotho',next_state: '__wrong_number'    },
+        { text: 'kaun',  next_state: '__who_is_this'     },
+        { text: 'kon',   next_state: '__who_is_this'     },
+        { text: 'who',   next_state: '__who_is_this'     },
+        { text: 'कौन',   next_state: '__who_is_this'     },
+      ],
+      default_next: this.stateOrder[0],
+      terminal:     false,
+    }
+
+    // Wrong number → end immediately
+    this.states['__wrong_number'] = {
+      text: null,  // built in _getLangText()
+      options:      [],
+      default_next: 'end',
+      terminal:     true,
+    }
+
+    // Who is calling → brief answer, then re-ask name
+    this.states['__who_is_this'] = {
+      text: null,  // built in _getLangText()
+      options: [
+        { text: 'हा', next_state: this.stateOrder[0] },
+        { text: 'ha', next_state: this.stateOrder[0] },
+        { text: 'ok', next_state: this.stateOrder[0] },
+      ],
+      default_next: '__name_verify',
+      terminal:     false,
+    }
   }
 
   // ── Called once at start — returns opening line ───────────
   getOpening() {
     const first = this.states[this.stateOrder[0]]
     return first?.text || 'નમસ્તે!'
+  }
+
+  // ── Set contact info (called by session.js after constructor) ─
+  setContact(contact, personaName, language) {
+    this.contactName = contact?.variables?.name || contact?.variables?.driver_name || contact?.variables?.Name || null
+    this.personaName = personaName || 'Priya'
+    this.language    = language || 'gu'
+  }
+
+  // ── Build name verify opening ─────────────────────────────
+  getNameVerifyOpening() {
+    const name = this.contactName
+    const persona = this.personaName
+    const lang = this.language
+
+    if (lang === 'gu') {
+      return name
+        ? `નમસ્તે! હું ${persona} બોલું છું. શું હું ${name} સાહેબ/બેન સાથે વાત કરી રહ્યો/રહી છું?`
+        : `નમસ્તે! હું ${persona} બોલું છું. શું આ યોગ્ય નંબર છે?`
+    }
+    if (lang === 'hi') {
+      return name
+        ? `नमस्ते! मैं ${persona} बोल रही हूं। क्या मैं ${name} जी से बात कर रही हूं?`
+        : `नमस्ते! मैं ${persona} बोल रही हूं। क्या यह सही नंबर है?`
+    }
+    // English
+    return name
+      ? `Hello! This is ${persona} calling. Am I speaking with ${name}?`
+      : `Hello! This is ${persona} calling. Is this the right number?`
+  }
+
+  // ── Language-specific texts for injected states ───────────
+  _getLangText(stateId) {
+    const name = this.contactName
+    const persona = this.personaName
+    const lang = this.language
+
+    if (stateId === '__wrong_number') {
+      return {
+        gu: 'માફ કરશો, ખોટો નંબર છે. અસુવિધા માટે ક્ષમા. આભાર.',
+        hi: 'माफ़ करें, गलत नंबर लगा। असुविधा के लिए क्षमा। धन्यवाद।',
+        en: 'Sorry for the inconvenience, wrong number. Thank you.',
+      }[lang] || 'Sorry, wrong number. Thank you.'
+    }
+
+    if (stateId === '__who_is_this') {
+      return {
+        gu: `આ ${persona} છે, સેવા પુષ્ટિ માટે કૉલ છે. શું ${name || 'આપ'} ઉપલબ્ધ છો?`,
+        hi: `मैं ${persona} हूं, सेवा पुष्टि के लिए कॉल है। क्या ${name || 'आप'} उपलब्ध हैं?`,
+        en: `This is ${persona} calling to confirm service. Is ${name || 'this the right person'} available?`,
+      }[lang] || `This is ${persona}. Is ${name || 'this the right person'} available?`
+    }
+
+    return ''
   }
 
   // ── Main process — called for every user utterance ────────
@@ -343,14 +448,17 @@ class ScriptFlowExecutor {
 
     this.currentStateId = nextStateId
 
+    // Injected states use dynamic text
+    const text = nextState.text || this._getLangText(nextStateId)
+
     // Terminal state (no options, last in flow) → end after speaking
     const action = nextState.terminal ? 'end' : 'continue'
     if (action === 'end') this.done = true
 
-    console.log(`[ScriptFlow] ➡️ → ${nextStateId}: "${nextState.text?.substring(0, 60)}"`)
+    console.log(`[ScriptFlow] ➡️ → ${nextStateId}: "${(text||'').substring(0, 60)}"`)
     return {
       useLLM:  false,
-      text:    nextState.text,
+      text,
       action,
       stateId: nextStateId,
     }
