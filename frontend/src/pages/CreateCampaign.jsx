@@ -81,6 +81,7 @@ export default function CreateCampaign() {
   const [urlLoading,  setUrlLoading]  = useState(false)
   const [pdfLoading,  setPdfLoading]  = useState(false)
   const [generatedFlow, setGeneratedFlow] = useState(null)  // LLM-generated script preview
+  const [scriptGenerating, setScriptGenerating] = useState(false)
 
   const [advanced, setAdvanced] = useState({
     persona_name:         'Priya',
@@ -491,6 +492,7 @@ export default function CreateCampaign() {
               <textarea
                 value={scriptText}
                 onChange={e => setScriptText(e.target.value)}
+                onBlur={e => { if (e.target.value.length > 50) generatePreview(e.target.value) }}
                 rows={7}
                 placeholder={`Paste or type your call script here...\n\nExample:\nVerify if the contact received their scheme benefit.\n\nQuestion 1: Did you receive your ₹2000 payment?\nQuestion 2: Was the amount correct?\nIf no → collect their bank account number.`}
                 className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#1a1a1a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed"
@@ -568,8 +570,16 @@ export default function CreateCampaign() {
               )}
             </div>
           )}
+        {/* ── Script Generating Spinner ── */}
+        {scriptGenerating && (
+          <div className="mt-4 p-4 rounded-2xl border-2 border-[#e0d9ce] bg-[#faf8f4] flex items-center gap-3">
+            <Loader size={16} className="animate-spin text-[#8a8a8a]" />
+            <p className="text-sm text-[#6b6b6b]">AI is generating your conversation script...</p>
+          </div>
+        )}
+
         {/* ── Generated Script Preview ── */}
-        {generatedFlow && generatedFlow.length > 0 && (
+        {!scriptGenerating && generatedFlow && generatedFlow.length > 0 && (
           <div className="mt-4 p-4 rounded-2xl border-2 border-[#4f7ef0] bg-[#f0f4ff]">
             <p className="text-xs font-bold text-[#4f7ef0] uppercase tracking-wider mb-3">
               🤖 AI-Generated Script — {generatedFlow.length} conversation states
