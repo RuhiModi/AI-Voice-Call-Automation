@@ -154,37 +154,59 @@ export default function CreateCampaign() {
     }
   }, [])
 
-  // ── URL extraction ────────────────────────────────────────
+  // ── Generate script preview via LLM (fires after extraction) ─
+  async function generatePreview(text) {
+    if (!text || text.length < 30) return
+    setScriptGenerating(true)
+    setGeneratedFlow(null)
+    try {
+      const res = await campaignApi.previewScript(text, lang, mode)
+      if (res.data?.flow?.length) {
+        setGeneratedFlow(res.data.flow)
+        toast.success(`🤖 Script ready — ${res.data.flow.length} conversation states`)
+      }
+    } catch (err) {
+      console.warn('Script preview failed:', err.message)
+    } finally {
+      setScriptGenerating(false)
+    }
+  }
+
+  // ── URL extraction → then generate script preview ─────────
   async function fetchUrl() {
     if (!urlInput.trim()) return
     setUrlLoading(true)
+    setGeneratedFlow(null)
     try {
-      const res = await campaignApi.extractUrl(urlInput.trim())
-      setScriptText(res.data.text || '')
+      const res  = await campaignApi.extractUrl(urlInput.trim())
+      const text = res.data.text || ''
+      setScriptText(text)
       setScriptTab('text')
-      toast.success('Website content extracted!')
+      toast.success('URL extracted — generating script...')
+      generatePreview(text)  // fire and don't await — shows spinner separately
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || 'Could not fetch URL'
-      toast.error(msg)
+      toast.error(err.response?.data?.error || err.message || 'Could not fetch URL')
     } finally { setUrlLoading(false) }
   }
 
-  // ── PDF extraction ────────────────────────────────────────
+  // ── PDF extraction → then generate script preview ─────────
   async function uploadScriptPdf(file) {
     if (!file) return
     setPdfFile(file)
     setPdfLoading(true)
+    setGeneratedFlow(null)
     try {
-      const res = await campaignApi.extractPdf(file)
-      if (res.data.text) {
-        setScriptText(res.data.text)
-        toast.success(`PDF extracted: ${file.name}`)
+      const res  = await campaignApi.extractPdf(file)
+      const text = res.data.text || ''
+      if (text) {
+        setScriptText(text)
+        toast.success(`PDF extracted — generating script...`)
+        generatePreview(text)  // fire and don't await
       } else {
-        toast.success(`PDF ready: ${file.name}`)
+        toast.success(`PDF ready — will be parsed on launch`)
       }
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || 'Could not read PDF'
-      toast.error(msg)
+      toast.error(err.response?.data?.error || err.message || 'Could not read PDF')
     } finally { setPdfLoading(false) }
   }
 
@@ -230,14 +252,12 @@ export default function CreateCampaign() {
       const id  = res.data.campaign.id
       setCampaignId(id)
 
-      // Generate AI conversation script from uploaded content
-      if (mode === 'survey' && scriptText) {
-        await generateScriptFromContent(id)
-      } else if (mode === 'survey' && pdfFile && !scriptText) {
-        // PDF uploaded but text not extracted — parse on backend
-        try { await campaignApi.extractFromPDF(id, pdfFile) }
-        catch (e) { console.warn('PDF parse non-fatal:', e.message) }
-      }
+      // Save generated script to campaign DB — truly non-fatal, never blocks launch
+      try {
+        if (mode === 'survey' && scriptText && scriptText.length > 20) {
+          await campaignApi.generateScript(id, scriptText, lang, mode)
+        }
+      } catch (e) { console.warn('[Script] Save non-fatal:', e.message) }
 
       const contactRes = await campaignApi.uploadContacts(id, contactFile)
       setContactCount(contactRes.data.count)
