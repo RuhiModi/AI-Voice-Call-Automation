@@ -161,8 +161,9 @@ export default function CreateCampaign() {
       setScriptText(res.data.text || '')
       setScriptTab('text')
       toast.success('Website content extracted!')
-    } catch {
-      toast.error('Could not fetch URL — paste content manually instead')
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message || 'Could not fetch URL'
+      toast.error(msg)
     } finally { setUrlLoading(false) }
   }
 
@@ -181,8 +182,9 @@ export default function CreateCampaign() {
       } else {
         toast.success(`PDF ready: ${file.name}`)
       }
-    } catch {
-      toast.error('Could not read PDF — will be parsed on launch')
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message || 'Could not read PDF'
+      toast.error(msg)
     } finally { setPdfLoading(false) }
   }
 
