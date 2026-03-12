@@ -1,162 +1,181 @@
 // src/call-engine/scriptFlow.js
 //
-// STATE MACHINE — reads flow config parsed from PDF.
-// Zero LLM for scripted paths. One call = one response = waits.
+// SCRIPT-FIRST STATE MACHINE
+// Builds flow dynamically from user's script (JSON or PDF-parsed).
+// LLM is NEVER used for normal conversation — only for true off-script situations.
 //
-// flowConfig is produced by parsePdfScript.js at campaign creation time
-// and stored as JSON in campaigns.flow_config column.
+// Flow JSON format:
+// { "flow": [ { "id": "intro", "prompt": "...", "options": ["Yes", "No"] }, ... ] }
+//
+// Matching priority:
+//   1. Exact / fuzzy match against options → advance to next state
+//   2. Global real-life handlers (busy, angry, DNC, wrong number) → handle inline
+//   3. Truly unknown → useLLM: true (rare — only for unexpected conversation)
+
+'use strict'
 
 // ─────────────────────────────────────────────────────────────
-// MATCH HELPER
+// FUZZY MATCH HELPER
 // ─────────────────────────────────────────────────────────────
 
-function matchesAny(userText, synonyms = []) {
-  const u = userText.toLowerCase().trim()
-  return synonyms.some(s => u.includes(s.toLowerCase()))
+// Core yes/no/busy synonyms in Gujarati, Hindi, English
+const YES_SYNONYMS  = ['ha','haa','han','yes','okay','ok','haan','sure','bilkul','jarur','sari','saro','thayu','thayi','che','done','complete','purn','ho gaya','kem nahi','chhe','aapo','aapi','shakay']
+const NO_SYNONYMS   = ['na','naa','nai','nahi','no','not','nathi','nai thayu','abhi nahi','hu nahi','no nahi']
+const BUSY_SYNONYMS = ['busy','vyast','vyas','later','pachhi','baad','call back','abhi nahi','kal','kaal','saanje','sanje','time nathi','samay nathi','hu vyast']
+const DNC_SYNONYMS  = ['remove','nahi bolvu','band karo','mat karo','naraj','faltu','bekaar','stop calling','don\'t call','do not call']
+const TRANSFER_SYNONYMS = ['human','agent','real person','asli','sachcho','manager','supervisor','koi manush','manushya']
+const WRONG_SYNONYMS    = ['wrong number','khotho','galat number','this is wrong','no one here','koi nathi','wrong']
+
+function normalize(text) {
+  return (text || '').toLowerCase()
+    .replace(/[।,\.!?]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-// ─────────────────────────────────────────────────────────────
-// FALLBACK CONFIG — used if no PDF uploaded / parse failed
-// Minimal Gujarati flow that always works
-// ─────────────────────────────────────────────────────────────
-
-const FALLBACK_CONFIG = {
-  flow_order: ['intro', 'task_check', 'task_done', 'task_pending', 'problem_recorded', 'no_details', 'fallback'],
-  states: {
-    intro: {
-      text: 'નમસ્તે, દરિયાપુરના ધારાસભ્ય કૌશિક જૈનના ઇ-કાર્યાલય તરફથી બોલી રહ્યા છીએ. યોજનાકીય કેમ્પ દરમ્યાન આપનું કામ પૂર્ણ થયું છે કે નહીં તેની પુષ્ટિ માટે આ કૉલ છે. શું આપ હાલ 1 મિનિટ આપી શકો?',
-      transitions: { default: 'task_check', busy: 'reschedule', wrong: 'wrong_number', who: 'who_is_this' },
-      options: [
-        { type: 'condition', trigger: 'કોણ', trigger_synonyms: ['kon','kaun','who','bol kon'], response: 'આ કૉલ કેમ્પ દરમ્યાન નોંધાયેલ કામ અંગે પુષ્ટિ માટે છે. શું આપ 1 મિનિટ આપી શકો?', action: 'continue' },
-        { type: 'condition', trigger: 'ખોટો', trigger_synonyms: ['wrong','khotho','galat number'], response: 'માફ કરશો. આ ખોટો નંબર છે. આભાર.', action: 'end' },
-        { type: 'condition', trigger: 'busy', trigger_synonyms: ['busy','vyast','વ્યસ્ત','nahi','na ,','ना'], response: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?', action: 'reschedule', next_state: 'reschedule' },
-        { type: 'condition', trigger: 'પછી', trigger_synonyms: ['later','pachhi','baad','call back'], response: 'ઠીક છે. ક્યારે ફોન કરી શકીએ?', action: 'continue', next_state: 'reschedule' },
-      ],
-    },
-    reschedule: {
-      text: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?',
-      transitions: { default: 'reschedule_confirmed' },
-      options: [],
-    },
-    reschedule_confirmed: {
-      text: 'બરાબર. અમે આ સમયે ફરી સંપર્ક કરીશું. આભાર.',
-      transitions: { default: 'end' },
-      options: [],
-    },
-    who_is_this: {
-      text: 'આ કૉલ કેમ્પ દરમ્યાન નોંધાયેલ કામ અંગે પુષ્ટિ માટે છે. શું આપ 1 મિનિટ આપી શકો?',
-      transitions: { default: 'task_check' },
-      options: [],
-    },
-    wrong_number: {
-      text: 'માફ કરશો અસુવિધા માટે. આભાર.',
-      transitions: { default: 'end' },
-      options: [],
-    },
-    task_check: {
-      text: 'કૃપા કરીને જણાવો કે યોજનાકીય કેમ્પ દરમ્યાન આપનું કામ પૂર્ણ થયું છે કે નહીં?',
-      transitions: { default: 'task_pending', yes: 'task_done', never: 'never_applied', partial: 'partially_done' },
-      options: [
-        { type: 'condition', trigger: 'અરજી કરી નથી', trigger_synonyms: ['apply nathi','applied nahi','arji nathi','never applied'], response: null, next_state: 'never_applied', capture: 'task_status', captureValue: 'never_applied' },
-        { type: 'condition', trigger: 'ભાગ્યે', trigger_synonyms: ['partial','partly','bhagye','half','thodun'], response: null, next_state: 'partially_done', capture: 'task_status', captureValue: 'partial' },
-        { type: 'condition', trigger: 'પૂર્ણ', trigger_synonyms: ['પૂર્ણ','purn','puri','complete','done','thayu','thai','thai gayu','completed','ho gaya','thayi gayu','thayun'], response: null, next_state: 'task_done', capture: 'task_status', captureValue: 'completed' },
-        { type: 'condition', trigger: 'બાકી', trigger_synonyms: ['બાકી','baki','pending','nathi','nahi hua','incomplete','nathi thayu','hun baki','abhi nahi'], response: null, next_state: 'task_pending', capture: 'task_status', captureValue: 'pending' },
-        { type: 'condition', trigger: 'ખબર નથી', trigger_synonyms: ['dont know','pata nahi','khabar nathi'], response: null, next_state: 'task_pending', capture: 'task_status', captureValue: 'unknown' },
-      ],
-    },
-    task_done: {
-      text: 'ખૂબ આનંદ થયો કે આપનું કામ સફળતાપૂર્વક પૂર્ણ થયું છે. આભાર. દરિયાપુરના ધારાસભ્ય કૌશિક જૈનનું ઇ-કાર્યાલય આપની સેવા માટે હંમેશા તૈયાર છે. જો આપ ઇચ્છો તો 1 થી 5 સુધીમાં સેવા માટે રેટિંગ આપશો?',
-      transitions: { default: 'rating_done' },
-      options: [{ type: 'rating_capture', min: 1, max: 5, capture: 'rating' }],
-    },
-    rating_done: {
-      text: 'આભાર. આપનો પ્રતિસાદ અમારા માટે મહત્વનો છે. ઇ-કાર્યાલય આપની સેવા માટે પ્રતિબદ્ધ છે. શુભ દિવસ.',
-      transitions: { default: 'end' },
-      options: [],
-    },
-    task_pending: {
-      text: 'માફ કરશો કે આપનું કામ હજુ પૂર્ણ થયું નથી. કૃપા કરીને આપની મુખ્ય સમસ્યા જણાવો: દસ્તાવેજ અધૂરા, વિભાગ તરફથી પ્રતિસાદ નથી, ટેક્નિકલ વિલંબ, નાણાકીય મુદ્દો, અથવા અન્ય?',
-      transitions: { default: 'urgency_check', no_details: 'no_details' },
-      options: [
-        { type: 'condition', trigger: 'દસ્તાવેજ', trigger_synonyms: ['document','dastavej','papers','kagad'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'documents' },
-        { type: 'condition', trigger: 'પ્રતિસાદ', trigger_synonyms: ['no response','no reply','vibhag','department','reply nathi'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'no_dept_response' },
-        { type: 'condition', trigger: 'ટેક્નિકલ', trigger_synonyms: ['technical','tech','system','online','vilamb'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'technical' },
-        { type: 'condition', trigger: 'નાણા', trigger_synonyms: ['paisa','money','financial','fund','rupiya'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'financial' },
-        { type: 'condition', trigger: 'અન્ય', trigger_synonyms: ['other','anya','biju','something else'], response: null, next_state: 'urgency_check', capture: 'problem_type', captureValue: 'other' },
-        { type: 'condition', trigger: 'હાલ', trigger_synonyms: ['not now','later','pachhi','abhi nahi','cant say'], response: null, next_state: 'no_details', capture: 'problem_type', captureValue: 'declined' },
-      ],
-    },
-    partially_done: {
-      text: 'સમજ્યા. કયો ભાગ હજુ બાકી છે? દસ્તાવેજ, મંજૂરી, ચૂકવણી, ટેક્નિકલ, અથવા અન્ય?',
-      transitions: { default: 'urgency_check' },
-      options: [],
-    },
-    never_applied: {
-      text: 'સમજ્યા. શું આ ગેરસમજ હતી, કે કોઈ અન્ય પરિવાર સભ્યે અરજી કરી હતી, અથવા ડેટા ભૂલ છે?',
-      transitions: { default: 'problem_recorded' },
-      options: [],
-    },
-    urgency_check: {
-      text: 'આ મુદ્દો કેટલો તાત્કાલિક છે? તાત્કાલિક, સામાન્ય, અથવા રાહ જોઈ શકો?',
-      transitions: { default: 'escalate_check' },
-      options: [
-        { type: 'condition', trigger: 'તાત્કાલિક', trigger_synonyms: ['urgent','tatkalik','jaldi','emergency','asap'], response: null, next_state: 'escalate_check', capture: 'urgency', captureValue: 'urgent' },
-        { type: 'condition', trigger: 'સામાન્ય', trigger_synonyms: ['normal','average','theek','ok','samanya'], response: null, next_state: 'escalate_check', capture: 'urgency', captureValue: 'normal' },
-        { type: 'condition', trigger: 'રાહ', trigger_synonyms: ['wait','can wait','no rush','shakun','raah'], response: null, next_state: 'escalate_check', capture: 'urgency', captureValue: 'can_wait' },
-      ],
-    },
-    escalate_check: {
-      text: 'શું આપ ઇચ્છો છો કે અમારી ટીમ આ મુદ્દો સંબંધિત વિભાગ સુધી પહોંચાડે?',
-      transitions: { default: 'contact_time', no: 'problem_recorded' },
-      options: [
-        { type: 'condition', trigger: 'હા', trigger_synonyms: ['yes','ok','okay','please','jarur','han','haa'], response: null, next_state: 'contact_time', capture: 'escalate', captureValue: 'yes' },
-        { type: 'condition', trigger: 'ના', trigger_synonyms: ['no','nahi','na','naa','nai'], response: null, next_state: 'problem_recorded', capture: 'escalate', captureValue: 'no' },
-      ],
-    },
-    contact_time: {
-      text: 'સંપર્ક માટે કયો સમય યોગ્ય છે? અને WhatsApp અથવા SMS અપડેટ મંજૂર છે?',
-      transitions: { default: 'problem_recorded' },
-      options: [
-        { type: 'condition', trigger: 'whatsapp', trigger_synonyms: ['whatsapp','wa','wapp'], response: null, next_state: 'problem_recorded', capture: 'contact_method', captureValue: 'whatsapp' },
-        { type: 'condition', trigger: 'sms', trigger_synonyms: ['sms','message','msg','text'], response: null, next_state: 'problem_recorded', capture: 'contact_method', captureValue: 'sms' },
-      ],
-    },
-    problem_recorded: {
-      text: 'આભાર. આપની માહિતી નોંધાઈ ગઈ છે. અમારી ટીમ 48 કલાકમાં સંપર્ક કરશે. ઇ-કાર્યાલય આપની સેવા માટે પ્રતિબદ્ધ છે. શુભ દિવસ.',
-      transitions: { default: 'end' },
-      options: [],
-    },
-    no_details: {
-      text: 'બરાબર. હાલ આપ તરફથી વિગતો પ્રાપ્ત થઈ નથી. જરૂર પડે તો કૃપા કરીને ઇ-કાર્યાલય હેલ્પલાઇન પર સંપર્ક કરશો. આભાર.',
-      transitions: { default: 'end' },
-      options: [],
-    },
-    fallback: {
-      text: 'માફ કરશો, હાલ સિસ્ટમમાં ટેક્નિકલ સમસ્યા આવી છે. અમારી ટીમ જલ્દી જ આપને ફરીથી સંપર્ક કરશે.',
-      transitions: { default: 'end' },
-      options: [],
-    },
-  }
+function matchesAny(userText, synonyms) {
+  const u = normalize(userText)
+  return synonyms.some(s => u.includes(normalize(s)))
 }
 
+// Score how well userText matches an option label (0-1)
+function matchScore(userText, optionText) {
+  const u = normalize(userText)
+  const o = normalize(optionText)
+  if (!u || !o) return 0
+  // Exact match
+  if (u === o) return 1.0
+  // Option fully contained in user text
+  if (u.includes(o)) return 0.9
+  // User text fully contained in option
+  if (o.includes(u)) return 0.8
+  // Word overlap score
+  const uWords = u.split(' ').filter(w => w.length > 1)
+  const oWords = o.split(' ').filter(w => w.length > 1)
+  if (!uWords.length || !oWords.length) return 0
+  const matches = uWords.filter(w => oWords.some(ow => ow.includes(w) || w.includes(ow)))
+  return matches.length / Math.max(uWords.length, oWords.length)
+}
+
+const MATCH_THRESHOLD = 0.35  // Minimum score to consider a match
+
 // ─────────────────────────────────────────────────────────────
-// REAL-LIFE HANDLERS (global — applied before any state logic)
+// GLOBAL REAL-LIFE HANDLERS
+// These fire regardless of current state — for common real-world situations
+// All responses are generic enough to work for any campaign script
 // ─────────────────────────────────────────────────────────────
 
 const GLOBAL_HANDLERS = [
   {
-    synonyms: ['faltu','bekaar','waste','gussa','shikayat','complaint','naaraj','angry'],
-    response: 'અમે આપની લાગણી સમજીએ છીએ. કૃપા કરીને સમસ્યા જણાવો, અમે મદદ કરવા ઇચ્છીએ છીએ.',
+    id:       'wrong_number',
+    synonyms: WRONG_SYNONYMS,
+    action:   'end',
+    responses: {
+      gu: 'માફ કરશો, ખોટો નંબર છે. અસુવિધા માટે ક્ષમા. આભાર.',
+      hi: 'माफ़ करें, गलत नंबर लगा। असुविधा के लिए क्षमा। धन्यवाद।',
+      en: 'Sorry for the inconvenience, wrong number. Thank you.',
+    },
   },
   {
-    synonyms: ['bjp','congress','aap','party','rajkiy','political','neta','vote'],
-    response: 'આ કૉલ સેવા પુષ્ટિ માટે છે. રાજકીય ચર્ચા અહીં શક્ય નથી.',
+    id:       'busy',
+    synonyms: BUSY_SYNONYMS,
+    action:   'reschedule',
+    responses: {
+      gu: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?',
+      hi: 'ठीक है। कब फोन करें? 1 घंटे बाद, शाम को, या कल?',
+      en: 'No problem. When should we call back? In 1 hour, evening, or tomorrow?',
+    },
   },
   {
-    synonyms: ['avaz nathi','clear nahi','sunai nahi','avaj','avaaj','spasht nathi'],
-    response: 'માફ કરશો, અવાજ સ્પષ્ટ નથી. શું ફરીથી કહેશો?',
+    id:       'dnc',
+    synonyms: DNC_SYNONYMS,
+    action:   'dnc',
+    responses: {
+      gu: 'સમજ્યા. આ નંબર પરથી હવે કૉલ નહીં આવે. આભાર.',
+      hi: 'समझ गए। इस नंबर पर अब कॉल नहीं आएगा। धन्यवाद।',
+      en: 'Understood. We will not call this number again. Thank you.',
+    },
+  },
+  {
+    id:       'transfer',
+    synonyms: TRANSFER_SYNONYMS,
+    action:   'transfer',
+    responses: {
+      gu: 'ઠીક છે, હું આપને અમારા ટીમ સભ્ય સાથે જોડું છું.',
+      hi: 'ठीक है, मैं आपको हमारे टीम सदस्य से जोड़ता हूं।',
+      en: 'Sure, let me connect you to a team member.',
+    },
+  },
+  {
+    id:       'unclear',
+    synonyms: ['avaz nathi','avaj nathi','sunai nahi','clear nahi','spasht nathi','samjhayu nahi','pardon','repeat','again','pheri','fari'],
+    action:   'continue',
+    responses: {
+      gu: 'માફ કરશો, સ્પષ્ટ સંભળાયું નહીં. શું ફરી કહેશો?',
+      hi: 'माफ़ करें, स्पष्ट नहीं सुना। क्या दोबारा कहेंगे?',
+      en: 'Sorry, I did not catch that. Could you please repeat?',
+    },
   },
 ]
+
+// ─────────────────────────────────────────────────────────────
+// SCRIPT BUILDER — converts flat flow array → state map
+// ─────────────────────────────────────────────────────────────
+
+function buildStateMap(flowArray) {
+  // flowArray: [{ id, prompt, options: [] }, ...]
+  const states = {}
+
+  flowArray.forEach((node, index) => {
+    const nextNode = flowArray[index + 1]  // next state in sequence
+
+    states[node.id] = {
+      text:        node.prompt,
+      options:     (node.options || []).map(opt => ({
+        text:       opt,
+        next_state: _resolveNextState(opt, flowArray, index),
+      })),
+      default_next: nextNode?.id || 'end',
+      terminal:    !nextNode && (!node.options || node.options.length === 0),
+    }
+  })
+
+  return states
+}
+
+// Determine which state an option leads to based on keywords
+function _resolveNextState(optionText, flowArray, currentIndex) {
+  const lower = normalize(optionText)
+
+  // Positive → next state in sequence
+  if (matchesAny(lower, YES_SYNONYMS) || lower.includes('હા') || lower.includes('yes') || lower.includes('complete') || lower.includes('done') || lower.includes('purn')) {
+    // Find the "positive" branch — typically the state after current
+    const positiveNode = flowArray[currentIndex + 1]
+    return positiveNode?.id || 'end'
+  }
+
+  // Negative → find a "pending" or "no" state downstream
+  if (matchesAny(lower, NO_SYNONYMS) || lower.includes('ના') || lower.includes('nahi') || lower.includes('pending') || lower.includes('baki')) {
+    // Look for a state with "pending", "no", "problem" in its id
+    const negNode = flowArray.find((n, i) => i > currentIndex && (n.id.includes('pending') || n.id.includes('problem') || n.id.includes('no_') || n.id.includes('_no')))
+    return negNode?.id || flowArray[currentIndex + 1]?.id || 'end'
+  }
+
+  // Can't provide details → look for no_details state
+  if (lower.includes('nathi') || lower.includes('nahi') || lower.includes('cannot') || lower.includes('no details')) {
+    const noDetailsNode = flowArray.find(n => n.id.includes('no_detail') || n.id.includes('no_info'))
+    return noDetailsNode?.id || flowArray[currentIndex + 1]?.id || 'end'
+  }
+
+  // Default: next in sequence
+  return flowArray[currentIndex + 1]?.id || 'end'
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONFUSION TRACKER — triggers LLM only after N misses
+// ─────────────────────────────────────────────────────────────
+
+const MAX_CONFUSION_BEFORE_LLM = 2  // After 2 unknown inputs in a row → LLM
 
 // ─────────────────────────────────────────────────────────────
 // EXECUTOR CLASS
@@ -164,165 +183,227 @@ const GLOBAL_HANDLERS = [
 
 class ScriptFlowExecutor {
   /**
-   * @param {object|null} flowConfig — parsed from PDF via parsePdfScript.js
-   *                                   If null, uses FALLBACK_CONFIG
+   * @param {object|null} flowConfig — { flow: [...] } parsed from user's script
+   *                                    OR { texts: {...} } from old PDF format (backward compat)
    */
-  /**
-   * @param {object|null} pdfTexts — { texts: { state_id: 'Gujarati prompt...' } }
-   *                                  from parsePdfToFlowConfig(). If null uses fallback.
-   */
-  constructor(pdfTexts = null) {
-    // Always use FALLBACK_CONFIG for logic/transitions
-    // Override only the text for each state from the PDF
-    this.config = JSON.parse(JSON.stringify(FALLBACK_CONFIG))  // deep clone
-    if (pdfTexts?.texts) {
-      for (const [stateId, text] of Object.entries(pdfTexts.texts)) {
-        if (this.config.states[stateId] && text) {
-          this.config.states[stateId].text = text
-          console.log(`[ScriptFlow] 📄 PDF text loaded for state: ${stateId}`)
-        }
-      }
+  constructor(flowConfig = null) {
+    this.confusionCount    = 0
+    this.consecutiveMisses = 0
+    this.collectedData     = {}
+    this.done              = false
+    this.language          = 'gu'  // updated by session.js on each turn
+
+    // ── Build state map from script ───────────────────────────
+    if (flowConfig?.flow && Array.isArray(flowConfig.flow)) {
+      // New format: { flow: [{ id, prompt, options }] }
+      this.flowArray = flowConfig.flow
+      this.states    = buildStateMap(flowConfig.flow)
+      this.stateOrder = flowConfig.flow.map(n => n.id)
+      console.log(`[ScriptFlow] ✅ Loaded ${this.flowArray.length} states from script`)
+
+    } else if (flowConfig?.texts) {
+      // Old PDF format backward compat — build minimal states from texts
+      this.states     = {}
+      this.stateOrder = Object.keys(flowConfig.texts)
+      this.flowArray  = this.stateOrder.map((id, i) => ({
+        id,
+        prompt:  flowConfig.texts[id],
+        options: [],
+      }))
+      this.states = buildStateMap(this.flowArray)
+      console.log(`[ScriptFlow] ⚠️ Legacy PDF texts format — built ${this.stateOrder.length} states`)
+
+    } else {
+      // No script — use minimal fallback
+      this.flowArray  = MINIMAL_FALLBACK
+      this.states     = buildStateMap(MINIMAL_FALLBACK)
+      this.stateOrder = MINIMAL_FALLBACK.map(n => n.id)
+      console.log(`[ScriptFlow] ⚠️ No script provided — using minimal fallback`)
     }
-    this.state         = 'intro'
-    this.done          = false
-    this.collectedData = {}
+
+    // Start at first state
+    this.currentStateId = this.stateOrder[0] || 'intro'
   }
 
-  /** Called once at call start — speaks intro, then waits */
+  // ── Called once at start — returns opening line ───────────
   getOpening() {
-    return this.config.states['intro']?.text || FALLBACK_CONFIG.states.intro.text
+    const first = this.states[this.stateOrder[0]]
+    return first?.text || 'નમસ્તે!'
   }
 
-  /**
-   * Called once per user utterance. Returns:
-   *   { useLLM: false, text, action, stateId, capture_field, capture_value }
-   *   { useLLM: true }  — only for truly unknown input
-   */
-  process(userText) {
-    if (this.done || this.state === 'end') {
-      return { useLLM: false, text: null, action: 'end' }
-    }
+  // ── Main process — called for every user utterance ────────
+  // Returns: { useLLM: false, text, action, stateId }
+  //       OR { useLLM: true }
+  process(userText, language = null) {
+    if (language) this.language = language
+    if (this.done) return { useLLM: false, text: null, action: 'end' }
 
-    const lower = userText.trim().toLowerCase()
+    const lower = normalize(userText)
 
-    // ── 1. Global real-life handlers ──────────────────────────
+    // ── 1. Global real-life handlers (busy/DNC/transfer/wrong) ─
     for (const handler of GLOBAL_HANDLERS) {
       if (matchesAny(lower, handler.synonyms)) {
-        console.log(`[ScriptFlow] 🔥 Global handler triggered`)
-        return { useLLM: false, text: handler.response, action: 'continue', stateId: this.state }
-      }
-    }
-
-    // Also check per-state real_life_handlers from PDF
-    const currentState = this.config.states[this.state]
-    if (currentState?.real_life_handlers) {
-      for (const h of currentState.real_life_handlers) {
-        if (matchesAny(lower, h.synonyms || [h.trigger])) {
-          return { useLLM: false, text: h.response, action: 'continue', stateId: this.state }
+        console.log(`[ScriptFlow] 🔥 Global handler: ${handler.id}`)
+        const response = handler.responses[this.language] || handler.responses.en
+        if (handler.action === 'end' || handler.action === 'dnc' || handler.action === 'transfer') {
+          this.done = true
+        }
+        return {
+          useLLM:  false,
+          text:    response,
+          action:  handler.action,
+          stateId: this.currentStateId,
         }
       }
     }
 
-    // ── 2. Check options/conditions in current state ──────────
-    if (currentState?.options) {
+    // ── 2. Try to match against current state's options ───────
+    const currentState = this.states[this.currentStateId]
+
+    if (currentState?.options?.length > 0) {
+      let bestMatch = null
+      let bestScore = 0
+
       for (const opt of currentState.options) {
-
-        // Rating capture — any digit 1-5
-        if (opt.type === 'rating_capture') {
-          const digit = lower.match(/[1-5]/)
-          const wordMatch = matchesAny(lower, ['excellent','good','average','bad','poor','khub','saro','samanya'])
-          if (digit || wordMatch) {
-            const val = digit ? digit[0] : lower
-            this.collectedData[opt.capture || 'rating'] = val
-            console.log(`[ScriptFlow] ⭐ Rating captured: ${val}`)
-            return this._goTo('rating_done', 'rating', val)
-          }
+        const score = matchScore(lower, opt.text)
+        if (score > bestScore) {
+          bestScore = score
+          bestMatch = opt
         }
+      }
 
-        // Condition match
-        if (opt.type === 'condition' || opt.type === 'choice') {
-          const synonyms = opt.trigger_synonyms || opt.synonyms || [opt.trigger || opt.text]
-          if (matchesAny(lower, synonyms)) {
-            console.log(`[ScriptFlow] ✅ Match: "${opt.trigger || opt.text}"`)
+      // Also check simple yes/no against options
+      if (!bestMatch || bestScore < MATCH_THRESHOLD) {
+        const isYes = matchesAny(lower, YES_SYNONYMS) || lower.includes('હા')
+        const isNo  = matchesAny(lower, NO_SYNONYMS)  || lower.includes('ના')
 
-            // Capture
-            if (opt.capture) {
-              const val = opt.captureValue || userText
-              this.collectedData[opt.capture] = val
-            }
-
-            // If condition has its own response text → speak it, stay or move
-            if (opt.response) {
-              const nextId = opt.next_state || this._defaultNext()
-              if (nextId) this.state = nextId
-              if (opt.action === 'end') this.done = true
-              return {
-                useLLM:        false,
-                text:          opt.response,
-                action:        opt.action || 'continue',
-                stateId:       this.state,
-                capture_field: opt.capture,
-                capture_value: opt.capture ? this.collectedData[opt.capture] : null,
-              }
-            }
-
-            // No inline response → go directly to next state and speak its text
-            const nextId = opt.next_state || this._defaultNext()
-            return this._goTo(nextId, opt.capture, opt.capture ? this.collectedData[opt.capture] : null, opt.action)
-          }
+        if (isYes && currentState.options[0]) {
+          bestMatch = currentState.options[0]
+          bestScore = 0.7
+        } else if (isNo && currentState.options[1]) {
+          bestMatch = currentState.options[1]
+          bestScore = 0.7
         }
+      }
+
+      if (bestMatch && bestScore >= MATCH_THRESHOLD) {
+        console.log(`[ScriptFlow] ✅ Matched option "${bestMatch.text}" (score: ${bestScore.toFixed(2)}) → ${bestMatch.next_state}`)
+        this.consecutiveMisses = 0
+        return this._goTo(bestMatch.next_state)
       }
     }
 
-    // ── 3. Default transition (user said something, just advance) ─
-    const nextId = this._defaultNext()
-    if (nextId && nextId !== 'end') {
-      console.log(`[ScriptFlow] ➡️ Default advance → ${nextId}`)
-      return this._goTo(nextId)
+    // ── 3. No options or no match — default advance ───────────
+    // If state has no options it's a statement — just advance on any response
+    if (!currentState?.options?.length) {
+      console.log(`[ScriptFlow] ➡️ No options in state ${this.currentStateId} — advancing`)
+      this.consecutiveMisses = 0
+      return this._goTo(currentState?.default_next || 'end')
     }
 
-    // ── 4. Unknown — let LLM handle ───────────────────────────
-    console.log(`[ScriptFlow] 🤖 Unknown input in state ${this.state}, using LLM`)
-    return { useLLM: true }
+    // ── 4. Repeated confusion — use LLM as fallback ───────────
+    this.consecutiveMisses++
+    this.confusionCount++
+    console.log(`[ScriptFlow] ❓ No match (miss #${this.consecutiveMisses}) in state: ${this.currentStateId}`)
+
+    if (this.consecutiveMisses >= MAX_CONFUSION_BEFORE_LLM) {
+      console.log(`[ScriptFlow] 🤖 Confusion threshold reached — handing to LLM`)
+      this.consecutiveMisses = 0
+      return { useLLM: true }
+    }
+
+    // First miss — re-ask the current question politely
+    const reaskPrefix = {
+      gu: 'માફ કરશો, હું સમજ્યો નહીં. ',
+      hi: 'माफ़ करें, मैं समझ नहीं पाया। ',
+      en: 'Sorry, I did not understand. ',
+    }
+    const prefix = reaskPrefix[this.language] || reaskPrefix.en
+    return {
+      useLLM:  false,
+      text:    prefix + (currentState?.text || ''),
+      action:  'continue',
+      stateId: this.currentStateId,
+    }
   }
 
-  _defaultNext() {
-    const state = this.config.states[this.state]
-    return state?.transitions?.default || null
-  }
-
-  _goTo(nextStateId, captureField = null, captureValue = null, action = 'continue') {
+  // ── Move to a new state ───────────────────────────────────
+  _goTo(nextStateId) {
     if (!nextStateId || nextStateId === 'end') {
       this.done = true
       return { useLLM: false, text: null, action: 'end' }
     }
 
-    const nextState = this.config.states[nextStateId]
+    const nextState = this.states[nextStateId]
     if (!nextState) {
+      console.warn(`[ScriptFlow] ⚠️ State "${nextStateId}" not found — ending`)
       this.done = true
       return { useLLM: false, text: null, action: 'end' }
     }
 
-    this.state = nextStateId
+    this.currentStateId = nextStateId
+
+    // Terminal state (no options, last in flow) → end after speaking
+    const action = nextState.terminal ? 'end' : 'continue'
     if (action === 'end') this.done = true
 
-    console.log(`[ScriptFlow] ➡️ ${nextStateId}: "${nextState.text?.substring(0, 50)}"`)
+    console.log(`[ScriptFlow] ➡️ → ${nextStateId}: "${nextState.text?.substring(0, 60)}"`)
     return {
-      useLLM:        false,
-      text:          nextState.text,
-      action:        action || 'continue',
-      stateId:       nextStateId,
-      capture_field: captureField,
-      capture_value: captureValue,
+      useLLM:  false,
+      text:    nextState.text,
+      action,
+      stateId: nextStateId,
     }
   }
 
   getSummary() {
-    return { finalState: this.state, collectedData: this.collectedData }
+    return {
+      finalState:    this.currentStateId,
+      collectedData: this.collectedData,
+      confusionCount: this.confusionCount,
+    }
   }
 }
 
-// parseScript kept for backward compat — returns empty (not used anymore)
+// ─────────────────────────────────────────────────────────────
+// MINIMAL FALLBACK — used only if no script provided at all
+// ─────────────────────────────────────────────────────────────
+
+const MINIMAL_FALLBACK = [
+  {
+    id:      'intro',
+    prompt:  'નમસ્તે! શું હું આપનો 1 મિનિટ સમય લઈ શકું?',
+    options: ['હા', 'ના, વ્યસ્ત છું'],
+  },
+  {
+    id:      'main',
+    prompt:  'આભાર. આ કૉલ આપની સેવા અંગે છે. શું આપ સ્થિતિ જણાવી શકો?',
+    options: ['સારું છે', 'સમસ્યા છે'],
+  },
+  {
+    id:      'thanks',
+    prompt:  'આભાર. આપનો સમય આપવા બદલ ધન્યવાદ. શુભ દિવસ.',
+    options: [],
+  },
+]
+
+// ─────────────────────────────────────────────────────────────
+// LLM PROMPT BUILDER — used only when confusion threshold hit
+// Returns a minimal focused prompt (NOT the full script)
+// ─────────────────────────────────────────────────────────────
+
+function buildConfusionPrompt(currentStateText, userText, language) {
+  const langName = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }[language] || 'Gujarati'
+  return `You are a voice assistant on a phone call. 
+The caller said something unexpected: "${userText}"
+You were expecting a response to: "${currentStateText}"
+Language: ${langName}
+
+Reply ONLY in JSON: { "text": "<1 short sentence to get back on track>", "action": "continue" }
+Keep it under 15 words. Do NOT introduce new topics. Just gently redirect.`
+}
+
+// parseScript kept for backward compat
 function parseScript() { return [] }
 
-module.exports = { ScriptFlowExecutor, parseScript, FALLBACK_CONFIG }
+module.exports = { ScriptFlowExecutor, parseScript, buildConfusionPrompt, MINIMAL_FALLBACK }
