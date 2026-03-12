@@ -52,8 +52,8 @@ function Logo({ size = 'md' }) {
       <div>
         <div style={{
           fontFamily: '"Raleway", sans-serif',
-          fontWeight: 900,
-          fontSize: s.t1,
+          fontWeight: 1000,
+          fontSize: lg.t1,
           letterSpacing: '0.5px',
           lineHeight: 1,
           color: '#2c2c2c',
