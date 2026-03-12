@@ -9,10 +9,6 @@ import {
   PhoneCall, Mic, Users
 } from 'lucide-react'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
 const TYPE_EMOJI = {
   announcement: '📢',
   survey:       '📋',
@@ -35,10 +31,6 @@ const STATUS_META = {
   completed: { label: 'Done',      dot: 'bg-gray-400',                text: 'text-gray-500',  bg: 'bg-gray-100 border-gray-200' },
   draft:     { label: 'Draft',     dot: 'bg-gray-300',                text: 'text-gray-400',  bg: 'bg-gray-50 border-gray-200' },
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 function fmtDuration(sec) {
   if (!sec || sec === 0) return '—'
@@ -64,10 +56,6 @@ function getContactName(variables) {
   return variables.name || variables.driver_name || variables.Name || null
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-components
-// ─────────────────────────────────────────────────────────────────────────────
-
 function StatCard({ icon: Icon, label, value, sub, accent, warn }) {
   return (
     <div className={`bg-white rounded-2xl border p-5 flex flex-col gap-1 transition-all hover:shadow-md
@@ -77,7 +65,7 @@ function StatCard({ icon: Icon, label, value, sub, accent, warn }) {
           {label}
         </span>
         <div className={`w-8 h-8 rounded-xl flex items-center justify-center
-          ${warn ? 'bg-orange-100' : accent || 'bg-gray-100'}`}>
+          ${warn ? 'bg-orange-100' : 'bg-gray-100'}`}>
           <Icon size={16} className={warn ? 'text-orange-500' : 'text-gray-600'} />
         </div>
       </div>
@@ -88,9 +76,7 @@ function StatCard({ icon: Icon, label, value, sub, accent, warn }) {
 }
 
 function ProgressBar({ pct, status }) {
-  const color = status === 'active'
-    ? 'bg-gradient-to-r from-green-400 to-emerald-500'
-    : 'bg-gradient-to-r from-gray-300 to-gray-400'
+  const color = 'bg-gradient-to-r from-green-400 to-emerald-500'
   return (
     <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
       <div
@@ -123,10 +109,6 @@ function UsageBar({ used, limit, label }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main component
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function Dashboard() {
   const navigate = useNavigate()
   const [data,    setData]    = useState(null)
@@ -147,14 +129,12 @@ export default function Dashboard() {
 
   useEffect(() => { load() }, [load, refresh])
 
-  // Auto-refresh every 30s when there are active campaigns
   useEffect(() => {
     if (!data?.active_campaigns?.length) return
     const id = setInterval(() => setRefresh(r => r + 1), 30_000)
     return () => clearInterval(id)
   }, [data?.active_campaigns?.length])
 
-  // ── Loading skeleton ──────────────────────────────────────────
   if (loading && !data) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-pulse">
@@ -257,7 +237,6 @@ export default function Dashboard() {
           sub={today.total_calls
             ? `${today.completed} answered today`
             : month.total_calls > 0 ? 'This month avg' : 'No data yet'}
-          accent="bg-green-100"
         />
         <StatCard
           icon={Clock}
@@ -355,7 +334,6 @@ export default function Dashboard() {
           </div>
 
           {noActivity ? (
-            /* ── Empty state ── */
             <div className="p-10 flex flex-col items-center justify-center text-center">
               <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mb-4 border border-gray-200">
                 <Mic size={28} className="text-gray-300" />
@@ -393,7 +371,10 @@ export default function Dashboard() {
                       <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-black">{c.name}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden max-w-[100px]">
-                          <div className="h-1.5 bg-gray-400 rounded-full" style={{ width: `${pct}%` }} />
+                          <div
+                            className="h-1.5 rounded-full bg-gradient-to-r from-green-400 to-emerald-500"
+                            style={{ width: `${pct}%` }}
+                          />
                         </div>
                         <span className="text-xs text-gray-400">{pct}%</span>
                       </div>
