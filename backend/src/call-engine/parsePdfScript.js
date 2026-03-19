@@ -134,11 +134,23 @@ function parseConditionalFormat(text) {
     } else if (opts.length > 0 && current.headerHint) {
       // Options-only section (no Script: label) — use header as prompt hint
       // Generate a minimal prompt from the header
-      const headerPrompt = current.headerHint
+      // For options-only sections, use a generic prompt based on section type
+      const sectionName = current.headerHint
         .replace(/^\d+\.?\s*/, '')
         .replace(/[📌✅⚠️🔁❓🧩📂🤝📝🔚⭐🔄]/g, '')
         .trim()
-      blocks.push({ hint: current.headerHint, prompt: headerPrompt || current.headerHint, optionLines: opts })
+      // Generate sensible prompt for common section types
+      let autoPrompt = sectionName
+      if (/reschedule|callback/i.test(sectionName)) {
+        autoPrompt = 'ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?'
+      } else if (/partial/i.test(sectionName)) {
+        autoPrompt = 'કયો ભાગ હજુ બાકી છે?'
+      } else if (/data.?issue|no.?applic/i.test(sectionName)) {
+        autoPrompt = 'સમજ્યા. શું આ ડેટા ભૂલ છે?'
+      } else if (/escalat|permission/i.test(sectionName)) {
+        autoPrompt = 'શું આ મુદ્દો સંબંધિત વિભાગ સુધી પહોંચાડીએ?'
+      }
+      blocks.push({ hint: current.headerHint, prompt: autoPrompt, optionLines: opts })
     }
     current   = { headerHint: null, promptLines: [], optionLines: [] }
     inOptions = false
@@ -311,36 +323,18 @@ function resolveTarget(target, stateIds, currentIdx, nodes) {
   )
   if (exact) return exact
 
-  // Keyword search — split target into words and find state containing any word
-  const keywords = t.replace(/^go to /i, '').split(/[\s_\-\/]+/).filter(w => w.length > 2)
-  for (const kw of keywords) {
-    const kwSlug = slugify(kw)
-    const match  = stateIds.find(id => id.includes(kwSlug) || kwSlug.includes(id.replace(/_+\d+$/, '')))
-    if (match) return match
-  }
-
-  // Try matching each word of target against each word of state IDs
-  for (const kw of keywords) {
-    const match = stateIds.find(id => {
-      const idWords = id.split('_').filter(w => w.length > 2)
-      return idWords.some(iw => iw.includes(kw) || kw.includes(iw))
-    })
-    if (match) return match
-  }
-
-  // Semantic routing by common patterns
+  // Semantic routing — run FIRST before any keyword matching
   const patterns = [
-    [/reschedule|callback|call.?back|later|pachhi|baad/i,    /reschedule|callback|reschedule/],
-    [/proceed|continue|quick|tunkma|advance/i,               null],  // → next state
-    [/task.?check|status|check/i,                            /task_check|status_check|check/],
-    [/task.?done|satisf|complet|rating|purn/i,               /task_done|complet|satisf|rating/],
-    [/task.?pend|problem|pending|issue|baki/i,               /task_pend|problem|pending/],
-    [/partial|incomplete|bhagye|partly/i,                    /partial|incomplete|partial/],
-    [/escalat|permission|vibhag/i,                           /escalat|permission/],
-    [/clarif|purpose|who|kaun|kon/i,                         null],   // → stay (re-ask)
-    [/data.?issue|wrong.?data|galat/i,                       /data_issue|no_applic/],
-    [/problem.?record|noted|nondh/i,                         /problem_record|recorded/],
-    [/closing|end.?call|done|complete/i,                     null],   // → end
+    [/^(proceed|continue|quickly|advance|yes.*proceed|tunkma)/i, null],   // → next state
+    [/^(clarif|purpose|who|kaun|kon)/i,                           null],   // → stay
+    [/reschedule|callback|call.?back|later|pachhi|baad|pachi/i,   /reschedule|callback/],
+    [/task.?check|status.*check/i,                                /task_check|status_check/],
+    [/task.?done|satisf|rating|purn.*thay/i,                      /task_done|satisf|rating/],
+    [/task.?pend|problem|pending|baki/i,                          /task_pend|problem|pending/],
+    [/partial|incomplete|bhagye/i,                                /partial|incomplete/],
+    [/escalat|permission/i,                                       /escalat|permission/],
+    [/data.?issue|wrong.?data/i,                                  /data_issue|no_applic/],
+    [/problem.?record|noted|nondh/i,                              /problem_record|recorded/],
   ]
 
   for (const [trigger, targetPattern] of patterns) {
@@ -349,6 +343,21 @@ function resolveTarget(target, stateIds, currentIdx, nodes) {
       const found = stateIds.find(id => targetPattern.test(id))
       if (found) return found
     }
+  }
+
+  // Keyword search — last resort, only if semantic failed
+  const keywords = t.replace(/^go to /i, '').split(/[\s_\-\/]+/).filter(w => w.length > 3)
+  // Skip generic words that don't map to states
+  const skipWords = new Set(['flow','check','the','and','or','for','this','that','with','from','into','goto','go'])
+  for (const kw of keywords) {
+    if (skipWords.has(kw)) continue
+    const kwSlug = slugify(kw)
+    const stripNum = id => id.replace(/^\d+_/, '')
+    const match = stateIds.find(id =>
+      stripNum(id).includes(kwSlug) ||
+      kwSlug.includes(stripNum(id).replace(/_+\d+$/, ''))
+    )
+    if (match) return match
   }
 
   // Check if target matches any state prompt words
