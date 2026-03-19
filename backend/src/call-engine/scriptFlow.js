@@ -91,21 +91,21 @@ function buildStateMap(flowArray) {
     const nextId = flowArray[idx + 1]?.id || 'end'
 
     const edges = (node.options || []).map(opt => {
-      // If option already has explicit routing (from JSON with next_state)
-      if (typeof opt === 'object') {
-        return { text: opt.text || opt.label, next_state: opt.next_state || nextId }
+      if (typeof opt === 'object' && opt !== null) {
+        // Object format: { text, next_state } — explicit routing from parser
+        const next = opt.next_state || nextId
+        return { text: String(opt.text || opt.label || '').trim(), next_state: next }
       }
-
-      // String option — infer routing from option text + state IDs
+      // String option — infer routing
       const next = inferNextState(opt, stateIds, idx, flowArray)
-      return { text: opt, next_state: next }
-    })
+      return { text: String(opt).trim(), next_state: next }
+    }).filter(e => e.text.length >= 1)
 
     states[node.id] = {
-      prompt:    node.prompt || '',
-      edges,                          // matched options → where they go
-      default_next: nextId,           // if no options or no match after retries
-      terminal:  edges.length === 0,  // any state with no options ends the call
+      prompt:       node.prompt || '',
+      edges,
+      default_next: nextId,
+      terminal:     edges.length === 0,  // no options = terminal, ends call
     }
   })
 
