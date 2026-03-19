@@ -154,7 +154,7 @@ export default function CreateCampaign() {
     }
   }, [])
 
-  // ── Generate script preview via LLM (fires after extraction) ─
+  // ── Parse script into conversation flow (instant, no LLM) ──
   async function generatePreview(text) {
     if (!text || text.length < 30) return
     setScriptGenerating(true)
@@ -163,10 +163,13 @@ export default function CreateCampaign() {
       const res = await campaignApi.previewScript(text, lang, mode)
       if (res.data?.flow?.length) {
         setGeneratedFlow(res.data.flow)
-        toast.success(`🤖 Script ready — ${res.data.flow.length} conversation states`)
+        toast.success(`✅ Script parsed — ${res.data.flow.length} conversation states`)
+      } else {
+        toast('Script parsed but no states found — check format', { icon: 'ℹ️' })
       }
     } catch (err) {
       console.warn('Script preview failed:', err.message)
+      toast('Could not parse script — check format', { icon: '⚠️' })
     } finally {
       setScriptGenerating(false)
     }
@@ -563,8 +566,8 @@ export default function CreateCampaign() {
           {/* ── PDF tab ── */}
           {scriptTab === 'pdf' && (
             <div className="space-y-3">
-              <p className="text-xs text-[#8a8a8a]">Upload a PDF — script, brochure, scheme document, policy</p>
-              <input ref={pdfRef} type="file" accept=".pdf" className="hidden"
+              <p className="text-xs text-[#8a8a8a]">Upload your script — PDF, Word (.docx), or text file</p>
+              <input ref={pdfRef} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden"
                 onChange={e => uploadScriptPdf(e.target.files[0])} />
 
               {pdfFile ? (
@@ -591,7 +594,7 @@ export default function CreateCampaign() {
                   style={{ borderColor: '#e0d9ce', background: '#faf8f4', cursor: 'pointer' }}>
                   {pdfLoading
                     ? <><Loader size={20} className="animate-spin text-[#a8a8a8]" /><span className="text-xs text-[#a8a8a8]">Reading PDF...</span></>
-                    : <><Upload size={20} className="text-[#a8a8a8]" /><span className="text-xs font-semibold text-[#6b6b6b]">Click to upload PDF</span><span className="text-[11px] text-[#aaa]">Max 5MB</span></>}
+                    : <><Upload size={20} className="text-[#a8a8a8]" /><span className="text-xs font-semibold text-[#6b6b6b]">Click to upload PDF or Word doc</span><span className="text-[11px] text-[#aaa]">Max 5MB</span></>}
                 </button>
               )}
             </div>
@@ -600,7 +603,7 @@ export default function CreateCampaign() {
         {scriptGenerating && (
           <div className="mt-4 p-4 rounded-2xl border-2 border-[#e0d9ce] bg-[#faf8f4] flex items-center gap-3">
             <Loader size={16} className="animate-spin text-[#8a8a8a]" />
-            <p className="text-sm text-[#6b6b6b]">AI is generating your conversation script...</p>
+            <p className="text-sm text-[#6b6b6b]">Parsing your conversation script...</p>
           </div>
         )}
 
