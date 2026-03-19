@@ -129,8 +129,16 @@ function parseConditionalFormat(text) {
   const flush = () => {
     const prompt = current.promptLines.join(' ').replace(/\s+/g, ' ').trim()
     const opts   = current.optionLines
-    if (prompt.length > 3 || opts.length > 0) {
+    if (prompt.length > 3) {
       blocks.push({ hint: current.headerHint, prompt, optionLines: opts })
+    } else if (opts.length > 0 && current.headerHint) {
+      // Options-only section (no Script: label) — use header as prompt hint
+      // Generate a minimal prompt from the header
+      const headerPrompt = current.headerHint
+        .replace(/^\d+\.?\s*/, '')
+        .replace(/[📌✅⚠️🔁❓🧩📂🤝📝🔚⭐🔄]/g, '')
+        .trim()
+      blocks.push({ hint: current.headerHint, prompt: headerPrompt || current.headerHint, optionLines: opts })
     }
     current   = { headerHint: null, promptLines: [], optionLines: [] }
     inOptions = false
@@ -139,8 +147,8 @@ function parseConditionalFormat(text) {
   for (const rawLine of lines) {
     const line = rawLine.trim()
 
-    // Numbered section header: "1.", "2. Task Check", "3. ❓ Status"
-    if (/^\d+\.?\s/.test(line) && line.length < 80) {
+    // Numbered section header: "1.", "2. Task Check" — must have period after number
+    if (/^\d+\.\s/.test(line) && line.length < 80 && !line.includes('→') && !line.includes('->')) {
       flush()
       current.headerHint = line
       inOptions = false
@@ -176,32 +184,33 @@ function parseConditionalFormat(text) {
       continue
     }
 
-    // Arrow option line
-    if ((line.includes('→') || line.includes('->')) && !inOptions) {
-      // Arrow outside options section — treat as option
-      inOptions = true
-    }
-
-    if (inOptions || line.includes('→') || line.includes('->')) {
+    // Arrow option line — always treat as option regardless of inOptions flag
+    if (line.includes('→') || line.includes('->')) {
       const arrowMatch = line.match(/^(.+?)\s*(?:→|->)\s*(.+)$/)
       if (arrowMatch) {
         const optText = arrowMatch[1].replace(/^[-•*\d.)]\s*/, '').trim()
         const target  = arrowMatch[2].trim()
         if (optText.length >= 2 && optText.length <= 80) {
           current.optionLines.push({ text: optText, target })
+          inOptions = true
         }
-      } else if (/^[-•*\d.)]\s*\S/.test(line)) {
-        // Bullet option without arrow
-        const optText = line.replace(/^[-•*\d.)]\s*/, '').trim()
-        if (optText.length >= 2 && optText.length <= 80) {
-          current.optionLines.push({ text: optText, target: null })
-        }
-      } else if (line.length > 3 && !inOptions) {
-        current.promptLines.push(line)
       }
-    } else {
-      // Regular prompt line
-      if (!/^(📌|Ref:|Note:|If\s+YES|If\s+")/i.test(line)) {
+      continue
+    }
+
+    // Bullet/numbered option in options section
+    if (inOptions && /^[-•*\d.)]\s*\S/.test(line)) {
+      const optText = line.replace(/^[-•*\d.)]\s*/, '').trim()
+      if (optText.length >= 2 && optText.length <= 80) {
+        current.optionLines.push({ text: optText, target: null })
+      }
+      continue
+    }
+
+    // Regular prompt line — skip instruction/note lines
+    if (!inOptions) {
+      const isInstruction = /^(📌|Ref:|Note:|If\s+(user|yes|no)|Options?:|User\s+Responses?:)/i.test(line)
+      if (!isInstruction && line.length > 3) {
         current.promptLines.push(line)
       }
     }
@@ -285,18 +294,37 @@ function resolveTarget(target, stateIds, currentIdx, nodes) {
   if (!target) return nodes[currentIdx + 1]?.id || 'end'
   const t = target.toLowerCase().trim()
 
-  // Hard end
-  if (/^(end|close|finish|terminate|goodbye|stop|exit)/i.test(t)) return 'end'
+  // Hard end — check FIRST before any other matching
+  if (/^(end|close|finish|terminate|goodbye|stop|exit|done|complete)/i.test(t)) return 'end'
+  if (t === 'end' || t === 'end call' || t === 'end / update' || t === 'end/update') return 'end'
 
   // Try direct slug match first
-  const slug  = slugify(target)
-  const exact = stateIds.find(id => id === slug || id.startsWith(slug.slice(0,8)) || slug.startsWith(id.slice(0,8)))
+  const slug    = slugify(target)
+  // Strip leading number prefix from state IDs for comparison (e.g. '4_task_done' → 'task_done')
+  const stripNum = id => id.replace(/^\d+_/, '')
+  const exact = stateIds.find(id =>
+    id === slug ||
+    stripNum(id) === slug ||
+    id.startsWith(slug.slice(0, 8)) ||
+    slug.startsWith(stripNum(id).slice(0, 8)) ||
+    stripNum(id).startsWith(slug.slice(0, 8))
+  )
   if (exact) return exact
 
-  // Fuzzy keyword search across all state IDs
-  const keywords = t.split(/[\s_\-\/]+/).filter(w => w.length > 2)
+  // Keyword search — split target into words and find state containing any word
+  const keywords = t.replace(/^go to /i, '').split(/[\s_\-\/]+/).filter(w => w.length > 2)
   for (const kw of keywords) {
-    const match = stateIds.find(id => id.includes(kw) || kw.includes(id.replace(/_\d+$/, '')))
+    const kwSlug = slugify(kw)
+    const match  = stateIds.find(id => id.includes(kwSlug) || kwSlug.includes(id.replace(/_+\d+$/, '')))
+    if (match) return match
+  }
+
+  // Try matching each word of target against each word of state IDs
+  for (const kw of keywords) {
+    const match = stateIds.find(id => {
+      const idWords = id.split('_').filter(w => w.length > 2)
+      return idWords.some(iw => iw.includes(kw) || kw.includes(iw))
+    })
     if (match) return match
   }
 
@@ -320,6 +348,15 @@ function resolveTarget(target, stateIds, currentIdx, nodes) {
       if (!targetPattern) return nodes[currentIdx + 1]?.id || 'end'
       const found = stateIds.find(id => targetPattern.test(id))
       if (found) return found
+    }
+  }
+
+  // Check if target matches any state prompt words
+  for (const sid of stateIds) {
+    const node = nodes.find(n => n.id === sid)
+    if (node?.prompt) {
+      const promptSlug = slugify(node.prompt.slice(0, 30))
+      if (promptSlug.includes(slug.slice(0, 6)) && slug.length > 4) return sid
     }
   }
 
