@@ -74,7 +74,10 @@ class CallSession {
         const pdfTexts = this.campaign?.flow_config || null
         this.flowExecutor = new ScriptFlowExecutor(pdfTexts)
         const src = pdfTexts ? '📄 PDF' : '⚙️ Fallback'
-        console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src})`)
+        console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src}) — states: ${this.flowExecutor.stateOrder?.join(' → ') || 'none'}`)
+        if (pdfTexts?.flow) {
+          console.log(`[Session ${this.sessionId}] 🗺 Flow options sample:`, JSON.stringify(pdfTexts.flow[0]?.options?.slice(0,2)))
+        }
       }
 
       // Give executor the contact info for name verification
@@ -226,7 +229,7 @@ class CallSession {
       const quickIntent = detectQuickIntent(userText)
 
       // Get the last question the AI asked
-      const currentStateText = this.flowExecutor?.states?.[this.flowExecutor?.currentStateId]?.text
+      const currentStateText = this.flowExecutor?.states?.[this.flowExecutor?.currentStateId]?.prompt || this.flowExecutor?.states?.[this.flowExecutor?.currentStateId]?.text
         || this.transcript.filter(t => t.role === 'assistant').slice(-1)[0]?.content
         || ''
 
