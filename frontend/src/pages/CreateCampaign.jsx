@@ -576,9 +576,21 @@ export default function CreateCampaign() {
           {/* ── PDF tab ── */}
           {scriptTab === 'pdf' && (
             <div className="space-y-3">
-              <p className="text-xs text-[#8a8a8a]">Upload your script — PDF, Word (.docx), or text file</p>
-              <input ref={pdfRef} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden"
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-[#8a8a8a]">Upload your script as a <strong>Word (.docx)</strong> file</p>
+                <button onClick={() => setScriptTab('text')}
+                  className="text-[11px] text-[#4f7ef0] hover:underline">
+                  ✏️ Type instead
+                </button>
+              </div>
+              <input ref={pdfRef} type="file" accept=".docx,.doc" className="hidden"
                 onChange={e => uploadScriptPdf(e.target.files[0])} />
+              <div className="p-3 bg-[#fffbf0] border border-[#fde59a] rounded-xl text-[11px] text-[#8f540f]">
+                <p className="font-semibold mb-1">DOCX table format required:</p>
+                <p className="font-mono">ID | Prompt | Options</p>
+                <p className="font-mono text-[10px] mt-0.5">intro | નમસ્તે... | હા; ના</p>
+                <p className="font-mono text-[10px]">task_check | શું કામ... | પૂર્ણ; બાકી</p>
+              </div>
 
               {pdfFile ? (
                 <div className="flex items-center gap-3 p-4 bg-[#f0faf4] border-2 border-[#228248] rounded-2xl">
@@ -604,7 +616,7 @@ export default function CreateCampaign() {
                   style={{ borderColor: '#e0d9ce', background: '#faf8f4', cursor: 'pointer' }}>
                   {pdfLoading
                     ? <><Loader size={20} className="animate-spin text-[#a8a8a8]" /><span className="text-xs text-[#a8a8a8]">Reading PDF...</span></>
-                    : <><Upload size={20} className="text-[#a8a8a8]" /><span className="text-xs font-semibold text-[#6b6b6b]">Click to upload PDF or Word doc</span><span className="text-[11px] text-[#aaa]">Max 5MB</span></>}
+                    : <><Upload size={20} className="text-[#a8a8a8]" /><span className="text-xs font-semibold text-[#6b6b6b]">Click to upload Word doc (.docx)</span><span className="text-[11px] text-[#aaa]">Word .docx only — Max 5MB</span></>}
                 </button>
               )}
             </div>
