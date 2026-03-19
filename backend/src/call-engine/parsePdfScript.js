@@ -194,46 +194,38 @@ print(json.dumps(rows, ensure_ascii=False))
 function parseTableFromPlainText(rawText) {
   if (!rawText) return null
 
-  // Clean up the text
+  // Clean up — strip header row text and normalize
   const text = rawText
-    .replace(/IDPromptOld OptionsNew Options/g, '')  // strip header
+    .replace(/IDPromptOld OptionsNew Options/g, '')
     .replace(/IDPromptOptions/g, '')
-    .replace(/
-/g, '
-')
+    .replace(/\r\n/g, '\n')
     .trim()
 
-  // Strategy: find state IDs by looking for lines that are short
-  // and look like valid state IDs (lowercase, underscores, no spaces)
-  // e.g. "intro", "task_check", "task_done", "step_1"
+  // Detect state IDs: short lowercase words/underscores like "intro", "task_check"
   const STATE_ID_PATTERN = /^([a-z][a-z0-9_]{1,30})$/
 
-  const lines = text.split('
-').map(l => l.trim()).filter(Boolean)
-  const flow  = []
+  const lines  = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const flow   = []
 
   let currentId      = null
   let currentPrompt  = []
   let currentOptions = []
-  let collectingOpts = false
 
   const flush = () => {
     if (!currentId) return
     const prompt  = currentPrompt.join(' ').trim()
     const options = currentOptions
       .join(';')
-      .split(/[;
-]/)
+      .split(/[;\n]/)
       .map(o => o.trim())
       .filter(o => o.length >= 2 && o.length <= 80)
-      .filter(o => !/^if\s+/i.test(o) && !/→/.test(o))
-    if (prompt) {
+      .filter(o => !/^if\s+/i.test(o) && !/\u2192/.test(o))
+    if (prompt && prompt.length > 10) {
       flow.push({ id: currentId, prompt, options: [...new Set(options)] })
     }
     currentId      = null
     currentPrompt  = []
     currentOptions = []
-    collectingOpts = false
   }
 
   for (const line of lines) {
@@ -243,39 +235,24 @@ function parseTableFromPlainText(rawText) {
     // Detect state ID line
     if (STATE_ID_PATTERN.test(line)) {
       flush()
-      currentId      = line
-      collectingOpts = false
+      currentId = line
       continue
     }
 
     if (!currentId) continue
 
-    // Detect option-like lines (short, no sentence structure)
-    const isOption = line.length <= 60 &&
-      !line.includes('કૃ') &&     // Gujarati question words that indicate prompts
-      !line.includes('આ ') &&
-      !line.includes('જ ') &&
-      (currentPrompt.length > 0)  // only collect options after we have a prompt
-
-    // Lines that start a new "section" in options
-    if (/^(old options|new options|options)/i.test(line)) {
-      collectingOpts = true
-      continue
-    }
-
-    if (collectingOpts || (isOption && currentPrompt.length > 0)) {
-      if (!/^if\s+/i.test(line) && !/→/.test(line)) {
-        currentOptions.push(line)
-      }
-    } else {
+    // After we have a prompt, short lines are likely options
+    if (currentPrompt.length > 0 && line.length <= 60 && !/^if\s+/i.test(line) && !/\u2192/.test(line)) {
+      currentOptions.push(line)
+    } else if (!/^if\s+/i.test(line) && !/\u2192/.test(line)) {
       currentPrompt.push(line)
     }
   }
   flush()
 
-  // Filter out states with garbled/empty prompts
   return flow.filter(s => s.prompt && s.prompt.length > 10)
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // BUILD FLOW FROM TABLE ROWS
@@ -335,7 +312,7 @@ function extractCleanOptions(rawText) {
       .split(';')
       .map(o => o
         .replace(/^[""]|[""]$/g, '')
-        .replace(/\s*,\s*/g, ', ')   // fix "હા , " → "હા, "
+        .replace(/ *, */g, ', ')   // fix "હા , " → "હા, "
         .replace(/\s+/g, ' ')
         .trim()
       )
