@@ -1,514 +1,416 @@
 // src/call-engine/scriptFlow.js
 //
-// SCRIPT-FIRST STATE MACHINE
-// Builds flow dynamically from user's script (JSON or PDF-parsed).
-// LLM is NEVER used for normal conversation — only for true off-script situations.
+// RETELL-STYLE NODE EXECUTOR
+// Each node has: prompt (what agent says) + edges (what user might say → where to go)
 //
-// Flow JSON format:
-// { "flow": [ { "id": "intro", "prompt": "...", "options": ["Yes", "No"] }, ... ] }
+// Flow:
+//   1. Agent speaks current node's prompt
+//   2. Waits for user input
+//   3. Matches user input against node's options/edges
+//   4. Moves to matched next_state
+//   5. If no match after 2 tries → re-asks same question
+//   6. Global handlers (busy/DNC/wrong number) always checked first
 //
-// Matching priority:
-//   1. Exact / fuzzy match against options → advance to next state
-//   2. Global real-life handlers (busy, angry, DNC, wrong number) → handle inline
-//   3. Truly unknown → useLLM: true (rare — only for unexpected conversation)
+// Script format (from PDF/DOCX/JSON):
+// { flow: [
+//   { id: "intro",      prompt: "...", options: ["હા", "ના"] },
+//   { id: "task_check", prompt: "...", options: ["પૂર્ણ થયું", "બાકી છે"] },
+//   { id: "task_done",  prompt: "...", options: [] },   ← terminal
+// ]}
 
 'use strict'
 
 // ─────────────────────────────────────────────────────────────
-// FUZZY MATCH HELPER
+// LANGUAGE KEYWORDS
 // ─────────────────────────────────────────────────────────────
 
-// Core yes/no/busy synonyms in Gujarati, Hindi, English
-const YES_SYNONYMS  = ['ha','haa','han','yes','okay','ok','haan','sure','bilkul','jarur','sari','saro','thayu','thayi','che','done','complete','purn','ho gaya','kem nahi','chhe','aapo','aapi','shakay']
-const NO_SYNONYMS   = ['na','naa','nai','nahi','no','not','nathi','nai thayu','abhi nahi','hu nahi','no nahi']
-const BUSY_SYNONYMS = ['busy','vyast','vyas','later','pachhi','baad','call back','abhi nahi','kal','kaal','saanje','sanje','time nathi','samay nathi','hu vyast']
-const DNC_SYNONYMS  = ['remove','nahi bolvu','band karo','mat karo','naraj','faltu','bekaar','stop calling','don\'t call','do not call']
-const TRANSFER_SYNONYMS = ['human','agent','real person','asli','sachcho','manager','supervisor','koi manush','manushya']
-const WRONG_SYNONYMS    = ['wrong number','khotho','galat number','this is wrong','no one here','koi nathi','wrong']
+const YES_WORDS  = ['ha','haa','han','haan','yes','ok','okay','sure','bilkul','sahi','theek','kem nahi','zarur','हा','हां','हाँ','ہاں','હા']
+const NO_WORDS   = ['na','naa','nahi','nai','no','nope','nathi','ના','ना','نہیں']
+const BUSY_WORDS = ['busy','vyast','baad mein','call back','pachhi','later','kal','saanje','time nathi','samay nahi','hu vyast','abhi nahi','thodi der','व्यस्त','बाद में']
+const DNC_WORDS  = ['band karo','mat karo','remove','do not call','stop calling','nahi chahiye','naraj','faltu','bekaar']
+const WRONG_WORDS= ['wrong number','galat number','khotho','wrong','galat','koi nahi','yahan nahi']
+const REPEAT_WORDS = ['repeat','again','fari','pheri','samjhyu nahi','sunta nahi','clear nahi','avaz nathi','pardon','what','shun']
 
-function normalize(text) {
-  return (text || '').toLowerCase()
-    .replace(/[।,\.!?]/g, ' ')
+// ─────────────────────────────────────────────────────────────
+// NORMALIZE — lowercase, strip punctuation
+// ─────────────────────────────────────────────────────────────
+
+function norm(text) {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[।,.!?;:""'']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-function matchesAny(userText, synonyms) {
-  const u = normalize(userText)
-  return synonyms.some(s => u.includes(normalize(s)))
+function includes(haystack, needle) {
+  return norm(haystack).includes(norm(needle))
 }
 
-// Score how well userText matches an option label (0-1)
-function matchScore(userText, optionText) {
-  const u = normalize(userText)
-  const o = normalize(optionText)
+function matchesAny(text, words) {
+  return words.some(w => includes(text, w))
+}
+
+// ─────────────────────────────────────────────────────────────
+// OPTION MATCHING
+// How well does user's response match a scripted option?
+// Returns score 0.0–1.0
+// ─────────────────────────────────────────────────────────────
+
+function scoreMatch(userText, optionText) {
+  const u = norm(userText)
+  const o = norm(optionText)
   if (!u || !o) return 0
-  // Exact match
-  if (u === o) return 1.0
-  // Option fully contained in user text
-  if (u.includes(o)) return 0.9
-  // User text fully contained in option
-  if (o.includes(u)) return 0.8
-  // Word overlap score
+
+  if (u === o)          return 1.0   // exact
+  if (u.includes(o))    return 0.9   // option inside user text
+  if (o.includes(u))    return 0.85  // user text inside option
+
+  // Word overlap
   const uWords = u.split(' ').filter(w => w.length > 1)
   const oWords = o.split(' ').filter(w => w.length > 1)
   if (!uWords.length || !oWords.length) return 0
-  const matches = uWords.filter(w => oWords.some(ow => ow.includes(w) || w.includes(ow)))
-  return matches.length / Math.max(uWords.length, oWords.length)
+  const hits = uWords.filter(uw => oWords.some(ow => ow.includes(uw) || uw.includes(ow)))
+  return hits.length / Math.max(uWords.length, oWords.length)
 }
 
-const MATCH_THRESHOLD = 0.35  // Minimum score to consider a match
+const MATCH_THRESHOLD = 0.4
 
 // ─────────────────────────────────────────────────────────────
-// GLOBAL REAL-LIFE HANDLERS
-// These fire regardless of current state — for common real-world situations
-// All responses are generic enough to work for any campaign script
-// ─────────────────────────────────────────────────────────────
-
-const GLOBAL_HANDLERS = [
-  {
-    id:       'wrong_number',
-    synonyms: WRONG_SYNONYMS,
-    action:   'end',
-    responses: {
-      gu: 'માફ કરશો, ખોટો નંબર છે. અસુવિધા માટે ક્ષમા. આભાર.',
-      hi: 'माफ़ करें, गलत नंबर लगा। असुविधा के लिए क्षमा। धन्यवाद।',
-      en: 'Sorry for the inconvenience, wrong number. Thank you.',
-    },
-  },
-  {
-    id:       'busy',
-    synonyms: BUSY_SYNONYMS,
-    action:   'reschedule',
-    responses: {
-      gu: 'ઠીક છે. ક્યારે ફોન કરી શકીએ? 1 કલાક પછી, સાંજે, અથવા કાલે?',
-      hi: 'ठीक है। कब फोन करें? 1 घंटे बाद, शाम को, या कल?',
-      en: 'No problem. When should we call back? In 1 hour, evening, or tomorrow?',
-    },
-  },
-  {
-    id:       'dnc',
-    synonyms: DNC_SYNONYMS,
-    action:   'dnc',
-    responses: {
-      gu: 'સમજ્યા. આ નંબર પરથી હવે કૉલ નહીં આવે. આભાર.',
-      hi: 'समझ गए। इस नंबर पर अब कॉल नहीं आएगा। धन्यवाद।',
-      en: 'Understood. We will not call this number again. Thank you.',
-    },
-  },
-  {
-    id:       'transfer',
-    synonyms: TRANSFER_SYNONYMS,
-    action:   'transfer',
-    responses: {
-      gu: 'ઠીક છે, હું આપને અમારા ટીમ સભ્ય સાથે જોડું છું.',
-      hi: 'ठीक है, मैं आपको हमारे टीम सदस्य से जोड़ता हूं।',
-      en: 'Sure, let me connect you to a team member.',
-    },
-  },
-  {
-    id:       'unclear',
-    synonyms: ['avaz nathi','avaj nathi','sunai nahi','clear nahi','spasht nathi','samjhayu nahi','pardon','repeat','again','pheri','fari'],
-    action:   'continue',
-    responses: {
-      gu: 'માફ કરશો, સ્પષ્ટ સંભળાયું નહીં. શું ફરી કહેશો?',
-      hi: 'माफ़ करें, स्पष्ट नहीं सुना। क्या दोबारा कहेंगे?',
-      en: 'Sorry, I did not catch that. Could you please repeat?',
-    },
-  },
-]
-
-// ─────────────────────────────────────────────────────────────
-// SCRIPT BUILDER — converts flat flow array → state map
+// BUILD STATE MAP
+// Converts flat flow array → map of states with explicit routing
+// Each option gets a next_state — if not specified, guessed from
+// option text keywords vs state IDs in flow
 // ─────────────────────────────────────────────────────────────
 
 function buildStateMap(flowArray) {
-  // flowArray: [{ id, prompt, options: [] }, ...]
-  const states = {}
+  const stateIds = flowArray.map(n => n.id)
+  const states   = {}
 
-  flowArray.forEach((node, index) => {
-    const nextNode = flowArray[index + 1]  // next state in sequence
+  flowArray.forEach((node, idx) => {
+    const nextId = flowArray[idx + 1]?.id || 'end'
+
+    const edges = (node.options || []).map(opt => {
+      // If option already has explicit routing (from JSON with next_state)
+      if (typeof opt === 'object') {
+        return { text: opt.text || opt.label, next_state: opt.next_state || nextId }
+      }
+
+      // String option — infer routing from option text + state IDs
+      const next = inferNextState(opt, stateIds, idx, flowArray)
+      return { text: opt, next_state: next }
+    })
 
     states[node.id] = {
-      text:        node.prompt,
-      options:     (node.options || []).map(opt => ({
-        text:       opt,
-        next_state: _resolveNextState(opt, flowArray, index),
-      })),
-      default_next: nextNode?.id || 'end',
-      terminal:    !nextNode && (!node.options || node.options.length === 0),
+      prompt:    node.prompt || '',
+      edges,                          // matched options → where they go
+      default_next: nextId,           // if no options or no match after retries
+      terminal:  edges.length === 0 && idx === flowArray.length - 1,
     }
   })
 
   return states
 }
 
-// Determine which state an option leads to based on keywords
-function _resolveNextState(optionText, flowArray, currentIndex) {
-  const lower = normalize(optionText)
+// Infer which state an option leads to
+// Logic: look for a state whose ID contains keywords matching the option
+function inferNextState(optText, stateIds, currentIdx, flowArray) {
+  const lower = norm(optText)
 
-  // Positive → next state in sequence
-  if (matchesAny(lower, YES_SYNONYMS) || lower.includes('હા') || lower.includes('yes') || lower.includes('complete') || lower.includes('done') || lower.includes('purn')) {
-    // Find the "positive" branch — typically the state after current
-    const positiveNode = flowArray[currentIndex + 1]
-    return positiveNode?.id || 'end'
+  // Yes/positive → next state in sequence
+  if (matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('पूर्ण') || lower.includes('complete') || lower.includes('done') || lower.includes('thayu')) {
+    return flowArray[currentIdx + 1]?.id || 'end'
   }
 
-  // Negative → find a "pending" or "no" state downstream
-  if (matchesAny(lower, NO_SYNONYMS) || lower.includes('ના') || lower.includes('nahi') || lower.includes('pending') || lower.includes('baki')) {
-    // Look for a state with "pending", "no", "problem" in its id
-    const negNode = flowArray.find((n, i) => i > currentIndex && (n.id.includes('pending') || n.id.includes('problem') || n.id.includes('no_') || n.id.includes('_no')))
-    return negNode?.id || flowArray[currentIndex + 1]?.id || 'end'
+  // No/negative → look for pending/problem/no state
+  if (matchesAny(lower, NO_WORDS) || lower.includes('baki') || lower.includes('pending') || lower.includes('nathi') || lower.includes('nahi')) {
+    const neg = flowArray.find((n, i) => i > currentIdx &&
+      (n.id.includes('pending') || n.id.includes('problem') || n.id.includes('no_') || n.id.includes('_no') || n.id.includes('baki'))
+    )
+    return neg?.id || flowArray[currentIdx + 1]?.id || 'end'
   }
 
-  // Can't provide details → look for no_details state
-  if (lower.includes('nathi') || lower.includes('nahi') || lower.includes('cannot') || lower.includes('no details')) {
-    const noDetailsNode = flowArray.find(n => n.id.includes('no_detail') || n.id.includes('no_info'))
-    return noDetailsNode?.id || flowArray[currentIndex + 1]?.id || 'end'
+  // Can't give details → no_details state
+  if (lower.includes('nahi aap') || lower.includes('vishay') || lower.includes('no detail') || lower.includes('shakto nathi')) {
+    const nd = flowArray.find(n => n.id.includes('no_detail') || n.id.includes('no_info'))
+    return nd?.id || flowArray[currentIdx + 1]?.id || 'end'
   }
 
   // Default: next in sequence
-  return flowArray[currentIndex + 1]?.id || 'end'
+  return flowArray[currentIdx + 1]?.id || 'end'
 }
 
 // ─────────────────────────────────────────────────────────────
-// CONFUSION TRACKER — triggers LLM only after N misses
+// GLOBAL REAL-LIFE HANDLERS
+// Checked before any state logic — handle universal situations
 // ─────────────────────────────────────────────────────────────
 
-const MAX_CONFUSION_BEFORE_LLM = 2  // After 2 unknown inputs in a row → LLM
+const GLOBAL_HANDLERS = [
+  {
+    id: 'wrong_number', words: WRONG_WORDS, action: 'end',
+    say: { gu: 'માફ કરશો, ખોટો નંબર. અસુવિધા માટે ક્ષમા. આભાર.', hi: 'माफ़ करें, गलत नंबर। धन्यवाद।', en: 'Sorry, wrong number. Thank you.' },
+  },
+  {
+    id: 'busy', words: BUSY_WORDS, action: 'reschedule',
+    say: { gu: 'ઠીક છે. ક્યારે ફોન કરી શકીએ?', hi: 'ठीक है। कब कॉल करें?', en: 'No problem. When should we call back?' },
+  },
+  {
+    id: 'dnc', words: DNC_WORDS, action: 'dnc',
+    say: { gu: 'સમજ્યા. આ નંબર પર હવે કૉલ નહીં આવે.', hi: 'समझ गए। अब कॉल नहीं करेंगे।', en: 'Understood. We will not call again.' },
+  },
+  {
+    id: 'repeat', words: REPEAT_WORDS, action: 'repeat',
+    say: null,  // handled specially — re-speaks current prompt
+  },
+]
 
 // ─────────────────────────────────────────────────────────────
-// EXECUTOR CLASS
+// SCRIPT FLOW EXECUTOR
 // ─────────────────────────────────────────────────────────────
 
 class ScriptFlowExecutor {
-  /**
-   * @param {object|null} flowConfig — { flow: [...] } parsed from user's script
-   *                                    OR { texts: {...} } from old PDF format (backward compat)
-   */
   constructor(flowConfig = null) {
+    this.collectedData     = {}
     this.confusionCount    = 0
     this.consecutiveMisses = 0
-    this.collectedData     = {}
     this.done              = false
-    this.language          = 'gu'  // updated by session.js on each turn
+    this.language          = 'gu'
+    this.contactName       = null
+    this.personaName       = 'Priya'
 
-    // ── Build state map from script ───────────────────────────
-    if (flowConfig?.flow && Array.isArray(flowConfig.flow)) {
-      // New format: { flow: [{ id, prompt, options }] }
-      this.flowArray = flowConfig.flow
-      this.states    = buildStateMap(flowConfig.flow)
-      this.stateOrder = flowConfig.flow.map(n => n.id)
-      console.log(`[ScriptFlow] ✅ Loaded ${this.flowArray.length} states from script`)
-
-    } else if (flowConfig?.texts) {
-      // Old PDF format backward compat — build minimal states from texts
-      this.states     = {}
-      this.stateOrder = Object.keys(flowConfig.texts)
-      this.flowArray  = this.stateOrder.map((id, i) => ({
-        id,
-        prompt:  flowConfig.texts[id],
-        options: [],
-      }))
-      this.states = buildStateMap(this.flowArray)
-      console.log(`[ScriptFlow] ⚠️ Legacy PDF texts format — built ${this.stateOrder.length} states`)
-
+    // Build state machine from flow config
+    if (flowConfig?.flow && Array.isArray(flowConfig.flow) && flowConfig.flow.length > 0) {
+      this.flowArray   = flowConfig.flow
+      this.states      = buildStateMap(flowConfig.flow)
+      this.stateOrder  = flowConfig.flow.map(n => n.id)
+      console.log(`[ScriptFlow] ✅ Loaded ${this.flowArray.length} states: ${this.stateOrder.join(' → ')}`)
     } else {
-      // No script — use minimal fallback
+      // Minimal fallback
       this.flowArray  = MINIMAL_FALLBACK
       this.states     = buildStateMap(MINIMAL_FALLBACK)
       this.stateOrder = MINIMAL_FALLBACK.map(n => n.id)
-      console.log(`[ScriptFlow] ⚠️ No script provided — using minimal fallback`)
+      console.log(`[ScriptFlow] ⚠️ No flow config — using minimal fallback`)
     }
 
-    // ── Prepend name verification state ─────────────────────
-    // Injected automatically before every campaign script.
-    // Uses contact.name from variables — set via session.js setContact()
-    this._prependNameVerification()
-
-    // Start at name verification
+    // Start at name verification state (always injected)
+    this._injectNameVerify()
     this.currentStateId = '__name_verify'
   }
 
-  // ── Inject name verification as first state ───────────────
-  // Called in constructor — runs before user's script
-  _prependNameVerification() {
-    this.states['__name_verify'] = {
-      text:         null,  // built dynamically in getOpening() with contact name
-      options: [
-        { text: 'હા',    next_state: this.stateOrder[0] },
-        { text: 'yes',   next_state: this.stateOrder[0] },
-        { text: 'han',   next_state: this.stateOrder[0] },
-        { text: 'haa',   next_state: this.stateOrder[0] },
-        { text: 'ना',    next_state: '__wrong_number'    },
-        { text: 'no',    next_state: '__wrong_number'    },
-        { text: 'nahi',  next_state: '__wrong_number'    },
-        { text: 'naa',   next_state: '__wrong_number'    },
-        { text: 'wrong', next_state: '__wrong_number'    },
-        { text: 'khotho',next_state: '__wrong_number'    },
-        { text: 'kaun',  next_state: '__who_is_this'     },
-        { text: 'kon',   next_state: '__who_is_this'     },
-        { text: 'who',   next_state: '__who_is_this'     },
-        { text: 'कौन',   next_state: '__who_is_this'     },
-      ],
-      default_next: this.stateOrder[0],
-      terminal:     false,
-    }
-
-    // Wrong number → end immediately
-    this.states['__wrong_number'] = {
-      text: null,  // built in _getLangText()
-      options:      [],
-      default_next: 'end',
-      terminal:     true,
-    }
-
-    // Who is calling → brief answer, then re-ask name
-    this.states['__who_is_this'] = {
-      text: null,  // built in _getLangText()
-      options: [
-        { text: 'हा', next_state: this.stateOrder[0] },
-        { text: 'ha', next_state: this.stateOrder[0] },
-        { text: 'ok', next_state: this.stateOrder[0] },
-      ],
-      default_next: '__name_verify',
-      terminal:     false,
-    }
+  // ── Set contact info (called by session.js) ───────────────
+  setContact(contact, personaName, language) {
+    this.contactName = contact?.variables?.name
+      || contact?.variables?.Name
+      || contact?.variables?.driver_name
+      || null
+    this.personaName = personaName || 'Priya'
+    this.language    = language    || 'gu'
   }
 
-  // ── Called once at start — returns opening line ───────────
+  // ── Opening line — name verification ─────────────────────
+  getNameVerifyOpening() {
+    const n = this.contactName
+    const p = this.personaName
+    const l = this.language
+    if (l === 'hi') return n ? `नमस्ते! मैं ${p} बोल रही हूं। क्या मैं ${n} जी से बात कर रही हूं?` : `नमस्ते! मैं ${p} बोल रही हूं।`
+    if (l === 'en') return n ? `Hello! This is ${p} calling. Am I speaking with ${n}?` : `Hello! This is ${p} calling.`
+    return n ? `નમસ્તે! હું ${p} બોલું છું. શું હું ${n} સાથે વાત કરી રહ્યો/રહી છું?` : `નમસ્તે! હું ${p} બોલું છું.`
+  }
+
+  // Fallback for non-name-verify flows
   getOpening() {
     const first = this.states[this.stateOrder[0]]
-    return first?.text || 'નમસ્તે!'
+    return first?.prompt || 'નમસ્તે!'
   }
 
-  // ── Set contact info (called by session.js after constructor) ─
-  setContact(contact, personaName, language) {
-    this.contactName = contact?.variables?.name || contact?.variables?.driver_name || contact?.variables?.Name || null
-    this.personaName = personaName || 'Priya'
-    this.language    = language || 'gu'
-  }
-
-  // ── Build name verify opening ─────────────────────────────
-  getNameVerifyOpening() {
-    const name = this.contactName
-    const persona = this.personaName
-    const lang = this.language
-
-    if (lang === 'gu') {
-      return name
-        ? `નમસ્તે! હું ${persona} બોલું છું. શું હું ${name} સાહેબ/બેન સાથે વાત કરી રહ્યો/રહી છું?`
-        : `નમસ્તે! હું ${persona} બોલું છું. શું આ યોગ્ય નંબર છે?`
-    }
-    if (lang === 'hi') {
-      return name
-        ? `नमस्ते! मैं ${persona} बोल रही हूं। क्या मैं ${name} जी से बात कर रही हूं?`
-        : `नमस्ते! मैं ${persona} बोल रही हूं। क्या यह सही नंबर है?`
-    }
-    // English
-    return name
-      ? `Hello! This is ${persona} calling. Am I speaking with ${name}?`
-      : `Hello! This is ${persona} calling. Is this the right number?`
-  }
-
-  // ── Language-specific texts for injected states ───────────
-  _getLangText(stateId) {
-    const name = this.contactName
-    const persona = this.personaName
-    const lang = this.language
-
-    if (stateId === '__wrong_number') {
-      return {
-        gu: 'માફ કરશો, ખોટો નંબર છે. અસુવિધા માટે ક્ષમા. આભાર.',
-        hi: 'माफ़ करें, गलत नंबर लगा। असुविधा के लिए क्षमा। धन्यवाद।',
-        en: 'Sorry for the inconvenience, wrong number. Thank you.',
-      }[lang] || 'Sorry, wrong number. Thank you.'
-    }
-
-    if (stateId === '__who_is_this') {
-      return {
-        gu: `આ ${persona} છે, સેવા પુષ્ટિ માટે કૉલ છે. શું ${name || 'આપ'} ઉપલબ્ધ છો?`,
-        hi: `मैं ${persona} हूं, सेवा पुष्टि के लिए कॉल है। क्या ${name || 'आप'} उपलब्ध हैं?`,
-        en: `This is ${persona} calling to confirm service. Is ${name || 'this the right person'} available?`,
-      }[lang] || `This is ${persona}. Is ${name || 'this the right person'} available?`
-    }
-
-    return ''
-  }
-
-  // ── Main process — called for every user utterance ────────
-  // Returns: { useLLM: false, text, action, stateId }
-  //       OR { useLLM: true }
+  // ── MAIN PROCESS — called for every user utterance ────────
   process(userText, language = null) {
     if (language) this.language = language
     if (this.done) return { useLLM: false, text: null, action: 'end' }
 
-    const lower = normalize(userText)
+    const lower = norm(userText)
 
-    // ── 1. Global real-life handlers (busy/DNC/transfer/wrong) ─
+    // ── 1. Global handlers (busy/wrong/DNC/repeat) ────────────
     for (const handler of GLOBAL_HANDLERS) {
-      if (matchesAny(lower, handler.synonyms)) {
-        console.log(`[ScriptFlow] 🔥 Global handler: ${handler.id}`)
-        const response = handler.responses[this.language] || handler.responses.en
-        if (handler.action === 'end' || handler.action === 'dnc' || handler.action === 'transfer') {
-          this.done = true
-        }
-        return {
-          useLLM:  false,
-          text:    response,
-          action:  handler.action,
-          stateId: this.currentStateId,
-        }
+      if (!matchesAny(lower, handler.words)) continue
+
+      // Repeat → re-speak current prompt
+      if (handler.id === 'repeat') {
+        const current = this.states[this.currentStateId]
+        const prompt  = current?.prompt || this.getOpening()
+        console.log(`[ScriptFlow] 🔁 Repeat requested`)
+        return { useLLM: false, text: prompt, action: 'continue', stateId: this.currentStateId }
+      }
+
+      console.log(`[ScriptFlow] 🔥 Global: ${handler.id}`)
+      const say = handler.say[this.language] || handler.say.en
+      if (handler.action === 'end' || handler.action === 'dnc') this.done = true
+      return { useLLM: false, text: say, action: handler.action, stateId: this.currentStateId }
+    }
+
+    // ── 2. Name verify state ──────────────────────────────────
+    if (this.currentStateId === '__name_verify') {
+      return this._handleNameVerify(lower, userText)
+    }
+
+    // ── 3. Match against current state's edges ────────────────
+    const state = this.states[this.currentStateId]
+    if (!state) {
+      this.done = true
+      return { useLLM: false, text: null, action: 'end' }
+    }
+
+    // Terminal state (no edges) — end after user acknowledges
+    if (!state.edges || state.edges.length === 0) {
+      console.log(`[ScriptFlow] 🏁 Terminal state ${this.currentStateId} — ending`)
+      this.done = true
+      return { useLLM: false, text: null, action: 'end' }
+    }
+
+    // Find best matching edge
+    let bestEdge  = null
+    let bestScore = 0
+
+    for (const edge of state.edges) {
+      const score = scoreMatch(lower, edge.text)
+      if (score > bestScore) {
+        bestScore = score
+        bestEdge  = edge
       }
     }
 
-    // ── 2. Try to match against current state's options ───────
-    const currentState = this.states[this.currentStateId]
-
-    if (currentState?.options?.length > 0) {
-      let bestMatch = null
-      let bestScore = 0
-
-      for (const opt of currentState.options) {
-        const score = matchScore(lower, opt.text)
-        if (score > bestScore) {
-          bestScore = score
-          bestMatch = opt
-        }
-      }
-
-      // Also check simple yes/no against options
-      if (!bestMatch || bestScore < MATCH_THRESHOLD) {
-        const isYes = matchesAny(lower, YES_SYNONYMS) || lower.includes('હા')
-        const isNo  = matchesAny(lower, NO_SYNONYMS)  || lower.includes('ના')
-
-        if (isYes && currentState.options[0]) {
-          bestMatch = currentState.options[0]
-          bestScore = 0.7
-        } else if (isNo && currentState.options[1]) {
-          bestMatch = currentState.options[1]
-          bestScore = 0.7
-        }
-      }
-
-      if (bestMatch && bestScore >= MATCH_THRESHOLD) {
-        console.log(`[ScriptFlow] ✅ Matched option "${bestMatch.text}" (score: ${bestScore.toFixed(2)}) → ${bestMatch.next_state}`)
-        this.consecutiveMisses = 0
-        return this._goTo(bestMatch.next_state)
+    // Also try yes/no detection against first/second edge
+    if ((!bestEdge || bestScore < MATCH_THRESHOLD) && state.edges.length >= 1) {
+      if (matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('हा')) {
+        bestEdge  = state.edges[0]
+        bestScore = 0.7
+      } else if (matchesAny(lower, NO_WORDS) || lower.includes('ના') || lower.includes('ना')) {
+        bestEdge  = state.edges[state.edges.length - 1]
+        bestScore = 0.7
       }
     }
 
-    // ── 3. No options or no match — default advance ───────────
-    // If state has no options it's a statement — just advance on any response
-    if (!currentState?.options?.length) {
-      console.log(`[ScriptFlow] ➡️ No options in state ${this.currentStateId} — advancing`)
+    if (bestEdge && bestScore >= MATCH_THRESHOLD) {
+      console.log(`[ScriptFlow] ✅ "${this.currentStateId}" matched edge "${bestEdge.text}" (${bestScore.toFixed(2)}) → ${bestEdge.next_state}`)
       this.consecutiveMisses = 0
-      return this._goTo(currentState?.default_next || 'end')
+      return this._goTo(bestEdge.next_state)
     }
 
-    // ── 4. Repeated confusion — use LLM as fallback ───────────
+    // ── 4. No match — re-ask (max 2 times) ───────────────────
     this.consecutiveMisses++
     this.confusionCount++
-    console.log(`[ScriptFlow] ❓ No match (miss #${this.consecutiveMisses}) in state: ${this.currentStateId}`)
 
-    if (this.consecutiveMisses >= MAX_CONFUSION_BEFORE_LLM) {
-      console.log(`[ScriptFlow] 🤖 Confusion threshold reached — handing to LLM`)
+    if (this.consecutiveMisses >= 2) {
+      // After 2 misses — use LLM to handle off-script input
       this.consecutiveMisses = 0
+      console.log(`[ScriptFlow] 🤖 2 misses — LLM fallback`)
       return { useLLM: true }
     }
 
-    // First miss — re-ask the current question politely
-    const reaskPrefix = {
-      gu: 'માફ કરશો, હું સમજ્યો નહીં. ',
-      hi: 'माफ़ करें, मैं समझ नहीं पाया। ',
-      en: 'Sorry, I did not understand. ',
-    }
-    const prefix = reaskPrefix[this.language] || reaskPrefix.en
+    // First miss — politely re-ask same question
+    const reask = { gu: 'માફ કરશો, હું સમજ્યો નહીં. ', hi: 'माफ़ करें, मैं समझ नहीं पाया। ', en: 'Sorry, I did not understand. ' }
+    console.log(`[ScriptFlow] ❓ Miss #${this.consecutiveMisses} — re-asking`)
     return {
       useLLM:  false,
-      text:    prefix + (currentState?.text || ''),
+      text:    (reask[this.language] || reask.en) + state.prompt,
       action:  'continue',
       stateId: this.currentStateId,
     }
   }
 
-  // ── Move to a new state ───────────────────────────────────
+  // ── Handle name verification ──────────────────────────────
+  _handleNameVerify(lower, userText) {
+    // Wrong number
+    if (matchesAny(lower, WRONG_WORDS)) {
+      this.done = true
+      const say = { gu: 'માફ કરશો, ખોટો નંબર. આભાર.', hi: 'माफ़ करें, गलत नंबर।', en: 'Sorry, wrong number. Thank you.' }
+      return { useLLM: false, text: say[this.language] || say.en, action: 'end' }
+    }
+
+    // Who is calling?
+    if (norm(lower).includes('kon') || norm(lower).includes('kaun') || norm(lower).includes('who') || norm(lower).includes('કોણ')) {
+      const say = {
+        gu: `આ ${this.personaName} છે, સ્ક્રિપ્ટ પ્રમાણે સ્ક્રિપ્ટ. શું ${this.contactName || 'આપ'} ઉપલબ્ધ છો?`,
+        hi: `मैं ${this.personaName} हूं। क्या ${this.contactName || 'आप'} उपलब्ध हैं?`,
+        en: `This is ${this.personaName}. Is ${this.contactName || 'this the right person'} available?`,
+      }
+      return { useLLM: false, text: say[this.language] || say.en, action: 'continue', stateId: '__name_verify' }
+    }
+
+    // Confirmed — move to first real state
+    const firstState = this.stateOrder[0]
+    console.log(`[ScriptFlow] ✅ Name confirmed — starting flow at ${firstState}`)
+    this.consecutiveMisses = 0
+    return this._goTo(firstState)
+  }
+
+  // ── Move to a state and speak its prompt ──────────────────
   _goTo(nextStateId) {
     if (!nextStateId || nextStateId === 'end') {
       this.done = true
       return { useLLM: false, text: null, action: 'end' }
     }
 
-    const nextState = this.states[nextStateId]
-    if (!nextState) {
-      console.warn(`[ScriptFlow] ⚠️ State "${nextStateId}" not found — ending`)
+    const state = this.states[nextStateId]
+    if (!state) {
+      console.warn(`[ScriptFlow] ⚠️ State "${nextStateId}" not found`)
       this.done = true
       return { useLLM: false, text: null, action: 'end' }
     }
 
     this.currentStateId = nextStateId
 
-    // Injected states use dynamic text
-    const text = nextState.text || this._getLangText(nextStateId)
+    // Terminal: no edges → end after speaking
+    const isTerminal = !state.edges || state.edges.length === 0
+    const action     = isTerminal ? 'end' : 'continue'
+    if (isTerminal) this.done = true
 
-    // Terminal state (no options, last in flow) → end after speaking
-    const action = nextState.terminal ? 'end' : 'continue'
-    if (action === 'end') this.done = true
+    console.log(`[ScriptFlow] ▶ ${nextStateId}: "${state.prompt?.substring(0, 60)}"`)
+    return { useLLM: false, text: state.prompt, action, stateId: nextStateId }
+  }
 
-    console.log(`[ScriptFlow] ➡️ → ${nextStateId}: "${(text||'').substring(0, 60)}"`)
-    return {
-      useLLM:  false,
-      text,
-      action,
-      stateId: nextStateId,
+  // ── Inject name verify as first step ─────────────────────
+  _injectNameVerify() {
+    this.states['__name_verify'] = {
+      prompt:       null,  // built dynamically in getNameVerifyOpening()
+      edges:        [],    // handled manually in _handleNameVerify()
+      default_next: this.stateOrder[0] || 'end',
+      terminal:     false,
+    }
+    this.states['__wrong_number'] = {
+      prompt:    null,
+      edges:     [],
+      terminal:  true,
+      default_next: 'end',
     }
   }
 
   getSummary() {
-    return {
-      finalState:    this.currentStateId,
-      collectedData: this.collectedData,
-      confusionCount: this.confusionCount,
-    }
+    return { finalState: this.currentStateId, collectedData: this.collectedData, confusionCount: this.confusionCount }
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// MINIMAL FALLBACK — used only if no script provided at all
+// MINIMAL FALLBACK FLOW
 // ─────────────────────────────────────────────────────────────
 
 const MINIMAL_FALLBACK = [
-  {
-    id:      'intro',
-    prompt:  'નમસ્તે! શું હું આપનો 1 મિનિટ સમય લઈ શકું?',
-    options: ['હા', 'ના, વ્યસ્ત છું'],
-  },
-  {
-    id:      'main',
-    prompt:  'આભાર. આ કૉલ આપની સેવા અંગે છે. શું આપ સ્થિતિ જણાવી શકો?',
-    options: ['સારું છે', 'સમસ્યા છે'],
-  },
-  {
-    id:      'thanks',
-    prompt:  'આભાર. આપનો સમય આપવા બદલ ધન્યવાદ. શુભ દિવસ.',
-    options: [],
-  },
+  { id: 'intro', prompt: 'નમસ્તે! શું હું આપનો 1 મિનિટ સમય લઈ શકું?', options: ['હા', 'ના, વ્યસ્ત છું'] },
+  { id: 'main',  prompt: 'આ કૉલ આપની સેવા અંગે છે. શું આપ સ્થિતિ જણાવી શકો?', options: ['સારું છે', 'સમસ્યા છે'] },
+  { id: 'end',   prompt: 'આભાર. આપનો સમય આપવા બદલ ધન્યવાદ. શુભ દિવસ.', options: [] },
 ]
 
 // ─────────────────────────────────────────────────────────────
-// LLM PROMPT BUILDER — used only when confusion threshold hit
-// Returns a minimal focused prompt (NOT the full script)
+// CONFUSION PROMPT — for LLM fallback (minimal, focused)
 // ─────────────────────────────────────────────────────────────
 
 function buildConfusionPrompt(currentStateText, userText, language) {
   const langName = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }[language] || 'Gujarati'
-  return `You are a voice assistant on a phone call. 
+  return `You are a voice assistant on a phone call in ${langName}.
 The caller said something unexpected: "${userText}"
-You were expecting a response to: "${currentStateText}"
-Language: ${langName}
-
-Reply ONLY in JSON: { "text": "<1 short sentence to get back on track>", "action": "continue" }
-Keep it under 15 words. Do NOT introduce new topics. Just gently redirect.`
+You were asking: "${currentStateText}"
+Reply ONLY in JSON: { "text": "<1 short sentence to redirect back>", "action": "continue" }
+Keep under 15 words. Stay on topic.`
 }
 
 // parseScript kept for backward compat
