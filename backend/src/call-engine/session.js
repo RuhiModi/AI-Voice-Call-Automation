@@ -202,6 +202,15 @@ class CallSession {
         console.log(`[Session ${this.sessionId}] 📋 Flow [${flowResult.stateId || 'announcement'}]: "${flowResult.text.substring(0,60)}"`)
         await this.speak(flowResult.text)
 
+        if (flowResult.action === 'end') {
+          // Terminal state — script is done. Wait briefly then end call.
+          // Do NOT call _sayGoodbyeAndHangup — agent already spoke the closing line.
+          console.log(`[Session ${this.sessionId}] 🏁 Terminal state reached — ending call`)
+          await new Promise(r => setTimeout(r, 1500))
+          await this.endCall('completed')
+          return
+        }
+
         if (flowResult.action && flowResult.action !== 'continue') {
           await this._handleAction(flowResult)
         }
