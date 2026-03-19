@@ -214,7 +214,7 @@ class ScriptFlowExecutor {
     const l = this.language
     if (l === 'hi') return n ? `नमस्ते! मैं ${p} बोल रही हूं। क्या मैं ${n} जी से बात कर रही हूं?` : `नमस्ते! मैं ${p} बोल रही हूं।`
     if (l === 'en') return n ? `Hello! This is ${p} calling. Am I speaking with ${n}?` : `Hello! This is ${p} calling.`
-    return n ? `નમસ્તે! હું ${p} બોલું છું. શું હું ${n} સાથે વાત કરી રહ્યો/રહી છું?` : `નમસ્તે! હું ${p} બોલું છું.`
+    return n ? `નમસ્તે! હું ${p} બોલું છું. શું હું ${n} સાથે વાત કરી રહી છું?` : `નમસ્તે! હું ${p} બોલું છું.`
   }
 
   // Fallback for non-name-verify flows
