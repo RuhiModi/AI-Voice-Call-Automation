@@ -24,8 +24,8 @@
 // LANGUAGE KEYWORDS
 // ─────────────────────────────────────────────────────────────
 
-const YES_WORDS  = ['ha','haa','han','haan','yes','ok','okay','sure','bilkul','sahi','theek','kem nahi','zarur','हा','हां','हाँ','ہاں','હા']
-const NO_WORDS   = ['na','naa','nahi','nai','no','nope','nathi','ના','ना','نہیں']
+const YES_WORDS  = ['ha','haa','han','haan','yes','ok','okay','sure','bilkul','sahi','theek','kem nahi','zarur','हा','हां','हाँ','ہاں','હા','જી','ji','haji','ji ha','haa ji','han ji']
+const NO_WORDS   = ['na','naa','nahi','nai','no','nope','nathi','baki','bakii','pending','nai thayu','nathi thayu','ના','ना','نہیں','બાકી','નથી','હજી']
 const BUSY_WORDS = ['busy','vyast','baad mein','call back','pachhi','later','kal','saanje','time nathi','samay nahi','hu vyast','abhi nahi','thodi der','व्यस्त','बाद में']
 const DNC_WORDS  = ['band karo','mat karo','remove','do not call','stop calling','nahi chahiye','naraj','faltu','bekaar']
 const WRONG_WORDS= ['wrong number','galat number','khotho','wrong','galat','koi nahi','yahan nahi']
@@ -74,7 +74,7 @@ function scoreMatch(userText, optionText) {
   return hits.length / Math.max(uWords.length, oWords.length)
 }
 
-const MATCH_THRESHOLD = 0.4
+const MATCH_THRESHOLD = 0.3
 
 // ─────────────────────────────────────────────────────────────
 // BUILD STATE MAP
