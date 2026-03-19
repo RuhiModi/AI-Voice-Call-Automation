@@ -13,7 +13,15 @@ const { getAIResponse }     = require('../call-engine/llm/index')
 const { buildSystemPrompt } = require('../call-engine/prompts')
 
 const router      = express.Router()
-const upload      = multer({ dest: 'uploads/sim/', limits: { fileSize: 5 * 1024 * 1024 } })
+const upload      = multer({
+  dest: 'uploads/sim/',
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = require('path').extname(file.originalname).toLowerCase()
+    const allowed = ['.pdf', '.docx', '.doc', '.txt']
+    cb(null, allowed.includes(ext))
+  }
+})
 const simSessions = new Map()
 
 router.use(auth)
@@ -136,9 +144,24 @@ router.post('/extract-pdf', upload.single('pdf'), async (req, res, next) => {
 
     const buffer = fs.readFileSync(req.file.path)
 
-    // pdf-parse is required at top level — no silent failure
-    const data = await pdfParse(buffer)
-    const text = (data.text || '').slice(0, 3000).trim()
+    // Handle both PDF and DOCX
+    const ext = require('path').extname(req.file.originalname || '').toLowerCase()
+    let text = ''
+
+    if (ext === '.docx' || ext === '.doc') {
+      try {
+        const mammoth = require('mammoth')
+        const result  = await mammoth.extractRawText({ buffer })
+        text = (result.value || '').slice(0, 3000).trim()
+      } catch {
+        // Fallback: treat as binary text
+        text = buffer.toString('utf8').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 3000).trim()
+      }
+    } else {
+      // PDF
+      const data = await pdfParse(buffer)
+      text = (data.text || '').slice(0, 3000).trim()
+    }
 
     // Clean up temp file
     fs.unlinkSync(req.file.path)
