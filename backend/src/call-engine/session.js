@@ -38,9 +38,10 @@ class CallSession {
     this.startTime     = Date.now()
     this.answeredAt    = null   // set when call is actually answered (Vobiz charges from here)
 
-    this.sttHandler = null
-    this.vad        = null
-    this.audioBuffer = Buffer.alloc(0)
+    this.sttHandler    = null
+    this.vad           = null
+    this.audioBuffer   = Buffer.alloc(0)
+    this.agentSpeaking = false  // true while TTS is playing — mutes STT input
   }
 
   // ── Start the call ─────────────────────────────────────────
@@ -175,6 +176,16 @@ class CallSession {
 
   // ── Process user input through LLM ────────────────────────
   async _processUserInput(userText) {
+    // Ignore input while agent is speaking — prevents echo/barge-in
+    if (this.agentSpeaking) {
+      console.log(`[Session ${this.sessionId}] 🔇 Ignored input (agent speaking): "${userText.substring(0,30)}"`)
+      return
+    }
+    // Ignore if flow already done
+    if (this.flowExecutor?.done) {
+      console.log(`[Session ${this.sessionId}] 🔇 Ignored input (flow done): "${userText.substring(0,30)}"`)
+      return
+    }
     try {
       // ── 0. Post-LLM resume for announcement flow ─────────────
       // After LLM handled one turn, next input goes back to announcement executor
@@ -261,11 +272,16 @@ class CallSession {
   async speak(text) {
     if (!this.isActive || !text) return
     console.log(`[Session ${this.sessionId}] 🗣️ Speaking: "${text.substring(0,60)}..." | WS state: ${this.wsSocket?.readyState} | Lang: ${this.language}`)
+    this.agentSpeaking = true
     try {
       await streamTTSToSocket(text, this.language, this.wsSocket)
       console.log(`[Session ${this.sessionId}] ✅ Audio sent successfully`)
     } catch (err) {
       console.error(`[Session ${this.sessionId}] ❌ Speak error:`, err.message, err.response?.data || '')
+    } finally {
+      // Wait for audio to finish playing on device before accepting input
+      await new Promise(r => setTimeout(r, 800))
+      this.agentSpeaking = false
     }
   }
 
