@@ -42,8 +42,7 @@ router.get('/', auth, async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// POST /campaigns/script/preview  ← no campaign ID needed
-// Parses script text/JSON → flow — NO LLM, pure deterministic
+// POST /campaigns/script/preview  ← text/JSON input, no campaign ID needed
 router.post('/script/preview', auth, async (req, res, next) => {
   try {
     const { text } = req.body
@@ -59,6 +58,32 @@ router.post('/script/preview', auth, async (req, res, next) => {
     res.json({ flow: result.flow, state_count: result.flow.length, source: result.source })
   } catch (err) {
     console.error('[Script Preview] Error:', err.message)
+    next(err)
+  }
+})
+
+// POST /campaigns/script/parse-file  ← accepts actual PDF/DOCX file, no campaign ID
+// This is the correct endpoint for file uploads during campaign creation
+router.post('/script/parse-file', auth, upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
+
+    const fs     = require('fs')
+    const buffer = fs.readFileSync(req.file.path)
+    try { fs.unlinkSync(req.file.path) } catch {}
+
+    const { parsePdfToFlowConfig } = require('../call-engine/parsePdfScript')
+    const result = await parsePdfToFlowConfig(buffer)
+
+    if (!result.flow?.length) {
+      return res.status(400).json({ error: 'Could not parse file — check format' })
+    }
+
+    console.log(`[Script ParseFile] ✅ ${result.source} → ${result.flow.length} states`)
+    res.json({ flow: result.flow, state_count: result.flow.length, source: result.source })
+  } catch (err) {
+    if (req.file) require('fs').unlink(req.file.path, () => {})
+    console.error('[Script ParseFile] Error:', err.message)
     next(err)
   }
 })
