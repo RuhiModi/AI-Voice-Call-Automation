@@ -74,13 +74,13 @@ export default function CreateCampaign() {
   const [dragOver,     setDragOver]     = useState(false)
 
   // ── Script input state (for survey mode) ─────────────────
-  const [scriptTab,   setScriptTab]   = useState('text')  // 'text' | 'url' | 'pdf'
-  const [scriptText,  setScriptText]  = useState('')       // typed/pasted script
-  const [pdfFile,     setPdfFile]     = useState(null)     // PDF upload
-  const [urlInput,    setUrlInput]    = useState('')
-  const [urlLoading,  setUrlLoading]  = useState(false)
-  const [pdfLoading,  setPdfLoading]  = useState(false)
-  const [generatedFlow, setGeneratedFlow] = useState(null)  // LLM-generated script preview
+  const [scriptTab,      setScriptTab]      = useState('text')
+  const [scriptText,     setScriptText]     = useState('')
+  const [pdfFile,        setPdfFile]        = useState(null)
+  const [urlInput,       setUrlInput]       = useState('')
+  const [urlLoading,     setUrlLoading]     = useState(false)
+  const [pdfLoading,     setPdfLoading]     = useState(false)
+  const [parsedFlow,    setParsedFlow]    = useState(null)   // parsed script states
   const [scriptGenerating, setScriptGenerating] = useState(false)
 
   const [advanced, setAdvanced] = useState({
@@ -104,7 +104,7 @@ export default function CreateCampaign() {
   )
 
   // script is "done" if text entered OR pdf uploaded
-  const scriptReady = scriptText.trim().length > 10 || !!pdfFile
+  const scriptReady = parsedFlow?.length > 0 || scriptText.trim().length > 10
 
   function insertVar(varName) {
     const el  = msgRef.current
@@ -154,73 +154,39 @@ export default function CreateCampaign() {
     }
   }, [])
 
-  // ── Parse script into conversation flow (instant, no LLM) ──
-  async function generatePreview(text) {
-    if (!text || text.length < 30) return
-    setScriptGenerating(true)
-    setGeneratedFlow(null)
-    try {
-      const res = await campaignApi.previewScript(text, lang, mode)
-      if (res.data?.flow?.length) {
-        setGeneratedFlow(res.data.flow)
-        toast.success(`✅ Script parsed — ${res.data.flow.length} conversation states`)
-      } else {
-        toast('Script parsed but no states found — check format', { icon: 'ℹ️' })
-      }
-    } catch (err) {
-      console.warn('Script preview failed:', err.message)
-      toast('Could not parse script — check format', { icon: '⚠️' })
-    } finally {
-      setScriptGenerating(false)
-    }
-  }
-
-  // ── URL extraction → then generate script preview ─────────
+  // ── URL extraction → show raw text for user to review ───────
   async function fetchUrl() {
     if (!urlInput.trim()) return
     setUrlLoading(true)
-    setGeneratedFlow(null)
     try {
       const res  = await campaignApi.extractUrl(urlInput.trim())
       const text = res.data.text || ''
       setScriptText(text)
       setScriptTab('text')
-      toast.success('URL extracted — generating script...')
-      generatePreview(text)  // fire and don't await — shows spinner separately
+      toast.success('URL content extracted — review and edit above')
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Could not fetch URL')
     } finally { setUrlLoading(false) }
   }
 
-  // ── PDF extraction → then generate script preview ─────────
+  // ── DOCX upload → parse table directly → show states ────────
   async function uploadScriptPdf(file) {
     if (!file) return
     setPdfFile(file)
     setPdfLoading(true)
-    setScriptGenerating(true)
-    setGeneratedFlow(null)
+    setParsedFlow(null)
     try {
-      // Send file directly — preserves binary, no text garbling
       const res  = await campaignApi.parseScriptFile(file)
       const flow = res.data?.flow
       if (flow?.length) {
-        setGeneratedFlow(flow)
-        setScriptText(flow.map(s => s.prompt).join('\n'))
-        toast.success(`✅ Script parsed — ${flow.length} states`)
+        setParsedFlow(flow)
+        toast.success(`✅ Script loaded — ${flow.length} states`)
       } else {
-        toast('File uploaded — script will be parsed on launch', { icon: 'ℹ️' })
+        toast.error('Could not parse file — check format')
       }
     } catch (err) {
-      // Fallback: extract text then preview
-      try {
-        const extractRes = await campaignApi.extractPdf(file)
-        const text = extractRes.data.text || ''
-        if (text) { setScriptText(text); generatePreview(text) }
-      } catch { toast.error(err.response?.data?.error || 'Could not read file') }
-    } finally {
-      setPdfLoading(false)
-      setScriptGenerating(false)
-    }
+      toast.error(err.response?.data?.error || err.message || 'Could not read file')
+    } finally { setPdfLoading(false) }
   }
 
   // ── LAUNCH ────────────────────────────────────────────────
@@ -265,16 +231,12 @@ export default function CreateCampaign() {
       const id  = res.data.campaign.id
       setCampaignId(id)
 
-      // Save edited script to campaign DB — non-fatal, never blocks launch
+      // Save parsed script flow to campaign DB — non-fatal
       try {
-        if (mode === 'survey') {
-          if (generatedFlow?.length) {
-            // User reviewed/edited the generated flow — save it directly
-            await campaignApi.update(id, { flow_config: { flow: generatedFlow, source: 'llm_edited', parsed_at: new Date().toISOString() } })
-          } else if (scriptText && scriptText.length > 20) {
-            // No preview yet — generate from text on backend
-            await campaignApi.generateScript(id, scriptText, lang, mode)
-          }
+        if (mode === 'survey' && parsedFlow?.length) {
+          await campaignApi.update(id, {
+            flow_config: { flow: parsedFlow, source: 'parsed', parsed_at: new Date().toISOString() }
+          })
         }
       } catch (e) { console.warn('[Script] Save non-fatal:', e.message) }
 
@@ -318,7 +280,7 @@ export default function CreateCampaign() {
               setLaunched(false); setCampaignName(''); setMode(null)
               setMessage(''); setContactFile(null); setContactCols([])
               setPreviewRow(null); setPdfFile(null); setScriptText('')
-              setUrlInput(''); setScriptTab('text')
+              setUrlInput(''); setScriptTab('text'); setParsedFlow(null)
             }}
               className="w-full py-3.5 border-2 border-[#e0d9ce] text-[#525252] rounded-2xl font-semibold text-sm">
               Create Another Campaign
@@ -531,7 +493,15 @@ export default function CreateCampaign() {
               <textarea
                 value={scriptText}
                 onChange={e => setScriptText(e.target.value)}
-                onBlur={e => { if (e.target.value.length > 50) generatePreview(e.target.value) }}
+                onBlur={async e => {
+                  const text = e.target.value
+                  if (text.length > 50) {
+                    try {
+                      const res = await campaignApi.previewScript(text, lang, mode)
+                      if (res.data?.flow?.length) setParsedFlow(res.data.flow)
+                    } catch {}
+                  }
+                }}
                 rows={7}
                 placeholder={`Paste or type your call script here...\n\nExample:\nVerify if the contact received their scheme benefit.\n\nQuestion 1: Did you receive your ₹2000 payment?\nQuestion 2: Was the amount correct?\nIf no → collect their bank account number.`}
                 className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#1a1a1a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed"
@@ -622,27 +592,24 @@ export default function CreateCampaign() {
             </div>
           )}
         {/* ── Script Generating Spinner ── */}
-        {scriptGenerating && (
+        {(pdfLoading || scriptGenerating) && (
           <div className="mt-4 p-4 rounded-2xl border-2 border-[#e0d9ce] bg-[#faf8f4] flex items-center gap-3">
             <Loader size={16} className="animate-spin text-[#8a8a8a]" />
-            <p className="text-sm text-[#6b6b6b]">Parsing your conversation script...</p>
+            <p className="text-sm text-[#6b6b6b]">Reading script file...</p>
           </div>
         )}
 
         {/* ── Generated Script — Editable ── */}
-        {!scriptGenerating && generatedFlow && generatedFlow.length > 0 && (
+        {!scriptGenerating && parsedFlow && parsedFlow.length > 0 && (
           <div className="mt-4 rounded-2xl border-2 border-[#4f7ef0] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 bg-[#f0f4ff]">
               <p className="text-xs font-bold text-[#4f7ef0] uppercase tracking-wider">
-                🤖 AI Script — {generatedFlow.length} states
+                🤖 AI Script — {parsedFlow.length} states
               </p>
-              <button onClick={() => generatePreview(scriptText)}
-                className="text-[11px] text-[#4f7ef0] hover:underline flex items-center gap-1">
-                <Loader size={10}/> Regenerate
-              </button>
+
             </div>
             <div className="divide-y divide-[#e8eeff] max-h-96 overflow-y-auto">
-              {generatedFlow.map((state, i) => (
+              {parsedFlow.map((state, i) => (
                 <div key={i} className="p-3 bg-white hover:bg-[#fafbff] transition-colors">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] font-mono bg-[#e8eeff] text-[#4f7ef0] px-2 py-0.5 rounded-full flex-shrink-0">{state.id}</span>
@@ -652,9 +619,9 @@ export default function CreateCampaign() {
                   <textarea
                     value={state.prompt}
                     onChange={e => {
-                      const updated = [...generatedFlow]
+                      const updated = [...parsedFlow]
                       updated[i] = { ...updated[i], prompt: e.target.value }
-                      setGeneratedFlow(updated)
+                      setParsedFlow(updated)
                     }}
                     rows={2}
                     className="w-full text-xs text-[#2c2c2c] leading-relaxed bg-[#fafbff] border border-[#e8eeff] rounded-lg px-2 py-1.5 outline-none focus:border-[#4f7ef0] resize-none"
@@ -668,25 +635,25 @@ export default function CreateCampaign() {
                           <input
                             value={opt}
                             onChange={e => {
-                              const updated = [...generatedFlow]
+                              const updated = [...parsedFlow]
                               const opts    = [...updated[i].options]
                               opts[j]       = e.target.value
                               updated[i]    = { ...updated[i], options: opts }
-                              setGeneratedFlow(updated)
+                              setParsedFlow(updated)
                             }}
                             className="flex-1 text-[11px] px-2 py-1 bg-[#f0f4ff] border border-[#c0d0ff] text-[#4f7ef0] rounded-lg outline-none focus:border-[#4f7ef0]"
                           />
                           <button onClick={() => {
-                            const updated = [...generatedFlow]
+                            const updated = [...parsedFlow]
                             updated[i]    = { ...updated[i], options: updated[i].options.filter((_, k) => k !== j) }
-                            setGeneratedFlow(updated)
+                            setParsedFlow(updated)
                           }} className="text-[#ccc] hover:text-red-400 text-xs px-1">✕</button>
                         </div>
                       ))}
                       <button onClick={() => {
-                        const updated = [...generatedFlow]
+                        const updated = [...parsedFlow]
                         updated[i]    = { ...updated[i], options: [...updated[i].options, ''] }
-                        setGeneratedFlow(updated)
+                        setParsedFlow(updated)
                       }} className="text-[10px] text-[#4f7ef0] hover:underline mt-1">+ Add option</button>
                     </div>
                   )}
