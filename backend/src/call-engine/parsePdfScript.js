@@ -114,140 +114,153 @@ function hasArrowRouting(text) {
 }
 
 function parseConditionalFormat(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const nodes = []   // { id, prompt, rawOptions: [{text, target}] }
+  // Strategy: split text into blocks separated by:
+  // - Numbered headers: "1.", "2.", "3." etc
+  // - Emoji headers: "📌", "✅", "⚠️" etc
+  // - Keyword headers: "Script:", "Options:", "User Responses:"
+  // - Blank lines (2+)
+  // Each block = one state
 
-  let current     = null
-  let inOptions   = false
-  let promptLines = []
+  const lines = text.split('\n')
+  const blocks = []
+  let current = { headerHint: null, promptLines: [], optionLines: [] }
+  let inOptions = false
 
-  // Helper to flush current node
   const flush = () => {
-    if (!current || !promptLines.length) return
-    nodes.push({
-      id:         current,
-      prompt:     promptLines.join(' ').trim(),
-      rawOptions: [],
-    })
-    promptLines = []
-    inOptions   = false
+    const prompt = current.promptLines.join(' ').replace(/\s+/g, ' ').trim()
+    const opts   = current.optionLines
+    if (prompt.length > 3 || opts.length > 0) {
+      blocks.push({ hint: current.headerHint, prompt, optionLines: opts })
+    }
+    current   = { headerHint: null, promptLines: [], optionLines: [] }
+    inOptions = false
   }
 
-  // First pass: identify section headers and prompts
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
 
-    // Section header patterns:
-    // "1. Intro", "2. Task Check", "## Section", numbered/emoji headers
-    const sectionMatch = line.match(/^(?:\d+\.?\s*|#+\s*|[📌✅⚠️🔁❓🧩📂🤝📝🔚]\s*)?([A-Za-zઁ-ૹ\s]+(?:Flow|Check|Script|Intro|Closing|Reschedule|Status|Recorded|Permission|Issue))/i)
-    const isHeader = sectionMatch && line.length < 60 && !line.includes('→') && !line.includes('->')
-
-    if (isHeader) {
+    // Numbered section header: "1.", "2. Task Check", "3. ❓ Status"
+    if (/^\d+\.?\s/.test(line) && line.length < 80) {
       flush()
-      current   = slugify(line)
+      current.headerHint = line
       inOptions = false
       continue
     }
 
-    // "Script:" label — next lines are the prompt
+    // Emoji-only header line
+    if (/^[📌✅⚠️🔁❓🧩📂🤝📝🔚⭐🔄]+/.test(line) && line.length < 60) {
+      flush()
+      current.headerHint = line
+      inOptions = false
+      continue
+    }
+
+    // "Script:" label — next content is prompt
     if (/^script\s*:/i.test(line)) {
-      if (!current) current = `step_${nodes.length}`
       inOptions = false
       continue
     }
 
-    // Options section marker
-    if (/^(options?|user\s*responses?|if\s+user\s+says?)\s*:/i.test(line)) {
+    // Options/responses section
+    if (/^(options?|user\s*responses?|responses?|if\s+user)\s*:/i.test(line)) {
       inOptions = true
       continue
     }
 
-    // Arrow option line: "హా → task_check" or "NA → Reschedule"
-    if ((line.includes('→') || line.includes('->')) && inOptions) {
+    // Empty line — could reset options mode
+    if (!line) {
+      // Two empty lines = new block
+      if (current.promptLines.length > 0 || current.optionLines.length > 0) {
+        // Keep collecting — blank lines within a block are ok
+      }
+      continue
+    }
+
+    // Arrow option line
+    if ((line.includes('→') || line.includes('->')) && !inOptions) {
+      // Arrow outside options section — treat as option
+      inOptions = true
+    }
+
+    if (inOptions || line.includes('→') || line.includes('->')) {
       const arrowMatch = line.match(/^(.+?)\s*(?:→|->)\s*(.+)$/)
-      if (arrowMatch && current) {
-        const lastNode = nodes[nodes.length - 1]
-        if (lastNode && lastNode.id === current) {
-          lastNode.rawOptions.push({
-            text:   arrowMatch[1].trim().replace(/^[-•*]\s*/, ''),
-            target: arrowMatch[2].trim(),
-          })
+      if (arrowMatch) {
+        const optText = arrowMatch[1].replace(/^[-•*\d.)]\s*/, '').trim()
+        const target  = arrowMatch[2].trim()
+        if (optText.length >= 2 && optText.length <= 80) {
+          current.optionLines.push({ text: optText, target })
         }
-      }
-      continue
-    }
-
-    // Bullet option (no arrow) — plain option
-    if (/^[-•*\d.)]/.test(line) && inOptions && current) {
-      const optText = line.replace(/^[-•*\d.)]\s*/, '').trim()
-      if (optText && optText.length < 80 && !/^(📌|Ref|Note)/i.test(optText)) {
-        const lastNode = nodes[nodes.length - 1]
-        if (lastNode && lastNode.id === current) {
-          lastNode.rawOptions.push({ text: optText, target: null })
+      } else if (/^[-•*\d.)]\s*\S/.test(line)) {
+        // Bullet option without arrow
+        const optText = line.replace(/^[-•*\d.)]\s*/, '').trim()
+        if (optText.length >= 2 && optText.length <= 80) {
+          current.optionLines.push({ text: optText, target: null })
         }
+      } else if (line.length > 3 && !inOptions) {
+        current.promptLines.push(line)
       }
-      continue
-    }
-
-    // Regular content line — add to prompt
-    if (!inOptions && current && !isEmojiHeader(line) && line.length > 3) {
-      // Skip pure ref/note lines
+    } else {
+      // Regular prompt line
       if (!/^(📌|Ref:|Note:|If\s+YES|If\s+")/i.test(line)) {
-        promptLines.push(line)
+        current.promptLines.push(line)
       }
     }
   }
   flush()
 
-  if (nodes.length === 0) {
-    // Fallback — couldn't parse sections, try simpler approach
-    return parseSimpleConditional(text)
-  }
+  if (blocks.length === 0) return parsePlainFormat(text)
 
-  // Second pass: resolve targets to state IDs
-  const stateIds = nodes.map(n => n.id)
-
-  const flow = nodes.map((node, idx) => {
-    const nextId = nodes[idx + 1]?.id || 'end'
-
-    const options = node.rawOptions.map(opt => ({
-      text:       opt.text,
-      next_state: resolveTarget(opt.target, stateIds, idx, nodes),
-    }))
-
+  // Build state IDs from hints
+  const flow = blocks.map((block, idx) => {
+    const id = block.hint
+      ? slugify(block.hint)
+      : (idx === 0 ? 'intro' : `step_${idx}`)
     return {
-      id:      node.id,
-      prompt:  node.prompt,
-      options,
+      id:         id || (idx === 0 ? 'intro' : `step_${idx}`),
+      prompt:     block.prompt,
+      rawOptions: block.optionLines,
     }
+  }).filter(n => n.prompt.length > 3)
+
+  // Ensure unique IDs
+  const seen = {}
+  flow.forEach(n => {
+    seen[n.id] = (seen[n.id] || 0) + 1
+    if (seen[n.id] > 1) n.id = n.id + '_' + seen[n.id]
   })
 
-  // Clean up — remove nodes with empty prompts, mark terminals
-  const cleanFlow = flow
-    .filter(n => n.prompt && n.prompt.length > 3)
-    .map((n, i, arr) => ({
-      ...n,
-      options: n.options.length === 0 && i === arr.length - 1 ? [] : n.options,
-    }))
+  const stateIds = flow.map(n => n.id)
 
-  return { flow: cleanFlow, source: 'conditional_format' }
+  // Resolve option targets to state IDs
+  const result = flow.map((node, idx) => ({
+    id:      node.id,
+    prompt:  node.prompt,
+    options: node.rawOptions.map(opt => ({
+      text:       opt.text,
+      next_state: opt.target
+        ? resolveTarget(opt.target, stateIds, idx, flow)
+        : flow[idx + 1]?.id || 'end',
+    })),
+  }))
+
+  // Last state = terminal
+  if (result.length > 0) result[result.length - 1].options = []
+
+  return { flow: result, source: 'conditional_format' }
 }
 
-// Simpler fallback for conditional format
+// Simple fallback
 function parseSimpleConditional(text) {
   const blocks = text.split(/\n{2,}/)
   const flow   = []
   let idx      = 0
 
   for (const block of blocks) {
-    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
-    if (!lines.length) continue
-
-    // First line = prompt, remaining lines with → = options
+    const lines   = block.split('\n').map(l => l.trim()).filter(Boolean)
     const prompt  = lines.filter(l => !l.includes('→') && !l.includes('->') && !/^[-•*]/.test(l)).join(' ').trim()
     const optLines = lines.filter(l => l.includes('→') || l.includes('->') || /^[-•*]/.test(l))
 
-    if (!prompt || prompt.length < 5) continue
+    if (!prompt || prompt.length < 3) continue
 
     const options = optLines.map(l => {
       const m = l.match(/^(.+?)\s*(?:→|->)\s*(.+)$/)
@@ -255,11 +268,7 @@ function parseSimpleConditional(text) {
       return { text: l.replace(/^[-•*]\s*/, '').trim(), next_state: null }
     }).filter(o => o.text && o.text.length < 80)
 
-    flow.push({
-      id:      idx === 0 ? 'intro' : `step_${idx}`,
-      prompt,
-      options,
-    })
+    flow.push({ id: idx === 0 ? 'intro' : `step_${idx}`, prompt, options })
     idx++
   }
 
@@ -267,44 +276,54 @@ function parseSimpleConditional(text) {
   return { flow, source: 'simple_conditional' }
 }
 
-// Resolve a target string to an actual state ID
+
+// ─────────────────────────────────────────────────────────────
+// RESOLVE TARGET — maps a target string to a state ID
+// ─────────────────────────────────────────────────────────────
+
 function resolveTarget(target, stateIds, currentIdx, nodes) {
   if (!target) return nodes[currentIdx + 1]?.id || 'end'
-
   const t = target.toLowerCase().trim()
 
-  // Direct "end" keywords
-  if (/^(end|close|done|finish|terminate|goodbye)/i.test(t)) return 'end'
+  // Hard end
+  if (/^(end|close|finish|terminate|goodbye|stop|exit)/i.test(t)) return 'end'
 
-  // Find matching state ID by slug similarity
-  const slug = slugify(target)
-  const exact = stateIds.find(id => id === slug || id.includes(slug) || slug.includes(id))
+  // Try direct slug match first
+  const slug  = slugify(target)
+  const exact = stateIds.find(id => id === slug || id.startsWith(slug.slice(0,8)) || slug.startsWith(id.slice(0,8)))
   if (exact) return exact
 
-  // Keyword matching
-  if (/reschedule|callback|call back|later/i.test(t)) {
-    return stateIds.find(id => /reschedule|callback/.test(id)) || 'end'
-  }
-  if (/task|check|status|proceed/i.test(t)) {
-    return stateIds.find(id => /task|check|status/.test(id)) || nodes[currentIdx + 1]?.id || 'end'
-  }
-  if (/problem|pending|issue|error/i.test(t)) {
-    return stateIds.find(id => /problem|pending|issue/.test(id)) || 'end'
-  }
-  if (/partial|incomplete/i.test(t)) {
-    return stateIds.find(id => /partial|incomplete/.test(id)) || 'end'
-  }
-  if (/satisfaction|rating|done|complete/i.test(t)) {
-    return stateIds.find(id => /satisf|rating|done|task_done/.test(id)) || 'end'
-  }
-  if (/escalat|permission/i.test(t)) {
-    return stateIds.find(id => /escalat|permission/.test(id)) || 'end'
-  }
-  if (/clarif|purpose|who/i.test(t)) {
-    return stateIds.find(id => /clarif|who/.test(id)) || nodes[currentIdx]?.id || 'end'  // stay
+  // Fuzzy keyword search across all state IDs
+  const keywords = t.split(/[\s_\-\/]+/).filter(w => w.length > 2)
+  for (const kw of keywords) {
+    const match = stateIds.find(id => id.includes(kw) || kw.includes(id.replace(/_\d+$/, '')))
+    if (match) return match
   }
 
-  // Default: next state
+  // Semantic routing by common patterns
+  const patterns = [
+    [/reschedule|callback|call.?back|later|pachhi|baad/i,    /reschedule|callback|reschedule/],
+    [/proceed|continue|quick|tunkma|advance/i,               null],  // → next state
+    [/task.?check|status|check/i,                            /task_check|status_check|check/],
+    [/task.?done|satisf|complet|rating|purn/i,               /task_done|complet|satisf|rating/],
+    [/task.?pend|problem|pending|issue|baki/i,               /task_pend|problem|pending/],
+    [/partial|incomplete|bhagye|partly/i,                    /partial|incomplete|partial/],
+    [/escalat|permission|vibhag/i,                           /escalat|permission/],
+    [/clarif|purpose|who|kaun|kon/i,                         null],   // → stay (re-ask)
+    [/data.?issue|wrong.?data|galat/i,                       /data_issue|no_applic/],
+    [/problem.?record|noted|nondh/i,                         /problem_record|recorded/],
+    [/closing|end.?call|done|complete/i,                     null],   // → end
+  ]
+
+  for (const [trigger, targetPattern] of patterns) {
+    if (trigger.test(t)) {
+      if (!targetPattern) return nodes[currentIdx + 1]?.id || 'end'
+      const found = stateIds.find(id => targetPattern.test(id))
+      if (found) return found
+    }
+  }
+
+  // Default: next state in sequence
   return nodes[currentIdx + 1]?.id || 'end'
 }
 
