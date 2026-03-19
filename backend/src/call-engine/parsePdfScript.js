@@ -1,191 +1,289 @@
 // src/call-engine/parsePdfScript.js
 //
-// PDF → Full Conversation Script Generator
+// Parses voice call script PDF → { flow: [{id, prompt, options}] }
+// NO LLM — pure deterministic parsing.
 //
-// Pipeline:
-//   1. Extract text from PDF (pdf-parse)
-//   2. Send to LLM ONCE with a script-generation prompt
-//   3. LLM outputs { flow: [{id, prompt, options}] }
-//   4. Stored in campaigns.flow_config
-//   5. During calls → ScriptFlowExecutor runs it — ZERO LLM per call
+// PDF format expected:
+//   Table with columns: ID | Prompt | (Old Options) | New Options
+//   Options column may contain routing instructions like "If X → Y"
+//   We extract only the clean spoken phrases, strip routing notes.
 
 'use strict'
 
-const fs      = require('fs')
-const path    = require('path')
-const os      = require('os')
+const fs       = require('fs')
+const path     = require('path')
+const os       = require('os')
 const pdfParse = require('pdf-parse')
-const { getAIResponse } = require('./llm/index')
 
 // ─────────────────────────────────────────────────────────────
 // MAIN ENTRY
-// Accepts: PDF Buffer | plain text string | JSON string
-// Returns: { flow: [{id, prompt, options}], source, parsed_at }
 // ─────────────────────────────────────────────────────────────
 
 async function parsePdfToFlowConfig(input, options = {}) {
-  const { language = 'gu', campaignType = 'survey', personaName = 'Priya' } = options
-
-  let rawText = ''
-
-  if (Buffer.isBuffer(input)) {
-    // PDF buffer → extract text
-    rawText = await extractPdfText(input)
-    console.log(`[ParseScript] 📄 PDF text extracted: ${rawText.length} chars`)
-  } else if (typeof input === 'string') {
-    rawText = input.trim()
-  } else {
-    throw new Error('Input must be a Buffer (PDF) or string (text/JSON)')
+  // ── String input: JSON or plain text ─────────────────────
+  if (typeof input === 'string') {
+    return parseTextToFlow(input)
   }
 
-  if (!rawText) throw new Error('No content found in input')
-
-  // If already valid flow JSON → use directly, skip LLM
-  const direct = tryParseFlowJson(rawText)
-  if (direct) {
-    console.log(`[ParseScript] ✅ Direct JSON flow — ${direct.flow.length} states, skipping LLM`)
-    return { ...direct, source: 'json', parsed_at: new Date().toISOString() }
+  if (!Buffer.isBuffer(input)) {
+    throw new Error('Input must be a Buffer (PDF/DOCX) or string')
   }
 
-  // Plain text / PDF content → send to LLM to generate full conversation script
-  console.log(`[ParseScript] 🤖 Sending to LLM for script generation...`)
-  const flow = await generateFlowWithLLM(rawText, language, campaignType, personaName)
+  // ── Detect file type by magic bytes ───────────────────────
+  // DOCX magic: 50 4B 03 04 (ZIP/Office Open XML)
+  // PDF magic:  25 50 44 46 (%PDF)
+  const magic = input.slice(0, 4)
+  const isPDF  = magic[0] === 0x25 && magic[1] === 0x50  // %P
+  const isDOCX = magic[0] === 0x50 && magic[1] === 0x4B  // PK
 
-  console.log(`[ParseScript] ✅ LLM generated ${flow.length} states`)
-  return {
-    flow,
-    source:    'llm_generated',
-    parsed_at: new Date().toISOString(),
+  if (isDOCX) {
+    console.log(`[ParseScript] 📝 DOCX detected`)
+    const text = await extractDocxText(input)
+    return parseTextToFlow(text)
   }
-}
 
-// ─────────────────────────────────────────────────────────────
-// LLM SCRIPT GENERATOR
-// Sends document text to LLM once — gets back full flow JSON
-// ─────────────────────────────────────────────────────────────
-
-async function generateFlowWithLLM(documentText, language, campaignType, personaName) {
-  const langName = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }[language] || 'Gujarati'
-
-  const systemPrompt = `You are an expert voice call script writer for Indian outbound calling campaigns.
-Your job is to convert a document into a structured voice call conversation script.
-
-RULES:
-1. Write ALL prompts in ${langName} — this is a voice call, words must sound natural when spoken aloud
-2. Keep each prompt SHORT — max 2-3 sentences (this is a phone call, not a chat)
-3. Create a logical conversation flow — greeting → main questions → closing
-4. Each state must have 0-4 options (what the user might say in response)
-5. Options should be short phrases the user would actually speak
-6. Last state must have empty options [] (it ends the call)
-7. Use simple, conversational ${langName} — avoid formal/written language
-8. The AI agent's name is ${personaName}
-
-CAMPAIGN TYPE: ${campaignType}
-${campaignType === 'survey' ? '→ Goal: Ask questions, collect answers, record data' : ''}
-${campaignType === 'announcement' ? '→ Goal: Inform the person, confirm they understood' : ''}
-${campaignType === 'reminder' ? '→ Goal: Remind about appointment/payment, confirm acknowledgment' : ''}
-
-OUTPUT FORMAT — respond with ONLY valid JSON, no explanation, no markdown:
-{
-  "flow": [
-    {
-      "id": "intro",
-      "prompt": "<greeting in ${langName} — introduce agent, state purpose>",
-      "options": ["<yes response>", "<no/busy response>"]
-    },
-    {
-      "id": "main_question_1",
-      "prompt": "<first question in ${langName}>",
-      "options": ["<option 1>", "<option 2>", "<option 3>"]
-    },
-    {
-      "id": "closing",
-      "prompt": "<thank you and goodbye in ${langName}>",
-      "options": []
+  // ── PDF: try table extraction first ───────────────────────
+  const rows = await extractTableRows(input)
+  if (rows && rows.length > 0) {
+    const flow = buildFlowFromTable(rows)
+    if (flow.length > 0) {
+      console.log(`[ParseScript] ✅ PDF table parsed — ${flow.length} states`)
+      return { flow, source: 'pdf_table', parsed_at: new Date().toISOString() }
     }
-  ]
+  }
+
+  // Fallback: plain text extraction
+  const data = await pdfParse(input)
+  const text = (data.text || '').replace(/\s+/g, ' ').trim()
+  if (!text) throw new Error('PDF appears empty or image-only')
+
+  console.log(`[ParseScript] ⚠️ No table found — parsing plain text`)
+  return parseTextToFlow(text)
 }
 
-Generate 4-8 states depending on document complexity. Make it a natural flowing conversation.`
+// ─────────────────────────────────────────────────────────────
+// DOCX TEXT EXTRACTION
+// Uses mammoth (already available in Node ecosystem)
+// Falls back to unzip + XML parse if mammoth not installed
+// ─────────────────────────────────────────────────────────────
 
-  const userMessage = `Convert this document into a voice call script:\n\n${documentText.slice(0, 4000)}`
-
+async function extractDocxText(buffer) {
   try {
-    const result = await getAIResponse(systemPrompt, [], userMessage)
-    const text   = result.text || ''
-
-    // Extract JSON from response (LLM might wrap in markdown)
-    const jsonMatch = text.match(/\{[\s\S]*"flow"[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('LLM did not return valid JSON flow')
-
-    const parsed = JSON.parse(jsonMatch[0])
-    if (!parsed.flow || !Array.isArray(parsed.flow)) throw new Error('Invalid flow structure')
-
-    // Normalize and validate each state
-    return parsed.flow.map(normalizeNode).filter(n => n.prompt)
-
-  } catch (err) {
-    console.error(`[ParseScript] LLM generation failed: ${err.message}`)
-    // Fall back to basic text parsing if LLM fails
-    console.log(`[ParseScript] ⚠️ Falling back to plain text parser`)
-    return parsePlainTextToFlow(documentText).flow
+    // Try mammoth first
+    const mammoth = require('mammoth')
+    const result  = await mammoth.extractRawText({ buffer })
+    return result.value || ''
+  } catch {
+    // Fallback: extract from word/document.xml directly
+    try {
+      const AdmZip = require('adm-zip')
+      const zip    = new AdmZip(buffer)
+      const xmlEntry = zip.getEntry('word/document.xml')
+      if (!xmlEntry) throw new Error('No document.xml in DOCX')
+      const xml  = xmlEntry.getData().toString('utf8')
+      // Extract text between <w:t> tags
+      const text = (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
+        .map(m => m.replace(/<[^>]+>/g, ''))
+        .join(' ')
+      return text
+    } catch (zipErr) {
+      throw new Error('Could not read DOCX — install mammoth: npm install mammoth')
+    }
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// PDF TEXT EXTRACTION — uses pdf-parse (already in package.json)
+// EXTRACT TABLE ROWS FROM PDF via pdfplumber (Python)
 // ─────────────────────────────────────────────────────────────
 
-async function extractPdfText(pdfBuffer) {
+async function extractTableRows(pdfBuffer) {
+  const { execSync } = require('child_process')
+  const tmpPdf = path.join(os.tmpdir(), `flow_${Date.now()}.pdf`)
+  fs.writeFileSync(tmpPdf, pdfBuffer)
+
+  const pyScript = `
+import sys, json, re
+
+def clean(text):
+    if not text: return ''
+    text = text.replace('\\u200b','').replace('\\u00a0',' ')
+    text = re.sub(r'[ \\t]+', ' ', text)
+    return text.strip()
+
+rows = []
+try:
+    import pdfplumber
+    with pdfplumber.open(sys.argv[1]) as pdf:
+        for page in pdf.pages:
+            for table in (page.extract_tables() or []):
+                for row in table:
+                    cleaned = [clean(c or '') for c in row]
+                    if any(cleaned):
+                        rows.append(cleaned)
+except Exception as e:
+    rows = []
+
+print(json.dumps(rows, ensure_ascii=False))
+`
+
+  const pyFile = path.join(os.tmpdir(), `ep_${Date.now()}.py`)
+  fs.writeFileSync(pyFile, pyScript)
+
   try {
-    const data = await pdfParse(pdfBuffer)
-    const text = (data.text || '')
-      .replace(/\s+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-
-    if (!text) throw new Error('PDF appears empty or image-only (no extractable text)')
-    return text
-
+    const output = execSync(`python3 "${pyFile}" "${tmpPdf}"`, {
+      maxBuffer: 5 * 1024 * 1024,
+      timeout:   30000,
+    }).toString()
+    return JSON.parse(output)
   } catch (err) {
-    throw new Error(`PDF extraction failed: ${err.message}`)
+    console.warn(`[ParseScript] pdfplumber failed: ${err.message}`)
+    return null
+  } finally {
+    try { fs.unlinkSync(tmpPdf) } catch {}
+    try { fs.unlinkSync(pyFile) } catch {}
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// TRY PARSE DIRECT JSON — skip LLM if already structured
+// BUILD FLOW FROM TABLE ROWS
+// Handles column formats:
+//   [ID, Prompt, Options]
+//   [ID, Prompt, OldOptions, NewOptions]  ← use NewOptions (last col)
 // ─────────────────────────────────────────────────────────────
 
-function tryParseFlowJson(text) {
+function buildFlowFromTable(rows) {
+  const flow = []
+
+  for (const row of rows) {
+    // Skip header row
+    const first = (row[0] || '').trim().toLowerCase()
+    if (!first || first === 'id' || first === 'sr' || first === 'no') continue
+
+    const id     = first.replace(/\s+/g, '_')
+    const prompt = cleanPrompt(row[1] || '')
+    if (!prompt) continue
+
+    let options = []
+
+    if (row.length >= 4) {
+      // 4-col PDF: try New Options (last col) first, fall back to Old Options (col 2)
+      const newOpts = extractCleanOptions(row[row.length - 1] || '')
+      const oldOpts = extractCleanOptions(row[2] || '')
+      options = newOpts.length > 0 ? newOpts : oldOpts
+    } else {
+      options = extractCleanOptions(row[2] || '')
+    }
+
+    flow.push({ id, prompt, options })
+  }
+
+  return flow
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXTRACT CLEAN OPTIONS from raw options cell text
+//
+// The options column often contains:
+//   - Actual spoken options:  "હા, હું જ બોલું છું"
+//   - Routing notes:          "If X → Y"
+//   - Bullet instructions:    "• દસ્તાવેજ અધૂરા"
+//   - Section headers:        "Urgency Level:"
+//
+// We keep ONLY lines that are short spoken phrases (< 60 chars)
+// and don't start with routing keywords.
+// ─────────────────────────────────────────────────────────────
+
+function extractCleanOptions(rawText) {
+  if (!rawText || !rawText.trim()) return []
+
+  // ── Format 1: Semicolon-separated (e.g. "હા, લઈ શકો; ના, સમય નથી") ──
+  if (rawText.includes(';')) {
+    return rawText
+      .split(';')
+      .map(o => o.replace(/^[""]|[""]$/g, '').trim())
+      .filter(o => o.length >= 2 && o.length <= 80)
+  }
+
+  // ── Format 2: Comma-separated short options (e.g. "Yes, No, Maybe") ──
+  // Only use comma split if options are very short (avg < 20 chars)
+  if (rawText.includes(',') && !rawText.includes('\n')) {
+    const parts = rawText.split(',').map(o => o.trim()).filter(o => o.length >= 2 && o.length <= 40)
+    const avgLen = parts.reduce((s, p) => s + p.length, 0) / (parts.length || 1)
+    if (parts.length >= 2 && avgLen < 20) return parts
+  }
+
+  // ── Format 3: Newline-separated — stop at first routing instruction ──
+  const lines   = rawText.split('\n')
+  const options = []
+
+  for (const line of lines) {
+    let l = line.replace(/^[•\-\*]\s*/, '').trim()
+    if (!l) continue
+
+    // STOP at routing instructions — everything after is sub-flow notes
+    if (/^if\s+/i.test(l))              break  // If "X" →
+    if (/→|=>/.test(l))                  break  // lines with arrows
+    if (/^options\s*:/i.test(l))        break  // "Options:" header
+    if (/^urgency/i.test(l))             break  // "Urgency Level:"
+    if (/capture/i.test(l))              break  // "Rating Capture"
+    if (/closing\s+script/i.test(l))    break  // "Closing Script"
+    if (/^fallback\s+scenario/i.test(l)) break // "Fallback Scenarios:"
+    if (/^additional\s+real/i.test(l))  break  // "Additional Real-Life..."
+    if (/⭐/.test(l))                     break
+
+    // Clean surrounding quotes
+    l = l.replace(/^[""]|[""]$/g, '').trim()
+
+    // Keep clean spoken phrases (2-80 chars)
+    if (l.length >= 2 && l.length <= 80) {
+      options.push(l)
+    }
+  }
+
+  return [...new Set(options)]
+}
+
+// ─────────────────────────────────────────────────────────────
+// CLEAN PROMPT TEXT
+// ─────────────────────────────────────────────────────────────
+
+function cleanPrompt(text) {
+  return (text || '')
+    .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^\d+[\.\):\s]+/, '')
+    .trim()
+}
+
+// ─────────────────────────────────────────────────────────────
+// PARSE PLAIN TEXT / JSON STRING → flow
+// Used when no PDF table found, or for typed/pasted scripts
+// ─────────────────────────────────────────────────────────────
+
+function parseTextToFlow(text) {
+  if (!text?.trim()) throw new Error('Empty content')
+
   const trimmed = text.trim()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
 
-  try {
-    const parsed = JSON.parse(trimmed)
+  // JSON format → use directly
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (parsed.flow && Array.isArray(parsed.flow)) {
+        return { flow: parsed.flow.map(normalizeNode), source: 'json', parsed_at: new Date().toISOString() }
+      }
+      if (Array.isArray(parsed)) {
+        return { flow: parsed.map(normalizeNode), source: 'json', parsed_at: new Date().toISOString() }
+      }
+    } catch {}
+  }
 
-    if (parsed.flow && Array.isArray(parsed.flow)) {
-      return { flow: parsed.flow.map(normalizeNode) }
-    }
-    if (Array.isArray(parsed)) {
-      return { flow: parsed.map(normalizeNode) }
-    }
-  } catch {}
-
-  return null
-}
-
-// ─────────────────────────────────────────────────────────────
-// FALLBACK — plain text → states (no LLM)
-// Used only if LLM call fails
-// ─────────────────────────────────────────────────────────────
-
-function parsePlainTextToFlow(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 5)
-  const flow  = []
-  let index   = 0
-
-  const chunks = []
+  // Plain text — split into states by lines/sentences
+  const lines  = text.split('\n').map(l => l.trim()).filter(l => l.length > 5)
+  const flow   = []
+  let index    = 0
   let current  = []
+  const chunks = []
 
   for (const line of lines) {
     const isNew = /^(\d+[\.\):]|step\s*\d+|q\s*\d*:|question\s*\d*:)/i.test(line)
@@ -194,7 +292,6 @@ function parsePlainTextToFlow(text) {
   }
   if (current.length > 0) chunks.push(current)
 
-  // No structure — split by sentence
   if (chunks.length <= 1) {
     const sentences = text.replace(/([।.!?])\s+/g, '$1\n').split('\n')
       .map(s => s.trim()).filter(s => s.length > 10)
@@ -204,40 +301,29 @@ function parsePlainTextToFlow(text) {
   for (const chunk of chunks) {
     const prompt = chunk.join(' ').replace(/^\d+[\.\):\s]+/, '').trim()
     if (!prompt) continue
-    const isQuestion = prompt.includes('?')
-    flow.push({
-      id:      index === 0 ? 'intro' : `step_${index}`,
-      prompt,
-      options: isQuestion ? [] : [],
-    })
+    flow.push({ id: index === 0 ? 'intro' : `step_${index}`, prompt, options: [] })
     index++
   }
 
   if (flow.length > 0) flow[flow.length - 1].options = []
-  return { flow }
+
+  console.log(`[ParseScript] ✅ Plain text → ${flow.length} states`)
+  return { flow, source: 'plain_text', parsed_at: new Date().toISOString() }
 }
 
 // ─────────────────────────────────────────────────────────────
-// HELPERS
+// NORMALIZE NODE
 // ─────────────────────────────────────────────────────────────
 
 function normalizeNode(node) {
   return {
     id:      (node.id || `state_${Math.random().toString(36).slice(2, 6)}`)
                .toString().trim().toLowerCase().replace(/\s+/g, '_'),
-    prompt:  (node.prompt || node.text || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim(),
+    prompt:  cleanPrompt(node.prompt || node.text || ''),
     options: Array.isArray(node.options)
-      ? node.options.map(o => (typeof o === 'string' ? o : String(o)).trim()).filter(Boolean)
+      ? node.options.map(o => String(o).trim()).filter(Boolean)
       : [],
   }
-}
-
-// parseTextToFlow exported for backward compat
-function parseTextToFlow(text) {
-  const direct = tryParseFlowJson(text)
-  if (direct) return { ...direct, source: 'json', parsed_at: new Date().toISOString() }
-  const result = parsePlainTextToFlow(text)
-  return { ...result, source: 'plain_text', parsed_at: new Date().toISOString() }
 }
 
 module.exports = { parsePdfToFlowConfig, parseTextToFlow }
