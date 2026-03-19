@@ -96,6 +96,16 @@ export const campaignApi = {
   previewScript: (text, language, campaignType) =>
     api.post('/campaigns/script/preview', { text, language, campaign_type: campaignType }, { timeout: 60000 }),
 
+  // Parse actual PDF/DOCX file → flow (best quality, no text garbling)
+  parseScriptFile: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/campaigns/script/parse-file', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    })
+  },
+
   extractUrl: (url) =>
     api.post('/simulate/extract-url', { url }),
   extractPdf: (file) => {
