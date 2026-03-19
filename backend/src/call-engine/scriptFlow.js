@@ -105,7 +105,7 @@ function buildStateMap(flowArray) {
       prompt:    node.prompt || '',
       edges,                          // matched options → where they go
       default_next: nextId,           // if no options or no match after retries
-      terminal:  edges.length === 0 && idx === flowArray.length - 1,
+      terminal:  edges.length === 0,  // any state with no options ends the call
     }
   })
 
