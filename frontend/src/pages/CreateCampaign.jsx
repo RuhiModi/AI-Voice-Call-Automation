@@ -205,8 +205,7 @@ export default function CreateCampaign() {
       const flow = res.data?.flow
       if (flow?.length) {
         setGeneratedFlow(flow)
-        setScriptText(flow.map(s => s.prompt).join('
-'))
+        setScriptText(flow.map(s => s.prompt).join('\n'))
         toast.success(`✅ Script parsed — ${flow.length} states`)
       } else {
         toast('File uploaded — script will be parsed on launch', { icon: 'ℹ️' })
