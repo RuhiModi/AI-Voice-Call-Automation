@@ -78,25 +78,35 @@ async function parsePdfToFlowConfig(input, options = {}) {
 // ─────────────────────────────────────────────────────────────
 
 async function extractDocxText(buffer) {
-  // Extract table rows from DOCX word/document.xml
-  // Returns flow directly (not raw text) since we can parse table structure
+  // Extract table rows from DOCX using only Node built-ins (no adm-zip needed)
+  // DOCX is a ZIP file — we use the 'unzipper' or built-in approach
   try {
-    const AdmZip   = require('adm-zip')
-    const zip      = new AdmZip(buffer)
-    const xmlEntry = zip.getEntry('word/document.xml')
-    if (!xmlEntry) throw new Error('No document.xml in DOCX')
+    // Use unzipper if available, else fall back to manual ZIP parsing
+    let xml = null
 
-    const xml = xmlEntry.getData().toString('utf8')
+    try {
+      const unzipper = require('unzipper')
+      const directory = await unzipper.Open.buffer(buffer)
+      const file = directory.files.find(f => f.path === 'word/document.xml')
+      if (file) {
+        const content = await file.buffer()
+        xml = content.toString('utf8')
+      }
+    } catch {
+      // Manual ZIP: find word/document.xml by scanning the buffer
+      xml = extractXmlFromZip(buffer, 'word/document.xml')
+    }
 
-    // Extract table rows — each <w:tr> is a row, each <w:tc> is a cell
+    if (!xml) throw new Error('Could not extract word/document.xml from DOCX')
+
+    // Parse table: <w:tr> = row, <w:tc> = cell, <w:t> = text
     const rows = []
-    const trMatches = xml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []
+    const trBlocks = xml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []
 
-    for (const tr of trMatches) {
+    for (const tr of trBlocks) {
       const cells = []
-      const tcMatches = tr.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) || []
-      for (const tc of tcMatches) {
-        // Extract all text runs in this cell
+      const tcBlocks = tr.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) || []
+      for (const tc of tcBlocks) {
         const texts = (tc.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
           .map(m => m.replace(/<[^>]+>/g, '').trim())
           .filter(Boolean)
@@ -108,24 +118,60 @@ async function extractDocxText(buffer) {
     if (rows.length > 0) {
       console.log(`[ParseScript] 📝 DOCX table: ${rows.length} rows`)
       const flow = buildFlowFromTable(rows)
-      if (flow.length > 0) return JSON.stringify({ flow })
+      if (flow.length > 0) {
+        return JSON.stringify({ flow })
+      }
     }
 
-    // Fallback: extract plain text
+    // No table found — extract plain text
     const text = (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
       .map(m => m.replace(/<[^>]+>/g, ''))
       .join(' ')
     return text
 
   } catch (err) {
-    // Try mammoth as last resort
-    try {
-      const mammoth = require('mammoth')
-      const result  = await mammoth.extractRawText({ buffer })
-      return result.value || ''
-    } catch {
-      throw new Error(`Could not read DOCX: ${err.message}`)
+    console.error('[ParseScript] DOCX extraction error:', err.message)
+    throw new Error(`Could not read DOCX: ${err.message}`)
+  }
+}
+
+// Manual ZIP entry extractor — no external deps
+// Finds a file inside a ZIP buffer by scanning for local file headers
+function extractXmlFromZip(zipBuffer, targetPath) {
+  try {
+    let offset = 0
+    while (offset < zipBuffer.length - 30) {
+      // Local file header signature: PK\x03\x04
+      if (zipBuffer[offset]     !== 0x50 || zipBuffer[offset + 1] !== 0x4B ||
+          zipBuffer[offset + 2] !== 0x03 || zipBuffer[offset + 3] !== 0x04) {
+        offset++
+        continue
+      }
+
+      const compMethod   = zipBuffer.readUInt16LE(offset + 8)
+      const compSize     = zipBuffer.readUInt32LE(offset + 18)
+      const fnLen        = zipBuffer.readUInt16LE(offset + 26)
+      const extraLen     = zipBuffer.readUInt16LE(offset + 28)
+      const fileName     = zipBuffer.slice(offset + 30, offset + 30 + fnLen).toString('utf8')
+      const dataStart    = offset + 30 + fnLen + extraLen
+
+      if (fileName === targetPath) {
+        const compData = zipBuffer.slice(dataStart, dataStart + compSize)
+        if (compMethod === 0) {
+          // Stored (no compression)
+          return compData.toString('utf8')
+        } else if (compMethod === 8) {
+          // Deflate — use zlib
+          const zlib = require('zlib')
+          return zlib.inflateRawSync(compData).toString('utf8')
+        }
+      }
+
+      offset = dataStart + compSize
     }
+    return null
+  } catch {
+    return null
   }
 }
 
