@@ -197,20 +197,31 @@ export default function CreateCampaign() {
     if (!file) return
     setPdfFile(file)
     setPdfLoading(true)
+    setScriptGenerating(true)
     setGeneratedFlow(null)
     try {
-      const res  = await campaignApi.extractPdf(file)
-      const text = res.data.text || ''
-      if (text) {
-        setScriptText(text)
-        toast.success(`PDF extracted — generating script...`)
-        generatePreview(text)  // fire and don't await
+      // Send file directly — preserves binary, no text garbling
+      const res  = await campaignApi.parseScriptFile(file)
+      const flow = res.data?.flow
+      if (flow?.length) {
+        setGeneratedFlow(flow)
+        setScriptText(flow.map(s => s.prompt).join('
+'))
+        toast.success(`✅ Script parsed — ${flow.length} states`)
       } else {
-        toast.success(`PDF ready — will be parsed on launch`)
+        toast('File uploaded — script will be parsed on launch', { icon: 'ℹ️' })
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Could not read PDF')
-    } finally { setPdfLoading(false) }
+      // Fallback: extract text then preview
+      try {
+        const extractRes = await campaignApi.extractPdf(file)
+        const text = extractRes.data.text || ''
+        if (text) { setScriptText(text); generatePreview(text) }
+      } catch { toast.error(err.response?.data?.error || 'Could not read file') }
+    } finally {
+      setPdfLoading(false)
+      setScriptGenerating(false)
+    }
   }
 
   // ── LAUNCH ────────────────────────────────────────────────
