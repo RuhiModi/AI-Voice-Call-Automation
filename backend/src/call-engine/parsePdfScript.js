@@ -42,23 +42,33 @@ async function parsePdfToFlowConfig(input, options = {}) {
     return parseTextToFlow(text)
   }
 
-  // ── PDF: try table extraction first ───────────────────────
+  // ── PDF: try pdfplumber table extraction first ──────────────
   const rows = await extractTableRows(input)
   if (rows && rows.length > 0) {
     const flow = buildFlowFromTable(rows)
     if (flow.length > 0) {
-      console.log(`[ParseScript] ✅ PDF table parsed — ${flow.length} states`)
+      console.log(`[ParseScript] ✅ PDF table parsed via pdfplumber — ${flow.length} states`)
       return { flow, source: 'pdf_table', parsed_at: new Date().toISOString() }
     }
   }
 
-  // Fallback: plain text extraction
-  const data = await pdfParse(input)
-  const text = (data.text || '').replace(/\s+/g, ' ').trim()
-  if (!text) throw new Error('PDF appears empty or image-only')
+  // ── Fallback: use pdf-parse + extract table from plain text ──
+  // pdfplumber may not be available on all servers
+  console.log(`[ParseScript] ⚠️ pdfplumber unavailable — trying pdf-parse table extraction`)
+  const data   = await pdfParse(input)
+  const rawText = (data.text || '').trim()
+  if (!rawText) throw new Error('PDF appears empty or image-only')
 
-  console.log(`[ParseScript] ⚠️ No table found — parsing plain text`)
-  return parseTextToFlow(text)
+  // Try to parse table structure from plain text
+  const textFlow = parseTableFromPlainText(rawText)
+  if (textFlow && textFlow.length > 0) {
+    console.log(`[ParseScript] ✅ Table parsed from plain text — ${textFlow.length} states`)
+    return { flow: textFlow, source: 'pdf_text_table', parsed_at: new Date().toISOString() }
+  }
+
+  // Last resort: generic plain text parsing
+  console.log(`[ParseScript] ⚠️ No table structure found — generic text parse`)
+  return parseTextToFlow(rawText)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -68,26 +78,53 @@ async function parsePdfToFlowConfig(input, options = {}) {
 // ─────────────────────────────────────────────────────────────
 
 async function extractDocxText(buffer) {
+  // Extract table rows from DOCX word/document.xml
+  // Returns flow directly (not raw text) since we can parse table structure
   try {
-    // Try mammoth first
-    const mammoth = require('mammoth')
-    const result  = await mammoth.extractRawText({ buffer })
-    return result.value || ''
-  } catch {
-    // Fallback: extract from word/document.xml directly
+    const AdmZip   = require('adm-zip')
+    const zip      = new AdmZip(buffer)
+    const xmlEntry = zip.getEntry('word/document.xml')
+    if (!xmlEntry) throw new Error('No document.xml in DOCX')
+
+    const xml = xmlEntry.getData().toString('utf8')
+
+    // Extract table rows — each <w:tr> is a row, each <w:tc> is a cell
+    const rows = []
+    const trMatches = xml.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []
+
+    for (const tr of trMatches) {
+      const cells = []
+      const tcMatches = tr.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) || []
+      for (const tc of tcMatches) {
+        // Extract all text runs in this cell
+        const texts = (tc.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
+          .map(m => m.replace(/<[^>]+>/g, '').trim())
+          .filter(Boolean)
+        cells.push(texts.join(' ').trim())
+      }
+      if (cells.some(c => c)) rows.push(cells)
+    }
+
+    if (rows.length > 0) {
+      console.log(`[ParseScript] 📝 DOCX table: ${rows.length} rows`)
+      const flow = buildFlowFromTable(rows)
+      if (flow.length > 0) return JSON.stringify({ flow })
+    }
+
+    // Fallback: extract plain text
+    const text = (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
+      .map(m => m.replace(/<[^>]+>/g, ''))
+      .join(' ')
+    return text
+
+  } catch (err) {
+    // Try mammoth as last resort
     try {
-      const AdmZip = require('adm-zip')
-      const zip    = new AdmZip(buffer)
-      const xmlEntry = zip.getEntry('word/document.xml')
-      if (!xmlEntry) throw new Error('No document.xml in DOCX')
-      const xml  = xmlEntry.getData().toString('utf8')
-      // Extract text between <w:t> tags
-      const text = (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [])
-        .map(m => m.replace(/<[^>]+>/g, ''))
-        .join(' ')
-      return text
-    } catch (zipErr) {
-      throw new Error('Could not read DOCX — install mammoth: npm install mammoth')
+      const mammoth = require('mammoth')
+      const result  = await mammoth.extractRawText({ buffer })
+      return result.value || ''
+    } catch {
+      throw new Error(`Could not read DOCX: ${err.message}`)
     }
   }
 }
@@ -142,6 +179,102 @@ print(json.dumps(rows, ensure_ascii=False))
     try { fs.unlinkSync(tmpPdf) } catch {}
     try { fs.unlinkSync(pyFile) } catch {}
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// PARSE TABLE FROM PLAIN TEXT
+// When pdfplumber is unavailable, pdf-parse gives us raw text.
+// This function detects the ID|Prompt|Options table pattern in text.
+//
+// The PDF plain text looks like:
+// "ID Prompt Old Options New Options intro નમસ્તે... હા ના task_check..."
+// We split on known state IDs and reconstruct rows.
+// ─────────────────────────────────────────────────────────────
+
+function parseTableFromPlainText(rawText) {
+  if (!rawText) return null
+
+  // Clean up the text
+  const text = rawText
+    .replace(/IDPromptOld OptionsNew Options/g, '')  // strip header
+    .replace(/IDPromptOptions/g, '')
+    .replace(/
+/g, '
+')
+    .trim()
+
+  // Strategy: find state IDs by looking for lines that are short
+  // and look like valid state IDs (lowercase, underscores, no spaces)
+  // e.g. "intro", "task_check", "task_done", "step_1"
+  const STATE_ID_PATTERN = /^([a-z][a-z0-9_]{1,30})$/
+
+  const lines = text.split('
+').map(l => l.trim()).filter(Boolean)
+  const flow  = []
+
+  let currentId      = null
+  let currentPrompt  = []
+  let currentOptions = []
+  let collectingOpts = false
+
+  const flush = () => {
+    if (!currentId) return
+    const prompt  = currentPrompt.join(' ').trim()
+    const options = currentOptions
+      .join(';')
+      .split(/[;
+]/)
+      .map(o => o.trim())
+      .filter(o => o.length >= 2 && o.length <= 80)
+      .filter(o => !/^if\s+/i.test(o) && !/→/.test(o))
+    if (prompt) {
+      flow.push({ id: currentId, prompt, options: [...new Set(options)] })
+    }
+    currentId      = null
+    currentPrompt  = []
+    currentOptions = []
+    collectingOpts = false
+  }
+
+  for (const line of lines) {
+    // Skip pure header lines
+    if (/^(ID|Prompt|Old Options|New Options|Options)$/i.test(line)) continue
+
+    // Detect state ID line
+    if (STATE_ID_PATTERN.test(line)) {
+      flush()
+      currentId      = line
+      collectingOpts = false
+      continue
+    }
+
+    if (!currentId) continue
+
+    // Detect option-like lines (short, no sentence structure)
+    const isOption = line.length <= 60 &&
+      !line.includes('કૃ') &&     // Gujarati question words that indicate prompts
+      !line.includes('આ ') &&
+      !line.includes('જ ') &&
+      (currentPrompt.length > 0)  // only collect options after we have a prompt
+
+    // Lines that start a new "section" in options
+    if (/^(old options|new options|options)/i.test(line)) {
+      collectingOpts = true
+      continue
+    }
+
+    if (collectingOpts || (isOption && currentPrompt.length > 0)) {
+      if (!/^if\s+/i.test(line) && !/→/.test(line)) {
+        currentOptions.push(line)
+      }
+    } else {
+      currentPrompt.push(line)
+    }
+  }
+  flush()
+
+  // Filter out states with garbled/empty prompts
+  return flow.filter(s => s.prompt && s.prompt.length > 10)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -200,7 +333,12 @@ function extractCleanOptions(rawText) {
   if (rawText.includes(';')) {
     return rawText
       .split(';')
-      .map(o => o.replace(/^[""]|[""]$/g, '').trim())
+      .map(o => o
+        .replace(/^[""]|[""]$/g, '')
+        .replace(/\s*,\s*/g, ', ')   // fix "હા , " → "હા, "
+        .replace(/\s+/g, ' ')
+        .trim()
+      )
       .filter(o => o.length >= 2 && o.length <= 80)
   }
 
