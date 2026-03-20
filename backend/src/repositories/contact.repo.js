@@ -111,9 +111,9 @@ const contactRepo = {
 
   // Reset all contacts to pending for relaunch
   async resetForRelaunch(campaignId) {
-    await db.query(
+    await pool.query(
       `UPDATE contacts SET status = 'pending', outcome = null
-       WHERE campaign_id = $1 AND status != 'do_not_call'`,
+       WHERE campaign_id = $1 AND status NOT IN ('do_not_call', 'dnc')`,
       [campaignId]
     )
   },
