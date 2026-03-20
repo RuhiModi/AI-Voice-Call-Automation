@@ -11,6 +11,7 @@ const campaignRepo  = require('../repositories/campaign.repo')
 const planService    = require('./plan.service')
 const invoiceService = require('./invoice.service')
 const contactRepo  = require('../repositories/contact.repo')
+const dncRepo      = require('../repositories/dnc.repo')
 const callRepo     = require('../repositories/call.repo')
 const { makeOutboundCall } = require('../telephony')
 const { CallSession, activeSessions } = require('../call-engine/session')
@@ -51,6 +52,31 @@ cron.schedule('*/30 * * * * *', async () => {
     await _processCampaign(campaignId).catch(err =>
       console.error(`[Scheduler] Process error for ${campaignId}:`, err.message)
     )
+  }
+})
+
+// ── Scheduled campaigns check ──────────────────────────────────
+// Every minute — check for campaigns scheduled to start now
+cron.schedule('* * * * *', async () => {
+  try {
+    const db = require('../db/db')
+    const campaignRepo = require('../repositories/campaign.repo')
+    const { rows } = await db.query(
+      `SELECT * FROM campaigns
+       WHERE status = 'scheduled'
+       AND schedule_start <= NOW()
+       AND schedule_start > NOW() - INTERVAL '10 minutes'`
+    )
+    for (const campaign of rows) {
+      console.log(`[Scheduler] ⏰ Scheduled campaign starting: ${campaign.name}`)
+      await campaignRepo.updateStatus(campaign.id, 'active')
+      activeCampaigns.add(campaign.id)
+      await _processCampaign(campaign.id).catch(err =>
+        console.error(`[Scheduler] Scheduled launch error:`, err.message)
+      )
+    }
+  } catch (err) {
+    console.error('[Scheduler] Scheduled campaigns check error:', err.message)
   }
 })
 
@@ -147,9 +173,24 @@ async function _processCampaign(campaignId) {
     console.warn(`[Scheduler] ⚠️  ${limitCheck.warningMsg}`)
   }
 
+  // DNC check — filter out blocked numbers before dialing
+  const phones     = contacts.map(c => c.phone)
+  const blockedSet = await dncRepo.getBlockedSet(campaign.user_id, phones)
+  const allowed    = contacts.filter(c => !blockedSet.has(c.phone))
+  const skipped    = contacts.length - allowed.length
+  if (skipped > 0) {
+    console.log(`[Scheduler] 🚫 Skipped ${skipped} DNC-blocked number(s) in campaign ${campaignId}`)
+    // Mark skipped contacts as skipped so campaign can complete
+    const blocked = contacts.filter(c => blockedSet.has(c.phone))
+    for (const c of blocked) {
+      await contactRepo.updateStatus(c.id, 'skipped', 'dnc_blocked')
+    }
+  }
+  if (!allowed.length) return
+
   // Make calls — stagger by 2s each to avoid spam detection
-  for (let i = 0; i < contacts.length; i++) {
-    setTimeout(() => _makeCall(contacts[i].id, campaignId, campaign)
+  for (let i = 0; i < allowed.length; i++) {
+    setTimeout(() => _makeCall(allowed[i].id, campaignId, campaign)
       .catch(err => console.error('[Scheduler] Call error:', err.message)),
       i * 2000
     )
