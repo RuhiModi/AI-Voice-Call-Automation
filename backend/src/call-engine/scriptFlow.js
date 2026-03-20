@@ -25,7 +25,7 @@
 // ─────────────────────────────────────────────────────────────
 
 const YES_WORDS  = ['ha','haa','han','haan','yes','ok','okay','sure','bilkul','sahi','theek','kem nahi','zarur','हा','हां','हाँ','ہاں','હા','જી','ji','haji','ji ha','haa ji','han ji']
-const NO_WORDS   = ['na','naa','nahi','nai','no','nope','nathi','baki','bakii','pending','nai thayu','nathi thayu','ના','ना','نہیں','બાકી','નથી','હજી']
+const NO_WORDS   = ['na','naa','nahi','nai','no','nope','nathi','nai thayu','nathi thayu','ના','ना','نہیں','નથી']
 const BUSY_WORDS = ['busy','vyast','baad mein','call back','pachhi','later','kal','saanje','time nathi','samay nahi','hu vyast','abhi nahi','thodi der','व्यस्त','बाद में']
 const DNC_WORDS  = ['band karo','mat karo','remove','do not call','stop calling','nahi chahiye','naraj','faltu','bekaar']
 const WRONG_WORDS= ['wrong number','galat number','khotho','wrong','galat','koi nahi','yahan nahi']
@@ -74,7 +74,7 @@ function scoreMatch(userText, optionText) {
   return hits.length / Math.max(uWords.length, oWords.length)
 }
 
-const MATCH_THRESHOLD = 0.3
+const MATCH_THRESHOLD = 0.38
 
 // ─────────────────────────────────────────────────────────────
 // BUILD STATE MAP
@@ -279,6 +279,34 @@ class ScriptFlowExecutor {
       }
     }
 
+    // ── Smart default for open-ended responses ──────────────
+    // Run BEFORE yes/no detection to catch problem descriptions
+    if (!bestEdge || bestScore < MATCH_THRESHOLD) {
+      const refusalWords = ['nahi','naa','nathi','no details','hal nahi','haalo nahi',
+        'nahi aapi shaktu','vishay nathi','vaat nahi','હાલ નહીં','નહીં','નથી']
+      const words = lower.split(/\s+/)
+      const isRefusal = matchesAny(lower, refusalWords) ||
+        words.includes('ના') || words.includes('na') || words.includes('naa') ||
+        words.includes('no') || words.includes('nahi')
+
+      if (lower.length > 5 && !isRefusal) {
+        const posEdge = state.edges.find(e => {
+          const et = norm(e.text)
+          return !matchesAny(et, ['nahi','na','nathi','no','nai','hal nahi']) &&
+                 !et.includes('નહીં') && !et.includes('નથી')
+        })
+        if (posEdge) {
+          console.log(`[ScriptFlow] ➡️ Smart → positive edge: "${posEdge.text}" → ${posEdge.next_state}`)
+          this.consecutiveMisses = 0
+          return this._goTo(posEdge.next_state)
+        } else if (state.default_next && state.default_next !== 'end') {
+          console.log(`[ScriptFlow] ➡️ Smart → default_next: ${state.default_next}`)
+          this.consecutiveMisses = 0
+          return this._goTo(state.default_next)
+        }
+      }
+    }
+
     // Also try yes/no detection against first/second edge
     if ((!bestEdge || bestScore < MATCH_THRESHOLD) && state.edges.length >= 1) {
       const isYes = matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('हा')
@@ -307,6 +335,29 @@ class ScriptFlowExecutor {
     }
 
     if (bestEdge && bestScore >= MATCH_THRESHOLD) {
+      // Sanity check: if user said 'ના' clearly but matched a YES edge, flip to NO edge
+      const words = lower.split(/\s+/)
+      const clearNo = words.includes('ના') || words.includes('na') ||
+                      words.includes('nahi') || words.includes('naa') ||
+                      matchesAny(lower, ['nathi thayu','nai thayu','nathi'])
+      const edgeIsYes = matchesAny(norm(bestEdge.text), YES_WORDS) ||
+                        norm(bestEdge.text).includes('હા') ||
+                        norm(bestEdge.text).includes('thayu') ||
+                        norm(bestEdge.text).includes('થયું')
+
+      if (clearNo && edgeIsYes && bestScore < 0.7) {
+        // Override: find NO edge instead
+        const noEdge = state.edges.find(e => {
+          const et = norm(e.text)
+          return matchesAny(et, NO_WORDS) || et.includes('ના') || et.includes('baki') || et.includes('બાકી')
+        }) || state.edges[state.edges.length - 1]
+        if (noEdge !== bestEdge) {
+          console.log(`[ScriptFlow] 🔄 Override YES→NO: "${noEdge.text}" → ${noEdge.next_state}`)
+          this.consecutiveMisses = 0
+          return this._goTo(noEdge.next_state)
+        }
+      }
+
       console.log(`[ScriptFlow] ✅ "${this.currentStateId}" matched edge "${bestEdge.text}" (${bestScore.toFixed(2)}) → ${bestEdge.next_state}`)
       this.consecutiveMisses = 0
       return this._goTo(bestEdge.next_state)
@@ -315,21 +366,6 @@ class ScriptFlowExecutor {
     // ── 4. No match — smart default or re-ask ───────────────────
     // If state has exactly 2 edges (yes/no style) and user gave substantial input
     // AND input is not a refusal → default to first positive edge
-    const isRefusal = matchesAny(lower, ['nahi','na','naa','nathi','no','no details',
-      'nahi aapi shaktu','haalo nahi','hal nahi','vishay nathi','vaat nahi',
-      'હાલ નહીં','નહીં','ના','નથી'])
-
-    if (state.edges.length === 2 && lower.length > 3 && !isRefusal) {
-      // User said something substantial but not a refusal → take positive branch
-      const posEdge = state.edges.find(e =>
-        !matchesAny(norm(e.text), ['nahi','na','nathi','no','nai','hal nahi','ná','ná,']) &&
-        !norm(e.text).includes('નહીં') && !norm(e.text).includes('નથી')
-      ) || state.edges[0]
-      console.log(`[ScriptFlow] ➡️ Defaulting to positive edge: "${posEdge.text}" → ${posEdge.next_state}`)
-      this.consecutiveMisses = 0
-      return this._goTo(posEdge.next_state)
-    }
-
     this.consecutiveMisses++
     this.confusionCount++
 
