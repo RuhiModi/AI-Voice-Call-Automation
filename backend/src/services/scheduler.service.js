@@ -64,11 +64,21 @@ cron.schedule('* * * * *', async () => {
     const { rows } = await pool.query(
       `SELECT * FROM campaigns
        WHERE status = 'scheduled'
-       AND schedule_start <= NOW()
-       AND schedule_start > NOW() - INTERVAL '10 minutes'`
+       AND (
+         schedule_start <= NOW()
+         OR schedule_start <= NOW() + INTERVAL '30 minutes'
+       )`
     )
     for (const campaign of rows) {
-      console.log(`[Scheduler] ⏰ Scheduled campaign starting: ${campaign.name}`)
+      const schedTime = new Date(campaign.schedule_start)
+      const now       = new Date()
+      // Launch if within 5 minutes of scheduled time (handles timezone offset)
+      const diffMs = schedTime - now
+      if (diffMs > 5 * 60 * 1000) {
+        console.log(`[Scheduler] ⏳ Campaign "${campaign.name}" scheduled in ${Math.round(diffMs/60000)}min`)
+        continue
+      }
+      console.log(`[Scheduler] ⏰ Launching scheduled campaign: ${campaign.name}`)
       await campaignRepo.updateStatus(campaign.id, 'active')
       activeCampaigns.add(campaign.id)
       await _processCampaign(campaign.id).catch(err =>
