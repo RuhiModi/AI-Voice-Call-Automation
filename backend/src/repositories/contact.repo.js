@@ -109,6 +109,15 @@ const contactRepo = {
     )
   },
 
+  // Reset all contacts to pending for relaunch
+  async resetForRelaunch(campaignId) {
+    await db.query(
+      `UPDATE contacts SET status = 'pending', outcome = null
+       WHERE campaign_id = $1 AND status != 'do_not_call'`,
+      [campaignId]
+    )
+  },
+
 }
 
 module.exports = contactRepo
