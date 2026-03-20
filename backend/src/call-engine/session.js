@@ -279,8 +279,12 @@ class CallSession {
     } catch (err) {
       console.error(`[Session ${this.sessionId}] ❌ Speak error:`, err.message, err.response?.data || '')
     } finally {
-      // Wait for audio to finish playing on device before accepting input
-      await new Promise(r => setTimeout(r, 800))
+      // Estimate playback duration: ~150ms per word + 500ms buffer
+      // 8kHz PCM16 = 16000 bytes/sec, typical TTS ~100-150ms/word
+      const wordCount = text.split(/\s+/).length
+      const estimatedMs = Math.max(2000, wordCount * 150 + 800)
+      console.log(`[Session ${this.sessionId}] ⏳ Waiting ${estimatedMs}ms for audio playback (${wordCount} words)`)
+      await new Promise(r => setTimeout(r, estimatedMs))
       this.agentSpeaking = false
     }
   }
