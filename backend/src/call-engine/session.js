@@ -248,12 +248,21 @@ class CallSession {
     } catch (err) {
       console.error(`[Session ${this.sessionId}] ❌ Speak error:`, err.message, err.response?.data || '')
     } finally {
-      // Estimate playback duration: ~150ms per word + 500ms buffer
-      // 8kHz PCM16 = 16000 bytes/sec, typical TTS ~100-150ms/word
-      const wordCount = text.split(/\s+/).length
-      const estimatedMs = Math.max(2000, wordCount * 150 + 800)
-      console.log(`[Session ${this.sessionId}] ⏳ Waiting ${estimatedMs}ms for audio playback (${wordCount} words)`)
-      await new Promise(r => setTimeout(r, estimatedMs))
+      // Wait for audio to finish playing
+      // 8kHz mulaw: ~125 bytes/ms. Sarvam returns compressed audio.
+      // Use chars as proxy: ~50ms/char for Gujarati speech, max 6s
+      const chars  = text.length
+      const waitMs = Math.min(Math.max(chars * 50 + 200, 1200), 6000)
+      console.log(`[Session ${this.sessionId}] ⏳ Audio wait: ${waitMs}ms (${chars} chars)`)
+      // Release early if user starts speaking (VAD detects voice)
+      const startWait = Date.now()
+      while (Date.now() - startWait < waitMs) {
+        if (this.vad?.isSpeaking) {
+          console.log(`[Session ${this.sessionId}] 🎤 User started speaking — releasing lock early`)
+          break
+        }
+        await new Promise(r => setTimeout(r, 100))
+      }
       this.agentSpeaking = false
     }
   }
