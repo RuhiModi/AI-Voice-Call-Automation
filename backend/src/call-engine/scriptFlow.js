@@ -312,17 +312,33 @@ class ScriptFlowExecutor {
       return this._goTo(bestEdge.next_state)
     }
 
-    // ── 4. No match — re-ask (max 2 times) ───────────────────
+    // ── 4. No match — smart default or re-ask ───────────────────
+    // If state has exactly 2 edges (yes/no style) and user gave substantial input
+    // AND input is not a refusal → default to first positive edge
+    const isRefusal = matchesAny(lower, ['nahi','na','naa','nathi','no','no details',
+      'nahi aapi shaktu','haalo nahi','hal nahi','vishay nathi','vaat nahi',
+      'હાલ નહીં','નહીં','ના','નથી'])
+
+    if (state.edges.length === 2 && lower.length > 3 && !isRefusal) {
+      // User said something substantial but not a refusal → take positive branch
+      const posEdge = state.edges.find(e =>
+        !matchesAny(norm(e.text), ['nahi','na','nathi','no','nai','hal nahi','ná','ná,']) &&
+        !norm(e.text).includes('નહીં') && !norm(e.text).includes('નથી')
+      ) || state.edges[0]
+      console.log(`[ScriptFlow] ➡️ Defaulting to positive edge: "${posEdge.text}" → ${posEdge.next_state}`)
+      this.consecutiveMisses = 0
+      return this._goTo(posEdge.next_state)
+    }
+
     this.consecutiveMisses++
     this.confusionCount++
 
     if (this.consecutiveMisses >= 3) {
-      // After 3 misses — just re-ask one more time, no LLM
       this.consecutiveMisses = 0
       console.log(`[ScriptFlow] ❓ 3 misses — re-asking without LLM`)
     }
 
-    // First miss — politely re-ask same question
+    // Re-ask the current question politely
     const reask = { gu: 'માફ કરશો, હું સમજ્યો નહીં. ', hi: 'माफ़ करें, मैं समझ नहीं पाया। ', en: 'Sorry, I did not understand. ' }
     console.log(`[ScriptFlow] ❓ Miss #${this.consecutiveMisses} — re-asking`)
     return {
