@@ -281,11 +281,27 @@ class ScriptFlowExecutor {
 
     // Also try yes/no detection against first/second edge
     if ((!bestEdge || bestScore < MATCH_THRESHOLD) && state.edges.length >= 1) {
-      if (matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('हा')) {
-        bestEdge  = state.edges[0]
+      const isYes = matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('हा')
+      const isNo  = matchesAny(lower, NO_WORDS)  || lower.includes('ના') || lower.includes('ना')
+
+      if (isNo) {
+        // Find edge whose text contains no-words, else pick last edge
+        const noEdge = state.edges.find(e =>
+          matchesAny(e.text, NO_WORDS) ||
+          norm(e.text).includes('ના') || norm(e.text).includes('na') ||
+          norm(e.text).includes('baki') || norm(e.text).includes('nathi') ||
+          norm(e.text).includes('બાકી') || norm(e.text).includes('નથી')
+        )
+        bestEdge  = noEdge || state.edges[state.edges.length - 1]
         bestScore = 0.7
-      } else if (matchesAny(lower, NO_WORDS) || lower.includes('ના') || lower.includes('ना')) {
-        bestEdge  = state.edges[state.edges.length - 1]
+      } else if (isYes) {
+        // Find edge whose text contains yes-words, else pick first edge
+        const yesEdge = state.edges.find(e =>
+          matchesAny(e.text, YES_WORDS) ||
+          norm(e.text).includes('હા') || norm(e.text).includes('ha') ||
+          norm(e.text).includes('thayu') || norm(e.text).includes('થયું')
+        )
+        bestEdge  = yesEdge || state.edges[0]
         bestScore = 0.7
       }
     }
