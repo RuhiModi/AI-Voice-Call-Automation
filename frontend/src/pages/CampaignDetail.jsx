@@ -311,13 +311,25 @@ export default function CampaignDetail() {
     setActionLoading(true)
     try {
       if (campaign.status === 'active') {
-        await campaignApi.pause(id); toast.success('Campaign paused')
+        await campaignApi.pause(id)
+        toast.success('Campaign paused')
+      } else if (campaign.status === 'completed') {
+        // Relaunch — reset contacts and start again
+        await campaignApi.launch(id)
+        toast.success('Campaign relaunched! 🚀')
       } else {
-        await campaignApi.launch(id); toast.success('Campaign launched! 🚀')
+        const res = await campaignApi.launch(id)
+        if (res.data.scheduled_at) {
+          toast.success(`Campaign scheduled for ${new Date(res.data.scheduled_at).toLocaleString('en-IN')} 📅`)
+        } else {
+          toast.success('Campaign launched! 🚀')
+        }
       }
       await loadAll()
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Action failed')
+      const msg = err.response?.data?.error || 'Action failed'
+      toast.error(msg)
+      console.error('Launch error:', err.response?.data)
     } finally { setActionLoading(false) }
   }
 
