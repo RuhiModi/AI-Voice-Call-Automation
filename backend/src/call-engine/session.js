@@ -1,418 +1,507 @@
-// src/call-engine/scriptFlow.js
-//
-// RETELL-STYLE NODE EXECUTOR
-// Each node has: prompt (what agent says) + edges (what user might say → where to go)
-//
-// Flow:
-//   1. Agent speaks current node's prompt
-//   2. Waits for user input
-//   3. Matches user input against node's options/edges
-//   4. Moves to matched next_state
-//   5. If no match after 2 tries → re-asks same question
-//   6. Global handlers (busy/DNC/wrong number) always checked first
-//
-// Script format (from PDF/DOCX/JSON):
-// { flow: [
-//   { id: "intro",      prompt: "...", options: ["હા", "ના"] },
-//   { id: "task_check", prompt: "...", options: ["પૂર્ણ થયું", "બાકી છે"] },
-//   { id: "task_done",  prompt: "...", options: [] },   ← terminal
-// ]}
+// src/call-engine/session.js
+// 🎙 THE BRAIN — manages each live call from connection to end.
+// Coordinates: STT → LLM → TTS → DB saves → Google Sheets
+const { v4: uuidv4 }    = require('uuid')
+const { createSTTHandler, VoiceActivityDetector } = require('./stt/index')
+const { streamTTSToSocket }   = require('./tts/index')
+const { parseRescheduleTime } = require('./llm/index')
+const { parseScript, ScriptFlowExecutor } = require('./scriptFlow')
+const { AnnouncementFlowExecutor }         = require('./announcementFlow')
+const callRepo     = require('../repositories/call.repo')
+const contactRepo  = require('../repositories/contact.repo')
+const campaignRepo = require('../repositories/campaign.repo')
+const userRepo     = require('../repositories/user.repo')
+const { appendToGoogleSheet } = require('../integrations/googleSheets')
+const { deliverWebhook }      = require('../services/webhookDelivery')
 
-'use strict'
+// All active call sessions — key: sessionId, value: CallSession
+const activeSessions = new Map()
 
-// ─────────────────────────────────────────────────────────────
-// LANGUAGE KEYWORDS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+class CallSession {
+  constructor(contact, campaign, wsSocket) {
+    this.sessionId = uuidv4()
+    this.contact   = contact
+    this.campaign  = campaign
+    this.wsSocket  = wsSocket
 
-const YES_WORDS  = ['ha','haa','han','haan','yes','ok','okay','sure','bilkul','sahi','theek','kem nahi','zarur','हा','हां','हाँ','ہاں','હા','જી','ji','haji','ji ha','haa ji','han ji']
-const NO_WORDS   = ['na','naa','nahi','nai','no','nope','nathi','baki','bakii','pending','nai thayu','nathi thayu','ના','ना','نہیں','બાકી','નથી','હજી']
-const BUSY_WORDS = ['busy','vyast','baad mein','call back','pachhi','later','kal','saanje','time nathi','samay nahi','hu vyast','abhi nahi','thodi der','व्यस्त','बाद में']
-const DNC_WORDS  = ['band karo','mat karo','remove','do not call','stop calling','nahi chahiye','naraj','faltu','bekaar']
-const WRONG_WORDS= ['wrong number','galat number','khotho','wrong','galat','koi nahi','yahan nahi']
-const REPEAT_WORDS = ['repeat','again','fari','pheri','samjhyu nahi','sunta nahi','clear nahi','avaz nathi','pardon','what','shun']
+    this.language      = campaign.language_priority || 'gu'
+    this.transcript    = []   // Full conversation [{role, content}]
+    this.flowExecutor   = null  // Script flow executor
+    this.collectedData = {}   // Data gathered during the call
+    this.llmUsed       = false  // Whether LLM was activated at all
+    this.llmTurns      = 0      // How many turns LLM handled
+    this.isActive      = true
+    this.startTime     = Date.now()
+    this.answeredAt    = null   // set when call is actually answered (Vobiz charges from here)
 
-// ─────────────────────────────────────────────────────────────
-// NORMALIZE — lowercase, strip punctuation
-// ─────────────────────────────────────────────────────────────
+    this.sttHandler    = null
+    this.vad           = null
+    this.audioBuffer   = Buffer.alloc(0)
+    this.agentSpeaking = false  // true while TTS is playing — mutes STT input
+  }
 
-function norm(text) {
-  return (text || '')
-    .toLowerCase()
-    .replace(/[।,.!?;:""'']/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+  // ── Start the call ─────────────────────────────────────────
+  async start() {
+    console.log(`[Session ${this.sessionId}] 📞 Call starting | WS ready: ${this.wsSocket?.readyState}`)
 
-function includes(haystack, needle) {
-  return norm(haystack).includes(norm(needle))
-}
+    try {
+      await callRepo.create(this.contact.id, this.campaign.id, this.sessionId)
+      activeSessions.set(this.sessionId, this)
 
-function matchesAny(text, words) {
-  return words.some(w => includes(text, w))
-}
+      // Small delay — let WebSocket fully establish before sending audio
+      await new Promise(r => setTimeout(r, 500))
 
-// ─────────────────────────────────────────────────────────────
-// OPTION MATCHING
-// How well does user's response match a scripted option?
-// Returns score 0.0–1.0
-// ─────────────────────────────────────────────────────────────
-
-function scoreMatch(userText, optionText) {
-  const u = norm(userText)
-  const o = norm(optionText)
-  if (!u || !o) return 0
-
-  if (u === o)          return 1.0   // exact
-  if (u.includes(o))    return 0.9   // option inside user text
-  if (o.includes(u))    return 0.85  // user text inside option
-
-  // Word overlap
-  const uWords = u.split(' ').filter(w => w.length > 1)
-  const oWords = o.split(' ').filter(w => w.length > 1)
-  if (!uWords.length || !oWords.length) return 0
-  const hits = uWords.filter(uw => oWords.some(ow => ow.includes(uw) || uw.includes(ow)))
-  return hits.length / Math.max(uWords.length, oWords.length)
-}
-
-const MATCH_THRESHOLD = 0.3
-
-// ─────────────────────────────────────────────────────────────
-// BUILD STATE MAP
-// Converts flat flow array → map of states with explicit routing
-// Each option gets a next_state — if not specified, guessed from
-// option text keywords vs state IDs in flow
-// ─────────────────────────────────────────────────────────────
-
-function buildStateMap(flowArray) {
-  const stateIds = flowArray.map(n => n.id)
-  const states   = {}
-
-  flowArray.forEach((node, idx) => {
-    const nextId = flowArray[idx + 1]?.id || 'end'
-
-    const edges = (node.options || []).map(opt => {
-      if (typeof opt === 'object' && opt !== null) {
-        // Object format: { text, next_state } — explicit routing from parser
-        const next = opt.next_state || nextId
-        return { text: String(opt.text || opt.label || '').trim(), next_state: next }
+      if (!this.wsSocket || this.wsSocket.readyState !== 1) {
+        console.error(`[Session ${this.sessionId}] ❌ WebSocket not open! State: ${this.wsSocket?.readyState}`)
+        await this.endCall('failed')
+        return
       }
-      // String option — infer routing
-      const next = inferNextState(opt, stateIds, idx, flowArray)
-      return { text: String(opt).trim(), next_state: next }
-    }).filter(e => e.text.length >= 1)
 
-    states[node.id] = {
-      prompt:       node.prompt || '',
-      edges,
-      default_next: nextId,
-      terminal:     edges.length === 0,  // no options = terminal, ends call
+      console.log(`[Session ${this.sessionId}] ✅ WebSocket open — starting state machine flow`)
+
+      // Pick executor based on campaign type
+      const campaignType = this.campaign?.campaign_type || 'survey'
+
+      if (campaignType === 'announcement') {
+        // Personalized message + ack flow (e.g. driver route notifications)
+        this.flowExecutor = new AnnouncementFlowExecutor(this.campaign, this.contact)
+        console.log(`[Session ${this.sessionId}] 📢 Announcement flow loaded`)
+      } else {
+        // Survey / verification flow — driven by PDF state machine
+        const pdfTexts = this.campaign?.flow_config || null
+        this.flowExecutor = new ScriptFlowExecutor(pdfTexts)
+        const src = pdfTexts ? '📄 PDF' : '⚙️ Fallback'
+        console.log(`[Session ${this.sessionId}] 📋 Script flow loaded (${src}) — states: ${this.flowExecutor.stateOrder?.join(' → ') || 'none'}`)
+        if (pdfTexts?.flow) {
+          console.log(`[Session ${this.sessionId}] 🗺 Flow options sample:`, JSON.stringify(pdfTexts.flow[0]?.options?.slice(0,2)))
+        }
+      }
+
+      // Give executor the contact info for name verification
+      if (this.flowExecutor.setContact) {
+        this.flowExecutor.setContact(
+          this.contact,
+          this.campaign.persona_name,
+          this.language
+        )
+      }
+
+      // Speak name verification opening — then STOP and wait for user
+      const opening = this.flowExecutor.getNameVerifyOpening
+        ? this.flowExecutor.getNameVerifyOpening()
+        : this.flowExecutor.getOpening()
+      this.transcript.push({ role: 'assistant', content: opening })
+      await this.speak(opening)
+
+      this._setupSTT()
+      this._setupVAD()
+
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Start error:`, err)
+      await this.endCall('failed')
+    }
+  }
+
+  // ── Setup STT (Sarvam or Google, via index.js) ─────────────
+  _setupSTT() {
+    this.sttHandler = createSTTHandler(
+      async (text, detectedLang) => {
+        if (!this.isActive) return
+        this.language = detectedLang
+        console.log(`[Session ${this.sessionId}] User (${detectedLang}): "${text}"`)
+        this.transcript.push({ role: 'user', content: text })
+        await this._processUserInput(text)
+      },
+      async (err) => {
+        console.error(`[Session ${this.sessionId}] STT error:`, err.message)
+        // Restart STT stream on recoverable errors (Google streaming only)
+        if (this.isActive && this.sttHandler?.provider === 'google' && err.code !== 11) {
+          setTimeout(() => { if (this.isActive) this._setupSTT() }, 1000)
+        }
+      },
+      this.language
+    )
+  }
+
+  // ── Voice Activity Detector ────────────────────────────────
+  _setupVAD() {
+    this.vad = new VoiceActivityDetector(async () => {
+      console.log(`[Session ${this.sessionId}] 🔇 Silence detected — flushing STT buffer`)
+      if (this.sttHandler?.provider === 'sarvam') {
+        await this.sttHandler.flush()
+      } else if (this.audioBuffer.length > 0 && this.sttHandler && !this.sttHandler.destroyed) {
+        this.sttHandler.write(this.audioBuffer)
+        this.audioBuffer = Buffer.alloc(0)
+      }
+    }, 400)  // Reduced from 900ms for faster response
+  }
+
+  // ── Receive audio from WebSocket ───────────────────────────
+  receiveAudio(audioData) {
+    if (!this.isActive) return
+    const mulawBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData)
+    if (!this._audioLogCount) this._audioLogCount = 0
+    if (this._audioLogCount++ < 3) {
+      console.log(`[Session ${this.sessionId}] 🎤 Receiving audio: ${mulawBuffer.length} bytes (mulaw)`)
+    }
+
+    // Vobiz sends mulaw audio — convert to PCM16 for STT processing
+    const { mulawToPcm16 } = require('./tts/audioConvert')
+    const buffer = mulawToPcm16(mulawBuffer)
+
+    // VAD decides if user is speaking
+    this.vad?.processChunk(buffer)
+
+    if (this.sttHandler?.provider === 'sarvam') {
+      // Only buffer audio when user is actually speaking — prevents huge silent buffers
+      if (this.vad?.isSpeaking) {
+        this.sttHandler.write(buffer)
+      }
+    } else {
+      // Google: send in 3200-byte chunks (200ms at 8kHz 16-bit)
+      this.audioBuffer = Buffer.concat([this.audioBuffer, buffer])
+      const CHUNK_SIZE = 3200
+      while (this.audioBuffer.length >= CHUNK_SIZE) {
+        if (this.sttHandler && !this.sttHandler.destroyed) {
+          this.sttHandler.write(this.audioBuffer.slice(0, CHUNK_SIZE))
+        }
+        this.audioBuffer = this.audioBuffer.slice(CHUNK_SIZE)
+      }
+    }
+  }
+
+  // ── Process user input through LLM ────────────────────────
+  async _processUserInput(userText) {
+    // Ignore input while agent is speaking — prevents echo/barge-in
+    if (this.agentSpeaking) {
+      console.log(`[Session ${this.sessionId}] 🔇 Ignored input (agent speaking): "${userText.substring(0,30)}"`)
+      return
+    }
+    // Ignore if flow already done
+    if (this.flowExecutor?.done) {
+      console.log(`[Session ${this.sessionId}] 🔇 Ignored input (flow done): "${userText.substring(0,30)}"`)
+      return
+    }
+    try {
+      // ── 0. Post-LLM resume for announcement flow ─────────────
+      // After LLM handled one turn, next input goes back to announcement executor
+      if (this._postLLMPending && this.flowExecutor instanceof AnnouncementFlowExecutor) {
+        this._postLLMPending = false
+        const resumeResult = this.flowExecutor.resumeAfterLLM(userText)
+        this.transcript.push({ role: 'assistant', content: resumeResult.text })
+        await this.speak(resumeResult.text)
+        if (resumeResult.action === 'end') await this._handleAction(resumeResult)
+        return
+      }
+
+      // ── 1. Flow executor (ScriptFlow or AnnouncementFlow) ─────
+      const flowResult = this.flowExecutor.process(userText)
+
+      if (!flowResult.useLLM) {
+        // Sync collected data
+        const summary = this.flowExecutor.getSummary()
+        this.collectedData = { ...this.collectedData, ...(summary.collectedData || {}) }
+
+        if (!flowResult.text) {
+          console.log(`[Session ${this.sessionId}] ✅ Flow END reached`)
+          await this._handleAction({ action: 'end' })
+          return
+        }
+
+        this.transcript.push({ role: 'assistant', content: flowResult.text })
+        console.log(`[Session ${this.sessionId}] 📋 Flow [${flowResult.stateId || 'announcement'}]: "${flowResult.text.substring(0,60)}"`)
+        await this.speak(flowResult.text)
+
+        if (flowResult.action === 'end') {
+          // Terminal state — script is done. Wait briefly then end call.
+          // Do NOT call _sayGoodbyeAndHangup — agent already spoke the closing line.
+          console.log(`[Session ${this.sessionId}] 🏁 Terminal state reached — ending call`)
+          await new Promise(r => setTimeout(r, 1500))
+          await this.endCall('completed')
+          return
+        }
+
+        if (flowResult.action && flowResult.action !== 'continue') {
+          await this._handleAction(flowResult)
+        }
+        return
+      }
+
+      // ── 2. No LLM — pure IVR mode ─────────────────────────────
+      // Flow already re-asked the question — just log and wait
+      this.llmUsed  = false
+      console.log(`[Session ${this.sessionId}] ❓ Off-script input ignored — waiting for valid response`)
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Process input error:`, err)
+    }
+  }
+
+  // ── Speak text via TTS ─────────────────────────────────────
+  async speak(text) {
+    if (!this.isActive || !text) return
+    console.log(`[Session ${this.sessionId}] 🗣️ Speaking: "${text.substring(0,60)}..." | WS state: ${this.wsSocket?.readyState} | Lang: ${this.language}`)
+    this.agentSpeaking = true
+    try {
+      await streamTTSToSocket(text, this.language, this.wsSocket)
+      console.log(`[Session ${this.sessionId}] ✅ Audio sent successfully`)
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] ❌ Speak error:`, err.message, err.response?.data || '')
+    } finally {
+      // Estimate playback duration: ~150ms per word + 500ms buffer
+      // 8kHz PCM16 = 16000 bytes/sec, typical TTS ~100-150ms/word
+      const wordCount = text.split(/\s+/).length
+      const estimatedMs = Math.max(2000, wordCount * 150 + 800)
+      console.log(`[Session ${this.sessionId}] ⏳ Waiting ${estimatedMs}ms for audio playback (${wordCount} words)`)
+      await new Promise(r => setTimeout(r, estimatedMs))
+      this.agentSpeaking = false
+    }
+  }
+
+  // ── Handle LLM action ──────────────────────────────────────
+  async _handleAction({ action, reschedule_time }) {
+    switch (action) {
+      case 'reschedule': {
+        const scheduledAt = await parseRescheduleTime(reschedule_time)
+        if (scheduledAt) {
+          await contactRepo.scheduleCallback(this.contact.id, scheduledAt)
+          await callRepo.insertCallback(this.contact.id, this.campaign.id, scheduledAt, reschedule_time)
+          console.log(`[Session ${this.sessionId}] 📅 Callback scheduled: ${scheduledAt}`)
+        }
+        await this.endCall('rescheduled')
+        break
+      }
+      case 'transfer': {
+        await this._transferToHuman()
+        break
+      }
+      case 'dnc': {
+        await contactRepo.markDNC(this.contact.id)
+        console.log(`[Session ${this.sessionId}] 🚫 DNC: ${this.contact.phone}`)
+        await this.endCall('dnc')
+        break
+      }
+      case 'end': {
+        await this._sayGoodbyeAndHangup()
+        break
+      }
+      // 'continue' → do nothing, wait for next user input
+    }
+  }
+
+  // ── Say goodbye then hang up ───────────────────────────────
+  async _sayGoodbyeAndHangup() {
+    try {
+      const goodbyes = {
+        gu: 'આભાર! તમારો સમય આપવા બદલ ધન્યવાદ. આવજો!',
+        hi: 'धन्यवाद! आपका समय देने के लिए शुक्रिया। नमस्ते!',
+        en: 'Thank you for your time. Have a great day. Goodbye!',
+      }
+      const goodbye = goodbyes[this.language] || goodbyes.en
+      console.log(`[Session ${this.sessionId}] 👋 Saying goodbye: "${goodbye}"`)
+      this.transcript.push({ role: 'assistant', content: goodbye })
+      await this.speak(goodbye)
+      // Wait for audio to finish playing before hanging up
+      await new Promise(r => setTimeout(r, 1500))
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Goodbye error:`, err.message)
+    }
+    await this.endCall('completed')
+  }
+
+  // ── Transfer to human agent ────────────────────────────────
+  async _transferToHuman() {
+    const agentNumber = process.env.HUMAN_AGENT_NUMBER
+    if (agentNumber) {
+      try {
+        const { transferCall } = require('../telephony')
+        await transferCall(this.sessionId, agentNumber, this.campaign?._vobizCreds || {})
+        console.log(`[Session ${this.sessionId}] 👤 Transferred to: ${agentNumber}`)
+      } catch (err) {
+        console.error(`[Session ${this.sessionId}] Transfer error:`, err.message)
+      }
+    }
+    await this.endCall('transferred')
+  }
+
+  // ── End call + save everything ─────────────────────────────
+  async endCall(outcome = 'completed') {
+    if (!this.isActive) return
+    this.isActive = false
+
+    const duration   = Math.floor((Date.now() - this.startTime) / 1000)
+    // billedSec = full duration from ringing start (billing starts when call is initiated)
+    const billedSec  = this.answeredAt
+      ? Math.floor((Date.now() - this.startTime) / 1000)  // ringing-start billing
+      : null
+    console.log(`[Session ${this.sessionId}] 📵 Ended: ${outcome} (${duration}s)`)
+
+    try {
+      // Pull final summary from flow executor
+      const flowSummary = this.flowExecutor?.getSummary?.() || {}
+      this.collectedData = { ...this.collectedData, ...(flowSummary.collectedData || {}) }
+
+      await callRepo.update(this.sessionId, {
+        outcome,
+        duration_sec:      duration,
+        billed_sec:        billedSec,
+        ringing_at:        new Date(this.startTime).toISOString(),
+        answered_at:       this.answeredAt ? new Date(this.answeredAt).toISOString() : null,
+        language_detected: this.language,
+        transcript:        JSON.stringify(this.transcript),
+        collected_data:    JSON.stringify(this.collectedData),
+        ended_at:          new Date().toISOString(),
+        confusion_count:   this.flowExecutor?.confusionCount || 0,
+        acknowledged:      flowSummary.acknowledged ?? null,
+        campaign_type:     this.campaign?.campaign_type || null,
+        llm_used:          this.llmUsed,
+        llm_turns:         this.llmTurns,
+      })
+
+      await contactRepo.updateStatus(this.contact.id, 'completed', outcome)
+      await campaignRepo.incrementCompleted(this.campaign.id)
+
+      // Write to Google Sheets if connected
+      if (this.campaign.google_sheet_id) {
+        const user = await userRepo.findById(this.campaign.user_id)
+        if (user?.google_sheets_token) {
+          await appendToGoogleSheet(
+            user.google_sheets_token,
+            this.campaign.google_sheet_id,
+            this.contact, outcome, this.language, duration, this.collectedData
+          ).catch(err => console.error('[Sheets] Error:', err.message))
+        }
+      }
+
+      // Deliver to external webhook if configured
+      if (this.campaign.webhook_url) {
+        const callLog = {
+          session_id:      this.sessionId,
+          outcome,
+          duration_sec:    duration,
+          language_detected: this.language,
+          collected_data:  JSON.stringify(this.collectedData),
+          acknowledged:    flowSummary.acknowledged ?? null,
+          confusion_count: this.flowExecutor?.confusionCount || 0,
+          llm_used:        this.llmUsed,
+          ended_at:        new Date().toISOString(),
+        }
+        deliverWebhook(this.campaign, this.contact, callLog)
+          .catch(err => console.error('[Webhook] Delivery error:', err.message))
+      }
+
+      // Mark campaign complete if no more pending
+      const stats   = await campaignRepo.getStats(this.campaign.id)
+      const pending = parseInt(stats.pending) + parseInt(stats.calling) + parseInt(stats.scheduled)
+      if (pending === 0 && this.campaign.status === 'active') {
+        await campaignRepo.updateStatus(this.campaign.id, 'completed')
+        console.log(`✅ Campaign completed: ${this.campaign.name}`)
+        // Fire campaign completion webhook
+        if (this.campaign.webhook_url) {
+          const { deliverCampaignWebhook } = require('../services/webhookDelivery')
+          deliverCampaignWebhook(this.campaign)
+            .catch(err => console.error('[Webhook] Campaign summary error:', err.message))
+        }
+      }
+    } catch (err) {
+      console.error(`[Session ${this.sessionId}] Save error:`, err)
+    } finally {
+      this.sttHandler?.destroy?.()
+      this.vad?.destroy()
+      activeSessions.delete(this.sessionId)
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WebSocket Connection Handler
+// Called from server.js when a telephony provider connects.
+// ═══════════════════════════════════════════════════════════════
+async function handleWebSocketConnection(ws, req) {
+  // Extract sessionId from URL: /ws/call/{sessionId} or /ws/{sessionId}
+  const parts     = req.url.split('/')
+  const sessionId = parts[parts.length - 1]
+
+  if (!sessionId) { ws.close(); return }
+  console.log(`[WS] New connection: ${sessionId}`)
+
+  let session = activeSessions.get(sessionId)
+
+  if (session) {
+    session.wsSocket = ws
+    await session.start()
+  } else {
+    // Session not in memory — check DB (edge case: server restart mid-call)
+    console.log(`[WS] Session ${sessionId} not in memory, checking DB...`)
+    try {
+      const row = await callRepo.findBySession(sessionId)
+      if (!row) { console.log(`[WS] No call log for ${sessionId}`); ws.close(); return }
+
+      const contact  = { id: row.contact_id, phone: row.phone, variables: row.variables }
+      const campaign = {
+        id: row.campaign_id, name: row.name, language_priority: row.language_priority,
+        script_content: row.script_content, system_prompt: row.system_prompt,
+        persona_name: row.persona_name, persona_tone: row.persona_tone,
+        data_fields: row.data_fields, handoff_keywords: row.handoff_keywords,
+        caller_id: row.caller_id, user_id: row.user_id,
+        google_sheet_id: row.google_sheet_id, campaign_type: row.campaign_type,
+      }
+      session = new CallSession(contact, campaign, ws)
+      session.sessionId = sessionId
+      await session.start()
+    } catch (err) {
+      console.error('[WS] DB lookup error:', err)
+      ws.close()
+      return
+    }
+  }
+
+  let _msgCount = 0
+  ws.on('message', (data) => {
+    const s = activeSessions.get(sessionId)
+    if (!s?.isActive) return
+
+    _msgCount++
+    // Log first 3 messages to see exact format from Vobiz
+    if (_msgCount <= 3) {
+      const preview = Buffer.isBuffer(data) ? `[Binary ${data.length} bytes]` : data.toString().substring(0, 200)
+      console.log(`[WS] Message #${_msgCount} from Vobiz: ${preview}`)
+    }
+
+    // Try JSON first
+    try {
+      const msg = JSON.parse(data.toString())
+      if (_msgCount <= 3) console.log(`[WS] Parsed event: "${msg.event}" | keys: ${Object.keys(msg).join(',')}`)
+
+      if (msg.event === 'media' && msg.media?.payload) {
+        const audioBuffer = Buffer.from(msg.media.payload, 'base64')
+        s.receiveAudio(audioBuffer)
+      } else if (msg.event === 'start') {
+        console.log(`[WS] Stream started | streamSid: ${msg.streamSid || msg.stream_id || 'N/A'}`)
+        console.log(`[WS] Start details:`, JSON.stringify(msg).substring(0, 300))
+      } else if (msg.event === 'stop') {
+        console.log(`[WS] Stream stopped`)
+      } else if (msg.event === 'connected') {
+        console.log(`[WS] Connected event received`)
+      } else {
+        console.log(`[WS] Unknown event: "${msg.event}" | full: ${JSON.stringify(msg).substring(0,200)}`)
+      }
+    } catch (e) {
+      // Raw binary — treat as mulaw directly
+      if (_msgCount <= 3) console.log(`[WS] Raw binary audio: ${data.length} bytes`)
+      s.receiveAudio(Buffer.isBuffer(data) ? data : Buffer.from(data))
     }
   })
 
-  return states
+  ws.on('close', async () => {
+    console.log(`[WS] Disconnected: ${sessionId}`)
+    const s = activeSessions.get(sessionId)
+    if (s?.isActive) await s.endCall('disconnected')
+  })
+
+  ws.on('error', (err) => {
+    console.error(`[WS] Error (${sessionId}):`, err.message)
+  })
 }
 
-// Infer which state an option leads to
-// Logic: look for a state whose ID contains keywords matching the option
-function inferNextState(optText, stateIds, currentIdx, flowArray) {
-  const lower = norm(optText)
-
-  // Yes/positive → next state in sequence
-  if (matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('पूर्ण') || lower.includes('complete') || lower.includes('done') || lower.includes('thayu')) {
-    return flowArray[currentIdx + 1]?.id || 'end'
-  }
-
-  // No/negative → look for pending/problem/no state
-  if (matchesAny(lower, NO_WORDS) || lower.includes('baki') || lower.includes('pending') || lower.includes('nathi') || lower.includes('nahi')) {
-    const neg = flowArray.find((n, i) => i > currentIdx &&
-      (n.id.includes('pending') || n.id.includes('problem') || n.id.includes('no_') || n.id.includes('_no') || n.id.includes('baki'))
-    )
-    return neg?.id || flowArray[currentIdx + 1]?.id || 'end'
-  }
-
-  // Can't give details → no_details state
-  if (lower.includes('nahi aap') || lower.includes('vishay') || lower.includes('no detail') || lower.includes('shakto nathi')) {
-    const nd = flowArray.find(n => n.id.includes('no_detail') || n.id.includes('no_info'))
-    return nd?.id || flowArray[currentIdx + 1]?.id || 'end'
-  }
-
-  // Default: next in sequence
-  return flowArray[currentIdx + 1]?.id || 'end'
-}
-
-// ─────────────────────────────────────────────────────────────
-// GLOBAL REAL-LIFE HANDLERS
-// Checked before any state logic — handle universal situations
-// ─────────────────────────────────────────────────────────────
-
-const GLOBAL_HANDLERS = [
-  {
-    id: 'wrong_number', words: WRONG_WORDS, action: 'end',
-    say: { gu: 'માફ કરશો, ખોટો નંબર. અસુવિધા માટે ક્ષમા. આભાર.', hi: 'माफ़ करें, गलत नंबर। धन्यवाद।', en: 'Sorry, wrong number. Thank you.' },
-  },
-  {
-    id: 'busy', words: BUSY_WORDS, action: 'reschedule',
-    say: { gu: 'ઠીક છે. ક્યારે ફોન કરી શકીએ?', hi: 'ठीक है। कब कॉल करें?', en: 'No problem. When should we call back?' },
-  },
-  {
-    id: 'dnc', words: DNC_WORDS, action: 'dnc',
-    say: { gu: 'સમજ્યા. આ નંબર પર હવે કૉલ નહીં આવે.', hi: 'समझ गए। अब कॉल नहीं करेंगे।', en: 'Understood. We will not call again.' },
-  },
-  {
-    id: 'repeat', words: REPEAT_WORDS, action: 'repeat',
-    say: null,  // handled specially — re-speaks current prompt
-  },
-]
-
-// ─────────────────────────────────────────────────────────────
-// SCRIPT FLOW EXECUTOR
-// ─────────────────────────────────────────────────────────────
-
-class ScriptFlowExecutor {
-  constructor(flowConfig = null) {
-    this.collectedData     = {}
-    this.confusionCount    = 0
-    this.consecutiveMisses = 0
-    this.done              = false
-    this.language          = 'gu'
-    this.contactName       = null
-    this.personaName       = 'Priya'
-
-    // Build state machine from flow config
-    if (flowConfig?.flow && Array.isArray(flowConfig.flow) && flowConfig.flow.length > 0) {
-      this.flowArray   = flowConfig.flow
-      this.states      = buildStateMap(flowConfig.flow)
-      this.stateOrder  = flowConfig.flow.map(n => n.id)
-      console.log(`[ScriptFlow] ✅ Loaded ${this.flowArray.length} states: ${this.stateOrder.join(' → ')}`)
-    } else {
-      // Minimal fallback
-      this.flowArray  = MINIMAL_FALLBACK
-      this.states     = buildStateMap(MINIMAL_FALLBACK)
-      this.stateOrder = MINIMAL_FALLBACK.map(n => n.id)
-      console.log(`[ScriptFlow] ⚠️ No flow config — using minimal fallback`)
-    }
-
-    // Start at name verification state (always injected)
-    this._injectNameVerify()
-    this.currentStateId = '__name_verify'
-  }
-
-  // ── Set contact info (called by session.js) ───────────────
-  setContact(contact, personaName, language) {
-    this.contactName = contact?.variables?.name
-      || contact?.variables?.Name
-      || contact?.variables?.driver_name
-      || null
-    this.personaName = personaName || 'Priya'
-    this.language    = language    || 'gu'
-  }
-
-  // ── Opening line — name verification ─────────────────────
-  getNameVerifyOpening() {
-    const n = this.contactName
-    const p = this.personaName
-    const l = this.language
-    if (l === 'hi') return n ? `नमस्ते! मैं ${p} बोल रही हूं। क्या मैं ${n} जी से बात कर रही हूं?` : `नमस्ते! मैं ${p} बोल रही हूं।`
-    if (l === 'en') return n ? `Hello! This is ${p} calling. Am I speaking with ${n}?` : `Hello! This is ${p} calling.`
-    return n ? `નમસ્તે! હું ${p} બોલું છું. શું હું ${n} સાથે વાત કરી રહી છું?` : `નમસ્તે! હું ${p} બોલું છું.`
-  }
-
-  // Fallback for non-name-verify flows
-  getOpening() {
-    const first = this.states[this.stateOrder[0]]
-    return first?.prompt || 'નમસ્તે!'
-  }
-
-  // ── MAIN PROCESS — called for every user utterance ────────
-  process(userText, language = null) {
-    if (language) this.language = language
-    if (this.done) return { useLLM: false, text: null, action: 'end' }
-
-    const lower = norm(userText)
-
-    // ── 1. Global handlers (busy/wrong/DNC/repeat) ────────────
-    for (const handler of GLOBAL_HANDLERS) {
-      if (!matchesAny(lower, handler.words)) continue
-
-      // Repeat → re-speak current prompt
-      if (handler.id === 'repeat') {
-        const current = this.states[this.currentStateId]
-        const prompt  = current?.prompt || this.getOpening()
-        console.log(`[ScriptFlow] 🔁 Repeat requested`)
-        return { useLLM: false, text: prompt, action: 'continue', stateId: this.currentStateId }
-      }
-
-      console.log(`[ScriptFlow] 🔥 Global: ${handler.id}`)
-      const say = handler.say[this.language] || handler.say.en
-      if (handler.action === 'end' || handler.action === 'dnc') this.done = true
-      return { useLLM: false, text: say, action: handler.action, stateId: this.currentStateId }
-    }
-
-    // ── 2. Name verify state ──────────────────────────────────
-    if (this.currentStateId === '__name_verify') {
-      return this._handleNameVerify(lower, userText)
-    }
-
-    // ── 3. Match against current state's edges ────────────────
-    const state = this.states[this.currentStateId]
-    if (!state) {
-      this.done = true
-      return { useLLM: false, text: null, action: 'end' }
-    }
-
-    // Terminal state (no edges) — end after user acknowledges
-    if (!state.edges || state.edges.length === 0) {
-      console.log(`[ScriptFlow] 🏁 Terminal state ${this.currentStateId} — ending`)
-      this.done = true
-      return { useLLM: false, text: null, action: 'end' }
-    }
-
-    // Find best matching edge
-    let bestEdge  = null
-    let bestScore = 0
-
-    for (const edge of state.edges) {
-      const score = scoreMatch(lower, edge.text)
-      if (score > bestScore) {
-        bestScore = score
-        bestEdge  = edge
-      }
-    }
-
-    // Also try yes/no detection against first/second edge
-    if ((!bestEdge || bestScore < MATCH_THRESHOLD) && state.edges.length >= 1) {
-      if (matchesAny(lower, YES_WORDS) || lower.includes('હા') || lower.includes('हा')) {
-        bestEdge  = state.edges[0]
-        bestScore = 0.7
-      } else if (matchesAny(lower, NO_WORDS) || lower.includes('ના') || lower.includes('ना')) {
-        bestEdge  = state.edges[state.edges.length - 1]
-        bestScore = 0.7
-      }
-    }
-
-    if (bestEdge && bestScore >= MATCH_THRESHOLD) {
-      console.log(`[ScriptFlow] ✅ "${this.currentStateId}" matched edge "${bestEdge.text}" (${bestScore.toFixed(2)}) → ${bestEdge.next_state}`)
-      this.consecutiveMisses = 0
-      return this._goTo(bestEdge.next_state)
-    }
-
-    // ── 4. No match — re-ask (max 2 times) ───────────────────
-    this.consecutiveMisses++
-    this.confusionCount++
-
-    if (this.consecutiveMisses >= 3) {
-      // After 3 misses — just re-ask one more time, no LLM
-      this.consecutiveMisses = 0
-      console.log(`[ScriptFlow] ❓ 3 misses — re-asking without LLM`)
-    }
-
-    // First miss — politely re-ask same question
-    const reask = { gu: 'માફ કરશો, હું સમજ્યો નહીં. ', hi: 'माफ़ करें, मैं समझ नहीं पाया। ', en: 'Sorry, I did not understand. ' }
-    console.log(`[ScriptFlow] ❓ Miss #${this.consecutiveMisses} — re-asking`)
-    return {
-      useLLM:  false,
-      text:    (reask[this.language] || reask.en) + state.prompt,
-      action:  'continue',
-      stateId: this.currentStateId,
-    }
-  }
-
-  // ── Handle name verification ──────────────────────────────
-  _handleNameVerify(lower, userText) {
-    // Wrong number
-    if (matchesAny(lower, WRONG_WORDS)) {
-      this.done = true
-      const say = { gu: 'માફ કરશો, ખોટો નંબર. આભાર.', hi: 'माफ़ करें, गलत नंबर।', en: 'Sorry, wrong number. Thank you.' }
-      return { useLLM: false, text: say[this.language] || say.en, action: 'end' }
-    }
-
-    // Who is calling?
-    if (norm(lower).includes('kon') || norm(lower).includes('kaun') || norm(lower).includes('who') || norm(lower).includes('કોણ')) {
-      const say = {
-        gu: `આ ${this.personaName} છે, સ્ક્રિપ્ટ પ્રમાણે સ્ક્રિપ્ટ. શું ${this.contactName || 'આપ'} ઉપલબ્ધ છો?`,
-        hi: `मैं ${this.personaName} हूं। क्या ${this.contactName || 'आप'} उपलब्ध हैं?`,
-        en: `This is ${this.personaName}. Is ${this.contactName || 'this the right person'} available?`,
-      }
-      return { useLLM: false, text: say[this.language] || say.en, action: 'continue', stateId: '__name_verify' }
-    }
-
-    // Confirmed — move to first real state
-    const firstState = this.stateOrder[0]
-    console.log(`[ScriptFlow] ✅ Name confirmed — starting flow at ${firstState}`)
-    this.consecutiveMisses = 0
-    return this._goTo(firstState)
-  }
-
-  // ── Move to a state and speak its prompt ──────────────────
-  _goTo(nextStateId) {
-    if (!nextStateId || nextStateId === 'end') {
-      this.done = true
-      return { useLLM: false, text: null, action: 'end' }
-    }
-
-    const state = this.states[nextStateId]
-    if (!state) {
-      console.warn(`[ScriptFlow] ⚠️ State "${nextStateId}" not found`)
-      this.done = true
-      return { useLLM: false, text: null, action: 'end' }
-    }
-
-    this.currentStateId = nextStateId
-
-    // Terminal: no edges → end after speaking
-    const isTerminal = !state.edges || state.edges.length === 0
-    const action     = isTerminal ? 'end' : 'continue'
-    if (isTerminal) this.done = true
-
-    console.log(`[ScriptFlow] ▶ ${nextStateId}: "${state.prompt?.substring(0, 60)}"`)
-    return { useLLM: false, text: state.prompt, action, stateId: nextStateId }
-  }
-
-  // ── Inject name verify as first step ─────────────────────
-  _injectNameVerify() {
-    this.states['__name_verify'] = {
-      prompt:       null,  // built dynamically in getNameVerifyOpening()
-      edges:        [],    // handled manually in _handleNameVerify()
-      default_next: this.stateOrder[0] || 'end',
-      terminal:     false,
-    }
-    this.states['__wrong_number'] = {
-      prompt:    null,
-      edges:     [],
-      terminal:  true,
-      default_next: 'end',
-    }
-  }
-
-  getSummary() {
-    return { finalState: this.currentStateId, collectedData: this.collectedData, confusionCount: this.confusionCount }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// MINIMAL FALLBACK FLOW
-// ─────────────────────────────────────────────────────────────
-
-const MINIMAL_FALLBACK = [
-  { id: 'intro', prompt: 'નમસ્તે! શું હું આપનો 1 મિનિટ સમય લઈ શકું?', options: ['હા', 'ના, વ્યસ્ત છું'] },
-  { id: 'main',  prompt: 'આ કૉલ આપની સેવા અંગે છે. શું આપ સ્થિતિ જણાવી શકો?', options: ['સારું છે', 'સમસ્યા છે'] },
-  { id: 'end',   prompt: 'આભાર. આપનો સમય આપવા બદલ ધન્યવાદ. શુભ દિવસ.', options: [] },
-]
-
-// ─────────────────────────────────────────────────────────────
-// CONFUSION PROMPT — for LLM fallback (minimal, focused)
-// ─────────────────────────────────────────────────────────────
-
-function buildConfusionPrompt(currentStateText, userText, language) {
-  const langName = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }[language] || 'Gujarati'
-  return `You are a voice assistant on a phone call in ${langName}.
-The caller said something unexpected: "${userText}"
-You were asking: "${currentStateText}"
-Reply ONLY in JSON: { "text": "<1 short sentence to redirect back>", "action": "continue" }
-Keep under 15 words. Stay on topic.`
-}
-
-// parseScript kept for backward compat
-function parseScript() { return [] }
-
-module.exports = { ScriptFlowExecutor, parseScript, buildConfusionPrompt, MINIMAL_FALLBACK }
+module.exports = { CallSession, activeSessions, handleWebSocketConnection }
