@@ -232,8 +232,26 @@ router.post('/:id/launch', auth, launchRateLimiter, async (req, res, next) => {
     if (campaign.status === 'active') return res.status(400).json({ error: 'Campaign already active' })
     if (campaign.total_contacts === 0) return res.status(400).json({ error: 'Upload contacts first' })
 
+    // Handle scheduled campaigns — don't start immediately if scheduled for future
+    if (campaign.schedule_start) {
+      const scheduleTime = new Date(campaign.schedule_start)
+      const now          = new Date()
+      if (scheduleTime > now) {
+        await campaignRepo.updateStatus(req.params.id, 'scheduled')
+        console.log(`📅 Campaign scheduled for: ${scheduleTime.toISOString()}`)
+        res.json({ message: 'Campaign scheduled', campaign_id: req.params.id, scheduled_at: campaign.schedule_start })
+        return
+      }
+    }
+
+    // Reset contact statuses for relaunch (completed/paused → pending)
+    if (['completed', 'paused'].includes(campaign.status)) {
+      await require('../repositories/contact.repo').resetForRelaunch(req.params.id)
+      console.log(`🔄 Contacts reset for relaunch: ${campaign.name}`)
+    }
+
     await campaignRepo.updateStatus(req.params.id, 'active')
-    schedulerService.launch(campaign)  // Non-blocking — starts in background
+    schedulerService.launch(campaign)
 
     console.log(`🚀 Campaign launched: ${campaign.name}`)
     res.json({ message: 'Campaign launched', campaign_id: req.params.id })
