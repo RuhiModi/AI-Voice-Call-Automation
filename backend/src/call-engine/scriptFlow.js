@@ -300,11 +300,10 @@ class ScriptFlowExecutor {
     this.consecutiveMisses++
     this.confusionCount++
 
-    if (this.consecutiveMisses >= 2) {
-      // After 2 misses — use LLM to handle off-script input
+    if (this.consecutiveMisses >= 3) {
+      // After 3 misses — just re-ask one more time, no LLM
       this.consecutiveMisses = 0
-      console.log(`[ScriptFlow] 🤖 2 misses — LLM fallback`)
-      return { useLLM: true }
+      console.log(`[ScriptFlow] ❓ 3 misses — re-asking without LLM`)
     }
 
     // First miss — politely re-ask same question
