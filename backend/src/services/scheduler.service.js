@@ -59,9 +59,9 @@ cron.schedule('*/30 * * * * *', async () => {
 // Every minute — check for campaigns scheduled to start now
 cron.schedule('* * * * *', async () => {
   try {
-    const db = require('../db/db')
+    const pool = require('../db/supabaseClient')
     const campaignRepo = require('../repositories/campaign.repo')
-    const { rows } = await db.query(
+    const { rows } = await pool.query(
       `SELECT * FROM campaigns
        WHERE status = 'scheduled'
        AND schedule_start <= NOW()
