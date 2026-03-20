@@ -78,22 +78,28 @@ function parseAnyFormat(text) {
     } catch {}
   }
 
-  // 2. Conditional/arrow format ("Option → state" or "Option → description")
+  // 2. ID-first format — check BEFORE arrow format
+  // (state_id alone on a line, followed by prompt, then options with arrows)
+  if (hasIdFirstFormat(text)) {
+    return parseIdFirstFormat(text)
+  }
+
+  // 3. Conditional/arrow format ("Option → state" or "Option → description")
   if (hasArrowRouting(text)) {
     return parseConditionalFormat(text)
   }
 
-  // 3. Agent/User markers
+  // 4. Agent/User markers
   if (hasAgentUserMarkers(text)) {
     return parseAgentUserFormat(text)
   }
 
-  // 4. Table format
+  // 5. Table format
   if (hasTableStructure(text)) {
     return parseTableFormat(text)
   }
 
-  // 5. Plain paragraphs
+  // 6. Plain paragraphs
   return parsePlainFormat(text)
 }
 
@@ -433,6 +439,86 @@ function parseAgentUserFormat(text) {
 
   if (flow.length > 0) flow[flow.length - 1].options = []
   return { flow, source: 'agent_user_format' }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FORMAT: ID-FIRST (state_id on its own line)
+//
+//   intro
+//   Agent prompt here
+//   User option → next_state
+//
+//   task_check
+//   Another question?
+//   Yes → task_done
+//   No → task_pending
+// ─────────────────────────────────────────────────────────────
+
+function hasIdFirstFormat(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  // Check if any line is a standalone snake_case/lowercase word (state ID)
+  return lines.some((line, i) => {
+    return /^[a-z][a-z0-9_]{1,30}$/.test(line) &&
+           i < lines.length - 1 &&
+           lines[i + 1]?.length > 5  // followed by content
+  })
+}
+
+function parseIdFirstFormat(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const flow  = []
+  let current = null
+
+  const flush = () => {
+    if (!current) return
+    const prompt = current.promptLines.join(' ').trim()
+    if (!prompt) return
+    flow.push({
+      id:      current.id,
+      prompt,
+      options: current.options,
+    })
+    current = null
+  }
+
+  for (const line of lines) {
+    // State ID line: standalone lowercase word/snake_case
+    if (/^[a-z][a-z0-9_]{1,30}$/.test(line)) {
+      flush()
+      current = { id: line, promptLines: [], options: [] }
+      continue
+    }
+
+    if (!current) {
+      // Before first state ID — treat as intro
+      current = { id: 'intro', promptLines: [], options: [] }
+    }
+
+    // Arrow option
+    if (line.includes('→') || line.includes('->')) {
+      const m = line.match(/^(.+?)\s*(?:→|->)\s*(.+)$/)
+      if (m) {
+        const optText = m[1].replace(/^[-•*]\s*/, '').trim()
+        const target  = m[2].trim()
+        if (optText.length >= 2 && optText.length <= 80) {
+          current.options.push({ text: optText, next_state: slugify(target) })
+        }
+      }
+      continue
+    }
+
+    // Prompt line
+    if (!/^(script|options|user responses)\s*:/i.test(line)) {
+      current.promptLines.push(line)
+    }
+  }
+  flush()
+
+  // Last state = terminal
+  if (flow.length > 0) flow[flow.length - 1].options = []
+
+  console.log('[ParseScript] ✅ ID-first format → ' + flow.length + ' states')
+  return { flow, source: 'id_first_format' }
 }
 
 // ─────────────────────────────────────────────────────────────
