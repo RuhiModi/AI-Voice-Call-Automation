@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { dashboardApi } from '../hooks/api'
+import axios from 'axios'
 import toast from 'react-hot-toast'
 import {
   Phone, TrendingUp, Clock, CheckCircle2, XCircle,
   PhoneMissed, AlertTriangle, Plus, ArrowRight,
   RefreshCw, Zap, BarChart2, Calendar, ChevronRight,
-  PhoneCall, Mic, Users
+  PhoneCall, Mic, Users, Wallet
 } from 'lucide-react'
+
+// ── API base ────────────────────────────────────────────────────
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const TYPE_EMOJI = {
   announcement: '📢',
@@ -18,18 +22,18 @@ const TYPE_EMOJI = {
 }
 
 const OUTCOME_META = {
-  completed:  { label: 'Answered',   color: 'text-green-600',  bg: 'bg-green-50',  dot: 'bg-green-500'  },
-  no_answer:  { label: 'No Answer',  color: 'text-gray-500',   bg: 'bg-gray-100',  dot: 'bg-gray-400'   },
-  busy:       { label: 'Busy',       color: 'text-orange-600', bg: 'bg-orange-50', dot: 'bg-orange-400' },
-  failed:     { label: 'Failed',     color: 'text-red-500',    bg: 'bg-red-50',    dot: 'bg-red-400'    },
-  transferred:{ label: 'Transferred',color: 'text-blue-600',   bg: 'bg-blue-50',   dot: 'bg-blue-400'   },
+  completed:  { label: 'Answered',    color: 'text-green-600',  bg: 'bg-green-50',  dot: 'bg-green-500'  },
+  no_answer:  { label: 'No Answer',   color: 'text-gray-500',   bg: 'bg-gray-100',  dot: 'bg-gray-400'   },
+  busy:       { label: 'Busy',        color: 'text-orange-600', bg: 'bg-orange-50', dot: 'bg-orange-400' },
+  failed:     { label: 'Failed',      color: 'text-red-500',    bg: 'bg-red-50',    dot: 'bg-red-400'    },
+  transferred:{ label: 'Transferred', color: 'text-blue-600',   bg: 'bg-blue-50',   dot: 'bg-blue-400'   },
 }
 
 const STATUS_META = {
-  active:    { label: 'Live',      dot: 'bg-green-500 animate-pulse', text: 'text-green-700', bg: 'bg-green-50 border-green-200' },
-  paused:    { label: 'Paused',    dot: 'bg-yellow-400',              text: 'text-yellow-700', bg: 'bg-yellow-50 border-yellow-200' },
-  completed: { label: 'Done',      dot: 'bg-gray-400',                text: 'text-gray-500',  bg: 'bg-gray-100 border-gray-200' },
-  draft:     { label: 'Draft',     dot: 'bg-gray-300',                text: 'text-gray-400',  bg: 'bg-gray-50 border-gray-200' },
+  active:    { label: 'Live',   dot: 'bg-green-500 animate-pulse', text: 'text-green-700',  bg: 'bg-green-50 border-green-200'   },
+  paused:    { label: 'Paused', dot: 'bg-yellow-400',              text: 'text-yellow-700', bg: 'bg-yellow-50 border-yellow-200' },
+  completed: { label: 'Done',   dot: 'bg-gray-400',                text: 'text-gray-500',   bg: 'bg-gray-100 border-gray-200'    },
+  draft:     { label: 'Draft',  dot: 'bg-gray-300',                text: 'text-gray-400',   bg: 'bg-gray-50 border-gray-200'     },
 }
 
 function fmtDuration(sec) {
@@ -42,7 +46,7 @@ function fmtTime(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
   const now = new Date()
-  const diffMs = now - d
+  const diffMs  = now - d
   const diffMin = Math.floor(diffMs / 60000)
   if (diffMin < 1)  return 'just now'
   if (diffMin < 60) return `${diffMin}m ago`
@@ -51,11 +55,64 @@ function fmtTime(iso) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
+function fmtINR(n) {
+  return '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function getContactName(variables) {
   if (!variables) return null
   return variables.name || variables.driver_name || variables.Name || null
 }
 
+// ── Wallet alert bar ────────────────────────────────────────────
+function WalletBar({ balance, navigate }) {
+  if (balance === null) return null
+  const isLow    = balance < 100
+  const isDanger = balance < 20
+
+  if (!isLow) return null   // only show when low or danger
+
+  return (
+    <div
+      onClick={() => navigate('/dashboard/billing')}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 20px', borderRadius: 14, cursor: 'pointer',
+        background: isDanger ? '#fff1f1' : '#fffbeb',
+        border: `1px solid ${isDanger ? '#fecaca' : '#fde68a'}`,
+        transition: 'all 0.2s',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 10,
+          background: isDanger ? '#fee2e2' : '#fef9c3',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <AlertTriangle size={16} color={isDanger ? '#ef4444' : '#f59e0b'} />
+        </div>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: isDanger ? '#991b1b' : '#92400e', margin: 0 }}>
+            {isDanger
+              ? 'Critically low wallet balance — calls may stop soon!'
+              : 'Wallet balance is running low'}
+          </p>
+          <p style={{ fontSize: 11, color: isDanger ? '#ef4444' : '#f59e0b', margin: 0 }}>
+            {fmtINR(balance)} remaining
+          </p>
+        </div>
+      </div>
+      <span style={{
+        padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+        background: isDanger ? '#ef4444' : '#f59e0b', color: '#fff',
+      }}>
+        Add Money →
+      </span>
+    </div>
+  )
+}
+
+// ── Stat card ───────────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, sub, accent, warn }) {
   return (
     <div className={`bg-white rounded-2xl border p-5 flex flex-col gap-1 transition-all hover:shadow-md
@@ -75,12 +132,11 @@ function StatCard({ icon: Icon, label, value, sub, accent, warn }) {
   )
 }
 
-function ProgressBar({ pct, status }) {
-  const color = 'bg-gradient-to-r from-green-400 to-emerald-500'
+function ProgressBar({ pct }) {
   return (
     <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
       <div
-        className={`h-2 rounded-full transition-all duration-700 ${color}`}
+        className="h-2 rounded-full transition-all duration-700 bg-gradient-to-r from-green-400 to-emerald-500"
         style={{ width: `${Math.min(pct, 100)}%` }}
       />
     </div>
@@ -109,17 +165,29 @@ function UsageBar({ used, limit, label }) {
   )
 }
 
+// ── Main component ──────────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [refresh, setRefresh] = useState(0)
+  const [data,          setData]          = useState(null)
+  const [loading,       setLoading]       = useState(true)
+  const [refresh,       setRefresh]       = useState(0)
+  const [walletBalance, setWalletBalance] = useState(null)   // ← NEW
 
   const load = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await dashboardApi.overview()
-      setData(res.data)
+      const [dashRes] = await Promise.all([
+        dashboardApi.overview(),
+      ])
+      setData(dashRes.data)
+
+      // ── Fetch wallet balance ───────────────────────────────
+      const token = localStorage.getItem('token')
+      if (token) {
+        axios.get(`${API}/wallet`, { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => setWalletBalance(parseFloat(r.data?.wallet_balance ?? 0)))
+          .catch(() => {}) // silent fail — wallet just won't show
+      }
     } catch (err) {
       toast.error('Could not load dashboard')
     } finally {
@@ -140,9 +208,7 @@ export default function Dashboard() {
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-6 animate-pulse">
         <div className="h-8 bg-gray-100 rounded-xl w-48" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[0,1,2,3].map(i => (
-            <div key={i} className="h-28 bg-gray-100 rounded-2xl" />
-          ))}
+          {[0,1,2,3].map(i => <div key={i} className="h-28 bg-gray-100 rounded-2xl" />)}
         </div>
         <div className="h-48 bg-gray-100 rounded-2xl" />
         <div className="h-64 bg-gray-100 rounded-2xl" />
@@ -151,18 +217,18 @@ export default function Dashboard() {
   }
 
   const {
-    active_campaigns  = [],
-    recent_campaigns  = [],
-    today             = {},
-    month             = {},
-    totals            = {},
-    recent_calls      = [],
-    usage             = {},
+    active_campaigns = [],
+    recent_campaigns = [],
+    today            = {},
+    month            = {},
+    totals           = {},
+    recent_calls     = [],
+    usage            = {},
   } = data || {}
 
-  const plan     = usage?.plan     || {}
-  const limits   = usage?.limits   || {}
-  const usage_   = usage?.usage    || {}
+  const plan      = usage?.plan    || {}
+  const limits    = usage?.limits  || {}
+  const usage_    = usage?.usage   || {}
   const callsWarn = limits.calls_per_month
     ? (usage_.calls_this_month / limits.calls_per_month) >= 0.8
     : false
@@ -172,7 +238,7 @@ export default function Dashboard() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 pb-16 space-y-8">
 
-      {/* ── Header ───────────────────────────────────────────── */}
+      {/* ── Header ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">Dashboard</h1>
@@ -198,7 +264,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Plan usage warning ────────────────────────────────── */}
+      {/* ── Wallet alert bar (only shows when balance < ₹100) ── */}
+      <WalletBar balance={walletBalance} navigate={navigate} />
+
+      {/* ── Plan usage warning ─────────────────────────────────── */}
       {callsWarn && (
         <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl flex items-center gap-3">
           <AlertTriangle size={18} className="text-orange-500 flex-shrink-0" />
@@ -214,12 +283,12 @@ export default function Dashboard() {
             to="/dashboard/billing"
             className="text-xs font-bold text-orange-700 border border-orange-300 px-3 py-1.5 rounded-xl hover:bg-orange-100 transition-all whitespace-nowrap"
           >
-            Upgrade Plan
+            Add Money
           </Link>
         </div>
       )}
 
-      {/* ── Stat cards ───────────────────────────────────────── */}
+      {/* ── Stat cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard
           icon={Phone}
@@ -245,21 +314,21 @@ export default function Dashboard() {
           sub={today.total_calls ? 'Per call today' : month.total_calls > 0 ? 'Per call this month' : 'Per answered call'}
         />
         <StatCard
-          icon={BarChart2}
-          label="This Month"
-          value={month.total_calls ?? 0}
-          sub={month.total_minutes ? `${month.total_minutes} min used` : 'No calls yet'}
-          warn={callsWarn}
+          icon={Wallet}
+          label="Wallet Balance"
+          value={walletBalance !== null ? fmtINR(walletBalance) : '—'}
+          sub="Click to add money"
+          warn={walletBalance !== null && walletBalance < 100}
         />
       </div>
 
-      {/* ── Active / paused campaigns ─────────────────────────── */}
+      {/* ── Active / paused campaigns ──────────────────────────── */}
       {active_campaigns.length > 0 && (
         <section>
           <div className="flex items-center gap-2 mb-4">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <h2 className="text-sm font-black uppercase tracking-widest text-gray-500">
-              Live & Paused
+              Live &amp; Paused
             </h2>
           </div>
           <div className="space-y-3">
@@ -288,7 +357,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <ProgressBar pct={c.progress_pct} status={c.status} />
+                  <ProgressBar pct={c.progress_pct} />
 
                   <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
                     <span className="flex items-center gap-1">
@@ -316,7 +385,7 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* ── Main grid: Recent campaigns + Recent calls ────────── */}
+      {/* ── Main grid ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Recent campaigns */}
@@ -437,7 +506,7 @@ export default function Dashboard() {
         </section>
       </div>
 
-      {/* ── Plan usage ───────────────────────────────────────────── */}
+      {/* ── Plan usage ─────────────────────────────────────────── */}
       {plan.name && (
         <section className="bg-white rounded-2xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-5">
@@ -454,7 +523,7 @@ export default function Dashboard() {
               to="/dashboard/billing"
               className="text-xs font-bold text-gray-700 border border-gray-300 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all"
             >
-              {plan.name === 'Free' || plan.name === 'Starter' ? '⬆ Upgrade' : 'View Billing'}
+              View Wallet
             </Link>
           </div>
           <div className="space-y-4">
@@ -472,7 +541,7 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* ── Today's breakdown ────────────────────────────────────── */}
+      {/* ── Today's breakdown ──────────────────────────────────── */}
       {today.total_calls > 0 && (
         <section>
           <h2 className="text-sm font-black uppercase tracking-widest text-gray-500 mb-4">
@@ -480,10 +549,10 @@ export default function Dashboard() {
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Answered',  value: today.completed,  icon: CheckCircle2, color: 'text-green-600',  bg: 'bg-green-50'  },
-              { label: 'No Answer', value: today.no_answer,  icon: PhoneMissed,  color: 'text-gray-500',   bg: 'bg-gray-50'   },
-              { label: 'Busy',      value: today.busy,       icon: Phone,        color: 'text-orange-500', bg: 'bg-orange-50' },
-              { label: 'Failed',    value: today.failed,     icon: XCircle,      color: 'text-red-400',    bg: 'bg-red-50'    },
+              { label: 'Answered',  value: today.completed, icon: CheckCircle2, color: 'text-green-600',  bg: 'bg-green-50'  },
+              { label: 'No Answer', value: today.no_answer, icon: PhoneMissed,  color: 'text-gray-500',   bg: 'bg-gray-50'   },
+              { label: 'Busy',      value: today.busy,      icon: Phone,        color: 'text-orange-500', bg: 'bg-orange-50' },
+              { label: 'Failed',    value: today.failed,    icon: XCircle,      color: 'text-red-400',    bg: 'bg-red-50'    },
             ].map(({ label, value, icon: Icon, color, bg }) => (
               <div key={label} className={`${bg} rounded-2xl p-4 border border-gray-100`}>
                 <div className="flex items-center gap-2 mb-2">
