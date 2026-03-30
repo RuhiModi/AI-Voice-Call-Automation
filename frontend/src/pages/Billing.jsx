@@ -1,630 +1,495 @@
-import { useState, useEffect } from 'react'
-import { billingApi } from '../hooks/api'
+import { useState, useEffect, useRef } from 'react'
+import axios from 'axios'
 import toast from 'react-hot-toast'
-import { Phone, Clock, IndianRupee, Calendar, TrendingUp, Download, ChevronDown, Receipt } from 'lucide-react'
+import {
+  Wallet, Plus, ArrowDownLeft, ArrowUpRight, Clock,
+  TrendingDown, IndianRupee, RefreshCw, CheckCircle2,
+  XCircle, AlertTriangle, Zap, Phone, BarChart2,
+  ChevronRight, Info, Shield
+} from 'lucide-react'
 
-// ── helpers ───────────────────────────────────────────────────
-function fmt(n, dec = 2) { return Number(n || 0).toFixed(dec) }
-function fmtINR(n)  { return '₹' + Number(n || 0).toFixed(2) }
-function fmtInt(n)  { return Number(n || 0).toLocaleString('en-IN') }
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const MIN_RECHARGE = 500
 
-function monthOptions() {
-  const opts = []
-  const now  = new Date()
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const val   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const label = d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-    opts.push({ val, label })
-  }
-  return opts
+function api(path, opts = {}) {
+  const token = localStorage.getItem('token')
+  return axios({ url: API + path, headers: { Authorization: `Bearer ${token}` }, ...opts })
+    .then(r => r.data)
 }
 
-// ── Stat card ─────────────────────────────────────────────────
-function StatCard({ label, value, sub, icon: Icon, accent }) {
-  return (
-    <div className="card p-5">
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-[12px] font-medium" style={{ color: '#8a8a8a' }}>{label}</p>
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: accent + '15' }}>
-          <Icon size={15} style={{ color: accent }} />
-        </div>
-      </div>
-      <p className="text-[26px] font-bold leading-none mb-1" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>{value}</p>
-      {sub && <p className="text-[11px]" style={{ color: '#a8a8a8' }}>{sub}</p>}
-    </div>
-  )
+function fmtINR(n) {
+  return '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+function fmtDate(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function fmtShortDate(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
-// ── GST Summary box ───────────────────────────────────────────
-function GSTBox({ subtotal, gst, total, breakdown, breakdownRates, minutes }) {
-  const rows = breakdown ? [
-    { label: 'Calling & Connectivity',  rate: breakdownRates?.calling,      amt: breakdown?.calling },
-    { label: 'AI Processing',            rate: breakdownRates?.ai,           amt: breakdown?.ai },
-    { label: 'Platform & Infrastructure',rate: breakdownRates?.infra,        amt: breakdown?.infra },
-    { label: 'Service Fee',              rate: breakdownRates?.service_fee,  amt: breakdown?.service_fee },
-  ] : []
-
+// ── Stat chip ──────────────────────────────────────────────────
+function Chip({ icon: Icon, label, value, color = '#6366f1' }) {
   return (
-    <div className="card overflow-hidden mb-6">
-      <div className="px-6 py-4" style={{ borderBottom: '1px solid #f5f1ea' }}>
-        <div className="flex items-center gap-2">
-          <Receipt size={15} style={{ color: '#8a8a8a' }} />
-          <h2 className="font-semibold text-[15px]" style={{ color: '#1a1a1a' }}>Amount Summary</h2>
-        </div>
-        <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>Charges for selected period including 18% GST</p>
+    <div style={{
+      background: '#fff', border: '1px solid #f0f0f0', borderRadius: 16,
+      padding: '18px 22px', display: 'flex', alignItems: 'center', gap: 14,
+    }}>
+      <div style={{ width: 44, height: 44, borderRadius: 12, background: color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={20} color={color} />
       </div>
-
-      {/* Breakdown table */}
-      {rows.length > 0 && (
-        <div style={{ borderBottom: '1px solid #f5f1ea' }}>
-          <div className="grid px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider"
-            style={{ gridTemplateColumns: '1fr 100px 100px', background: '#1a1a1a', color: '#fff' }}>
-            <span>Component</span>
-            <span className="text-right">Rate/min</span>
-            <span className="text-right">Amount</span>
-          </div>
-          {rows.map((row, i) => (
-            <div key={i} className="grid px-6 py-3 text-[13px]"
-              style={{ gridTemplateColumns: '1fr 100px 100px', borderBottom: i < rows.length - 1 ? '1px solid #f5f1ea' : 'none', background: '#faf8f4' }}>
-              <span style={{ color: '#3d3d3d' }}>{row.label}</span>
-              <span className="text-right" style={{ color: '#a8a8a8' }}>₹{Number(row.rate||0).toFixed(2)}</span>
-              <span className="text-right font-medium">{fmtINR(row.amt)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Totals */}
-      <div className="px-6 py-5">
-        <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <p className="text-[13px]" style={{ color: '#6b6b6b' }}>Subtotal</p>
-            <p className="text-[14px] font-semibold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtINR(subtotal)}</p>
-          </div>
-          <div className="flex justify-between items-center">
-            <p className="text-[13px]" style={{ color: '#6b6b6b' }}>GST @ 18%</p>
-            <p className="text-[14px] font-semibold tabular-nums" style={{ color: '#6b6b6b' }}>{fmtINR(gst)}</p>
-          </div>
-          <div className="flex justify-between items-center pt-3" style={{ borderTop: '2px solid #f0f0f0' }}>
-            <p className="text-[14px] font-bold" style={{ color: '#1a1a1a' }}>Total (incl. GST)</p>
-            <p className="text-[20px] font-bold tabular-nums" style={{ color: '#f5a623', fontFamily: '"DM Serif Display",serif' }}>{fmtINR(total)}</p>
-          </div>
-        </div>
+      <div>
+        <p style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</p>
+        <p style={{ fontSize: 22, fontWeight: 800, color: '#111', letterSpacing: '-0.03em', fontFamily: '"DM Serif Display", serif' }}>{value}</p>
       </div>
     </div>
   )
 }
 
-// ── Mini bar chart ────────────────────────────────────────────
-function BarChart({ data }) {
-  if (!data?.length) return <div className="text-center py-8 text-[13px]" style={{ color: '#c4c4c4' }}>No activity data yet</div>
-  const max = Math.max(...data.map(d => d.calls), 1)
+// ── Transaction row ─────────────────────────────────────────────
+function TxRow({ tx }) {
+  const isCredit = tx.type === 'recharge' || tx.type === 'refund' || tx.type === 'adjustment'
+  const meta = {
+    recharge:   { icon: ArrowDownLeft, label: 'Wallet recharge', color: '#10b981' },
+    deduct:     { icon: ArrowUpRight,  label: 'Call deduction',  color: '#f43f5e' },
+    refund:     { icon: ArrowDownLeft, label: 'Refund',          color: '#10b981' },
+    adjustment: { icon: ArrowDownLeft, label: 'Adjustment',      color: '#f59e0b' },
+  }[tx.type] || { icon: ArrowUpRight, label: tx.type, color: '#6b7280' }
+
   return (
-    <div className="flex items-end gap-1.5 h-20">
+    <div style={{
+      display: 'grid', gridTemplateColumns: '44px 1fr auto auto', alignItems: 'center',
+      gap: 14, padding: '14px 0', borderBottom: '1px solid #f9fafb',
+    }}>
+      <div style={{ width: 36, height: 36, borderRadius: 10, background: meta.color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <meta.icon size={16} color={meta.color} />
+      </div>
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 2 }}>
+          {tx.description || meta.label}
+        </p>
+        <p style={{ fontSize: 11, color: '#9ca3af' }}>{fmtDate(tx.created_at)}</p>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: isCredit ? '#10b981' : '#f43f5e' }}>
+          {isCredit ? '+' : '-'}{fmtINR(tx.amount)}
+        </p>
+      </div>
+      <div style={{ textAlign: 'right', minWidth: 90 }}>
+        <p style={{ fontSize: 11, color: '#9ca3af' }}>Bal: {fmtINR(tx.balance_after)}</p>
+      </div>
+    </div>
+  )
+}
+
+// ── Mini spend bar chart ────────────────────────────────────────
+function SpendChart({ data }) {
+  if (!data?.length) return (
+    <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d1d5db', fontSize: 13 }}>
+      No spending data yet
+    </div>
+  )
+  const max = Math.max(...data.map(d => parseFloat(d.amount)), 0.01)
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 80 }}>
       {data.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-          <div className="w-full rounded-sm transition-all duration-300"
-            style={{
-              height: `${Math.max(4, (d.calls / max) * 72)}px`,
-              background: d.calls > 0 ? '#f5a623' : '#f5f1ea',
-              minHeight: '4px',
-            }} />
-          <div className="absolute bottom-full mb-1 hidden group-hover:flex flex-col items-center z-10 pointer-events-none">
-            <div className="text-[10px] font-semibold px-2 py-1 rounded-md whitespace-nowrap"
-              style={{ background: '#1a1a1a', color: '#fff' }}>
-              {d.calls} calls · {fmt(d.seconds / 60, 1)} min
-            </div>
-            <div className="w-0 h-0" style={{ borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: '4px solid #1a1a1a' }} />
-          </div>
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
+          title={`${fmtShortDate(d.day)}: ${fmtINR(d.amount)} · ${d.calls} calls`}>
+          <div style={{
+            width: '100%', borderRadius: 3,
+            height: Math.max(4, (parseFloat(d.amount) / max) * 72),
+            background: parseFloat(d.amount) > 0
+              ? `linear-gradient(to top, #6366f1, #818cf8)` : '#f3f4f6',
+            minHeight: 4,
+            transition: 'all 0.3s',
+          }} />
         </div>
       ))}
     </div>
   )
 }
 
-export default function Billing() {
-  const months = monthOptions()
-  const [selectedMonth, setSelectedMonth] = useState(months[0].val)
-  const [summary,      setSummary]      = useState(null)
-  const [monthly,      setMonthly]      = useState([])
-  const [activity,     setActivity]     = useState([])
-  const [invoices,     setInvoices]     = useState([])
-  const [usageSummary, setUsageSummary] = useState(null)
-  const [plans,        setPlans]        = useState([])
-  const [upgrading,    setUpgrading]    = useState(null)
-  const [generating,   setGenerating]   = useState(false)
-  const [genMonth,     setGenMonth]     = useState('')
-  const [loading,      setLoading]      = useState(true)
-  const [tab,          setTab]          = useState('plan')
+// ── Recharge modal ─────────────────────────────────────────────
+function RechargeModal({ onClose, onSuccess, rate }) {
+  const PRESETS = [500, 1000, 2000, 5000]
+  const [amount, setAmount] = useState('')
+  const [loading, setLoading] = useState(false)
+  const inputRef = useRef()
 
-  useEffect(() => {
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const num = parseFloat(amount) || 0
+  const gst = Math.round(num * 0.18 * 100) / 100
+  const total = Math.round((num + gst) * 100) / 100
+  const estimatedMins = rate > 0 ? Math.floor(num / rate) : 0
+
+  async function submit() {
+    if (num < MIN_RECHARGE) {
+      toast.error(`Minimum recharge is ₹${MIN_RECHARGE}`)
+      return
+    }
     setLoading(true)
-    Promise.all([
-      billingApi.summary(selectedMonth),
-      billingApi.monthly(),
-      billingApi.activity(),
-      billingApi.invoices(),
-      billingApi.usageSummary(),
-      billingApi.plans(),
-    ])
-      .then(([s, m, a, inv, us, pl]) => {
-        setSummary(s.data)
-        setMonthly(m.data.months || [])
-        setActivity(a.data.days  || [])
-        setInvoices(inv.data.invoices || [])
-        setUsageSummary(us.data)
-        setPlans(pl.data.plans || [])
-      })
-      .catch(err => console.error('Billing load error:', err))
-      .finally(() => setLoading(false))
-  }, [selectedMonth])
-
-  if (loading) return (
-    <div className="p-6 lg:p-10 max-w-5xl mx-auto">
-      <div className="skeleton h-8 w-48 mb-8 rounded-xl" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[1,2,3,4].map(i => <div key={i} className="skeleton h-24 rounded-2xl" />)}
-      </div>
-      <div className="skeleton h-64 rounded-2xl" />
-    </div>
-  )
-
-  const { totals, campaigns = [], period, rate_per_min } = summary || {}
+    try {
+      const res = await api('/wallet/recharge', { method: 'POST', data: { amount: num } })
+      toast.success(res.message || 'Wallet recharged!')
+      onSuccess(res.new_balance)
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Recharge failed')
+    } finally { setLoading(false) }
+  }
 
   return (
-    <div className="p-6 lg:p-10 max-w-5xl mx-auto animate-fade-in">
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>Billing</h1>
-          <p className="text-sm mt-1" style={{ color: '#8a8a8a' }}>Usage and charges</p>
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }} onClick={onClose}>
+      <div style={{
+        background: '#fff', borderRadius: 24, padding: 32, maxWidth: 440, width: '100%',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+      }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: '#6366f115', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Wallet size={22} color="#6366f1" />
+          </div>
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#111', margin: 0 }}>Add Money</h2>
+            <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Minimum ₹{MIN_RECHARGE}</p>
+          </div>
         </div>
-        <div className="relative">
-          <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
-            className="input-field pr-9 appearance-none cursor-pointer font-medium text-[13px]"
-            style={{ paddingRight: '36px', minWidth: '160px' }}>
-            {months.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#a8a8a8' }} />
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: '#f5f1ea' }}>
-        {[['plan', 'Plan & Usage'], ['usage', 'Usage'], ['invoices', 'Invoices']].map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)}
-            className="px-5 py-2 rounded-lg text-[13px] font-medium transition-all"
-            style={tab === key
-              ? { background: '#fff', color: '#1a1a1a', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
-              : { color: '#8a8a8a' }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── PLAN & USAGE TAB ── */}
-      {tab === 'plan' && usageSummary && (
-        <>
-          {/* Current plan banner */}
-          <div className="card p-6 mb-5">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
-                    style={{ background: usageSummary.plan.id === 'free' ? '#f5f1ea' : '#dcf3e5', color: usageSummary.plan.id === 'free' ? '#6b6b6b' : '#228248' }}>
-                    {usageSummary.plan.name} Plan
-                  </span>
-                  {usageSummary.plan.id === 'free' && (
-                    <span className="text-[11px]" style={{ color: '#a8a8a8' }}>· Limited features</span>
-                  )}
-                </div>
-                <p className="text-[13px] mt-2" style={{ color: '#6b6b6b' }}>
-                  Rate: <strong style={{ color: '#1a1a1a' }}>₹{fmt(usageSummary.plan.rate_per_min)}/min</strong> + 18% GST · Billed from ringing
-                  {usageSummary.plan.id === 'free' && (
-                    <span className="ml-2 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: '#dcf3e5', color: '#228248' }}>
-                      ₹10 free credit included
-                    </span>
-                  )}
-                </p>
-              </div>
-              {true && (
-                <button onClick={() => setTab('upgrade')}
-                  className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
-                  ⬆️ Upgrade Plan
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Usage meters */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-            {/* Calls */}
-            <div className="card p-5">
-              <div className="flex justify-between items-center mb-3">
-                <div>
-                  <p className="font-semibold text-[14px]" style={{ color: '#1a1a1a' }}>Calls This Month</p>
-                  <p className="text-[12px]" style={{ color: '#a8a8a8' }}>Resets on 1st of each month</p>
-                </div>
-                <p className="text-[13px] font-bold tabular-nums" style={{ color: usageSummary.at_limit.calls ? '#e11d48' : '#1a1a1a' }}>
-                  {fmtInt(usageSummary.usage.calls_this_month)}
-                  {usageSummary.limits.calls_per_month && ` / ${fmtInt(usageSummary.limits.calls_per_month)}`}
-                </p>
-              </div>
-              {usageSummary.limits.calls_per_month ? (
-                <>
-                  <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: '#f5f1ea' }}>
-                    <div className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(100, usageSummary.percentages.calls || 0)}%`,
-                        background: usageSummary.at_limit.calls ? '#e11d48' : usageSummary.warnings.calls ? '#f5a623' : '#52b87a',
-                      }} />
-                  </div>
-                  {usageSummary.warnings.calls && !usageSummary.at_limit.calls && (
-                    <p className="text-[11px] font-semibold" style={{ color: '#f5a623' }}>
-                      ⚠️ {usageSummary.percentages.calls}% used — running low
-                    </p>
-                  )}
-                  {usageSummary.at_limit.calls && (
-                    <p className="text-[11px] font-semibold" style={{ color: '#e11d48' }}>
-                      ⛔ Limit reached — campaigns paused until next month or upgrade
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-[12px]" style={{ color: '#52b87a' }}>✅ Unlimited calls</p>
-              )}
-            </div>
-
-            {/* Campaigns */}
-            <div className="card p-5">
-              <div className="flex justify-between items-center mb-3">
-                <div>
-                  <p className="font-semibold text-[14px]" style={{ color: '#1a1a1a' }}>Total Campaigns</p>
-                  <p className="text-[12px]" style={{ color: '#a8a8a8' }}>All campaigns in your account</p>
-                </div>
-                <p className="text-[13px] font-bold tabular-nums" style={{ color: usageSummary.at_limit.campaigns ? '#e11d48' : '#1a1a1a' }}>
-                  {fmtInt(usageSummary.usage.campaigns_total)}
-                  {usageSummary.limits.campaigns_limit && ` / ${fmtInt(usageSummary.limits.campaigns_limit)}`}
-                </p>
-              </div>
-              {usageSummary.limits.campaigns_limit ? (
-                <>
-                  <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: '#f5f1ea' }}>
-                    <div className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(100, usageSummary.percentages.campaigns || 0)}%`,
-                        background: usageSummary.at_limit.campaigns ? '#e11d48' : usageSummary.warnings.campaigns ? '#f5a623' : '#52b87a',
-                      }} />
-                  </div>
-                  {usageSummary.at_limit.campaigns && (
-                    <p className="text-[11px] font-semibold" style={{ color: '#e11d48' }}>
-                      ⛔ Limit reached — upgrade to create more campaigns
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-[12px]" style={{ color: '#52b87a' }}>✅ Unlimited campaigns</p>
-              )}
-            </div>
-          </div>
-
-          {/* Other limits */}
-          <div className="card p-5">
-            <p className="font-semibold text-[14px] mb-4" style={{ color: '#1a1a1a' }}>Plan Limits</p>
-            <div className="space-y-3">
-              {[
-                { label: 'Contacts per campaign', value: usageSummary.limits.contacts_per_campaign },
-                { label: 'Team members',           value: usageSummary.limits.team_members_limit },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid #f5f1ea' }}>
-                  <p className="text-[13px]" style={{ color: '#6b6b6b' }}>{label}</p>
-                  <p className="text-[13px] font-semibold" style={{ color: '#1a1a1a' }}>
-                    {value === null ? '∞ Unlimited' : fmtInt(value)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ── UPGRADE TAB ── */}
-      {tab === 'upgrade' && (
-        <div>
-          <div className="flex items-center gap-3 mb-6">
-            <button onClick={() => setTab('plan')} className="btn-secondary" style={{ padding: '8px 14px', fontSize: '12px' }}>← Back</button>
-            <div>
-              <h2 className="font-semibold text-[15px]" style={{ color: '#1a1a1a' }}>Choose a Plan</h2>
-              <p className="text-[12px]" style={{ color: '#a8a8a8' }}>Current: <strong>{usageSummary?.plan?.name}</strong></p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {plans.filter(p => p.id !== 'enterprise' && p.id !== 'pro' && p.id !== 'starter').map(plan => {
-              const isCurrent = plan.id === usageSummary?.plan?.id
-              const isPopular = plan.id === 'growth'
-              return (
-                <div key={plan.id} className="card p-6 relative"
-                  style={isCurrent ? { border: '2px solid #1a1a1a' } : isPopular ? { border: '2px solid #f5a623' } : {}}>
-                  {isPopular && !isCurrent && (
-                    <span className="absolute -top-3 left-6 text-[11px] font-bold px-3 py-1 rounded-full"
-                      style={{ background: '#f5a623', color: '#fff' }}>Most Popular</span>
-                  )}
-                  {isCurrent && (
-                    <span className="absolute -top-3 left-6 text-[11px] font-bold px-3 py-1 rounded-full"
-                      style={{ background: '#1a1a1a', color: '#fff' }}>Current Plan</span>
-                  )}
-                  <p className="font-bold text-[16px] mb-1" style={{ color: '#1a1a1a' }}>{plan.name}</p>
-                  <p className="text-[13px] mb-4" style={{ color: '#6b6b6b' }}>
-                    Usage-based · ₹{fmt(plan.rate_per_min)}/min · No monthly fee
-                  </p>
-                  <div className="space-y-2 mb-5">
-                    {(plan.features || []).filter(f => !f.toLowerCase().includes('team member')).map((f, i) => (
-                      <p key={i} className="text-[12px] flex items-center gap-2" style={{ color: '#3d3d3d' }}>
-                        <span style={{ color: '#52b87a' }}>✓</span> {f}
-                      </p>
-                    ))}
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (isCurrent) return
-                      setUpgrading(plan.id)
-                      try {
-                        await billingApi.upgrade(plan.id)
-                        const us = await billingApi.usageSummary()
-                        setUsageSummary(us.data)
-                        setTab('plan')
-                        toast?.success(`Switched to ${plan.name} plan!`)
-                      } catch (err) {
-                        toast?.error('Upgrade failed')
-                      } finally { setUpgrading(null) }
-                    }}
-                    disabled={isCurrent || upgrading === plan.id}
-                    className={isCurrent ? 'btn-secondary w-full' : 'btn-primary w-full'}
-                    style={{ opacity: isCurrent ? 0.5 : 1 }}>
-                    {upgrading === plan.id ? 'Upgrading...' : isCurrent ? 'Current Plan' : plan.id === 'growth' ? `Switch to ${plan.name} (₹4/min)` : `Switch to ${plan.name} (₹6/min)`}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-          {/* Contact for enterprise */}
-          <div className="card p-6 mt-4 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <p className="font-bold text-[15px]" style={{ color: '#1a1a1a' }}>Need a custom rate?</p>
-              <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>High volume? Contact us for a custom per-minute rate.</p>
-            </div>
-            <button className="btn-secondary" onClick={() => window.open('mailto:billing@voiceai.in')}>
-              Contact Us
+        {/* Preset buttons */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+          {PRESETS.map(p => (
+            <button key={p}
+              onClick={() => setAmount(String(p))}
+              style={{
+                padding: '10px 0', borderRadius: 10, border: '2px solid',
+                borderColor: num === p ? '#6366f1' : '#f0f0f0',
+                background: num === p ? '#6366f110' : '#fff',
+                color: num === p ? '#6366f1' : '#374151',
+                fontWeight: 700, fontSize: 14, cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+              ₹{p.toLocaleString('en-IN')}
             </button>
-          </div>
+          ))}
         </div>
-      )}
 
-      {/* ── USAGE TAB ── */}
-      {tab === 'usage' && (
-        <>
-          {/* Period label */}
-          <div className="flex items-center gap-2 mb-5 px-1">
-            <Calendar size={13} style={{ color: '#a8a8a8' }} />
-            <span className="text-[12px]" style={{ color: '#a8a8a8' }}>
-              {period?.label || months.find(m => m.val === selectedMonth)?.label}
-            </span>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <StatCard label="Total Calls"   value={fmtInt(totals?.calls)}     sub="calls with duration (billed)"       icon={Phone}       accent="#f5a623" />
-            <StatCard label="Total Minutes" value={fmt(totals?.minutes, 1)}   sub="billed duration"       icon={Clock}       accent="#8b5cf6" />
-            <StatCard label="Campaigns"     value={fmtInt(totals?.campaigns)} sub="all your campaigns"    icon={TrendingUp}  accent="#2fa05c" />
-            <StatCard label="Amount + GST"  value={fmtINR(totals?.amount)}    sub={`₹${fmt(usageSummary?.plan?.rate_per_min || rate_per_min)}/min + 18% GST`} icon={IndianRupee} accent="#f43f5e" />
-          </div>
-
-          {/* GST Breakdown */}
-          <GSTBox
-            subtotal={totals?.subtotal}
-            gst={totals?.gst}
-            total={totals?.amount}
-            breakdown={summary?.breakdown}
-            breakdownRates={summary?.breakdown_rates}
-            minutes={totals?.minutes}
+        {/* Custom input */}
+        <div style={{ position: 'relative', marginBottom: 20 }}>
+          <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 18, color: '#6b7280', fontWeight: 700 }}>₹</span>
+          <input
+            ref={inputRef}
+            type="number" min={MIN_RECHARGE} step="100"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            placeholder={`Enter amount (min ₹${MIN_RECHARGE})`}
+            style={{
+              width: '100%', padding: '14px 16px 14px 36px', borderRadius: 12,
+              border: '2px solid #f0f0f0', fontSize: 16, fontWeight: 600, color: '#111',
+              outline: 'none', boxSizing: 'border-box',
+              background: '#fafafa',
+            }}
+            onFocus={e => e.target.style.borderColor = '#6366f1'}
+            onBlur={e => e.target.style.borderColor = '#f0f0f0'}
           />
+        </div>
 
-          {/* Campaign breakdown table */}
-          <div className="card overflow-hidden mb-6">
-            <div className="px-6 py-4" style={{ borderBottom: '1px solid #f5f1ea' }}>
-              <h2 className="font-semibold text-[15px]" style={{ color: '#1a1a1a' }}>Campaign Breakdown</h2>
-              <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>Completed calls only · {period?.label} · All amounts include 18% GST</p>
+        {/* Breakup */}
+        {num > 0 && (
+          <div style={{ background: '#f9fafb', borderRadius: 12, padding: '14px 16px', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: '#6b7280' }}>Amount</span>
+              <span style={{ fontWeight: 600, color: '#111' }}>{fmtINR(num)}</span>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: '#6b7280' }}>GST @ 18%</span>
+              <span style={{ fontWeight: 600, color: '#6b7280' }}>{fmtINR(gst)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, borderTop: '1px solid #e5e7eb', paddingTop: 8 }}>
+              <span style={{ fontWeight: 700, color: '#111' }}>Total Payable</span>
+              <span style={{ fontWeight: 800, color: '#6366f1' }}>{fmtINR(total)}</span>
+            </div>
+            {estimatedMins > 0 && (
+              <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 8, textAlign: 'center' }}>
+                ≈ {estimatedMins.toLocaleString('en-IN')} minutes of calling at ₹{rate}/min
+              </p>
+            )}
+          </div>
+        )}
 
-            {campaigns.length === 0 ? (
-              <div className="p-12 text-center">
-                <p className="text-[13px]" style={{ color: '#c4c4c4' }}>No completed calls this period</p>
-              </div>
+        {/* Info */}
+        <div style={{ display: 'flex', gap: 8, background: '#fffbeb', borderRadius: 10, padding: '10px 12px', marginBottom: 20 }}>
+          <Shield size={14} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 12, color: '#92400e', margin: 0, lineHeight: 1.5 }}>
+            Funds are added instantly. Balance is non-refundable once used.
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose} style={{
+            flex: 1, padding: '13px 0', borderRadius: 12, border: '2px solid #f0f0f0',
+            background: '#fff', color: '#6b7280', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+          }}>Cancel</button>
+          <button onClick={submit} disabled={loading || num < MIN_RECHARGE} style={{
+            flex: 2, padding: '13px 0', borderRadius: 12, border: 'none',
+            background: num >= MIN_RECHARGE ? '#6366f1' : '#e5e7eb',
+            color: num >= MIN_RECHARGE ? '#fff' : '#9ca3af',
+            fontWeight: 700, fontSize: 14, cursor: num >= MIN_RECHARGE ? 'pointer' : 'not-allowed',
+            transition: 'all 0.15s',
+          }}>
+            {loading ? 'Processing...' : `Pay ${num >= MIN_RECHARGE ? fmtINR(total) : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+export default function Billing() {
+  const [wallet,      setWallet]      = useState(null)
+  const [txns,        setTxns]        = useState([])
+  const [dailySpend,  setDailySpend]  = useState([])
+  const [recharges,   setRecharges]   = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [showModal,   setShowModal]   = useState(false)
+  const [activeTab,   setActiveTab]   = useState('transactions') // transactions | recharges
+
+  async function loadAll() {
+    setLoading(true)
+    try {
+      const [w, t, d, r] = await Promise.all([
+        api('/wallet'),
+        api('/wallet/transactions?limit=50'),
+        api('/wallet/daily-spend?days=30'),
+        api('/wallet/recharge-history'),
+      ])
+      setWallet(w)
+      setTxns(t)
+      setDailySpend(d)
+      setRecharges(r)
+    } catch (e) {
+      toast.error('Failed to load wallet data')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadAll() }, [])
+
+  function onRechargeSuccess(newBalance) {
+    setShowModal(false)
+    setWallet(prev => ({ ...prev, wallet_balance: newBalance }))
+    loadAll()
+  }
+
+  const balance = parseFloat(wallet?.wallet_balance || 0)
+  const rate    = parseFloat(wallet?.rate_per_min || 1)
+  const estimatedMins = rate > 0 ? Math.floor(balance / rate) : 0
+  const isLow   = balance < 100
+  const isDanger = balance < 20
+
+  return (
+    <div style={{ padding: '28px 32px', maxWidth: 1100, margin: '0 auto' }}>
+
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 900, color: '#111', margin: 0, letterSpacing: '-0.03em', fontFamily: '"DM Serif Display", serif' }}>
+            Wallet
+          </h1>
+          <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 0' }}>Prepaid balance for your voice calls</p>
+        </div>
+        <button onClick={() => setShowModal(true)} style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px',
+          borderRadius: 12, background: '#6366f1', border: 'none', color: '#fff',
+          fontWeight: 700, fontSize: 14, cursor: 'pointer',
+        }}>
+          <Plus size={16} /> Add Money
+        </button>
+      </div>
+
+      {/* ── Wallet card ── */}
+      <div style={{
+        borderRadius: 24,
+        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)',
+        padding: '32px 36px', marginBottom: 28, position: 'relative', overflow: 'hidden',
+      }}>
+        {/* Decorative circles */}
+        <div style={{ position: 'absolute', top: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
+        <div style={{ position: 'absolute', bottom: -60, right: 80, width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.03)' }} />
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative' }}>
+          <div>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 600, marginBottom: 8, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Available Balance
+            </p>
+            {loading ? (
+              <div style={{ width: 180, height: 52, background: 'rgba(255,255,255,0.1)', borderRadius: 8 }} />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #f5f1ea' }}>
-                      {['Campaign', 'Calls', 'Minutes', 'Subtotal', 'GST (18%)', 'Total'].map(h => (
-                        <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#a8a8a8' }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {campaigns.map((c, i) => (
-                      <tr key={c.campaign_id}
-                        style={{ borderBottom: i < campaigns.length - 1 ? '1px solid #f5f1ea' : 'none' }}
-                        className="hover:bg-[#fdfcfa] transition-colors">
-                        <td className="px-5 py-3.5">
-                          <p className="text-[13px] font-medium" style={{ color: '#1a1a1a' }}>{c.campaign_name}</p>
-                          <p className="text-[11px] mt-0.5" style={{ color: '#a8a8a8', textTransform: 'capitalize' }}>{c.campaign_status}</p>
-                        </td>
-                        <td className="px-5 py-3.5 text-[13px] font-medium tabular-nums" style={{ color: '#3d3d3d' }}>{fmtInt(c.total_calls)}</td>
-                        <td className="px-5 py-3.5 text-[13px] tabular-nums" style={{ color: '#3d3d3d' }}>{fmt(c.total_minutes, 1)} min</td>
-                        <td className="px-5 py-3.5 text-[13px] tabular-nums" style={{ color: '#6b6b6b' }}>{fmtINR(c.subtotal)}</td>
-                        <td className="px-5 py-3.5 text-[13px] tabular-nums" style={{ color: '#6b6b6b' }}>{fmtINR(c.gst)}</td>
-                        <td className="px-5 py-3.5">
-                          <span className="text-[13px] font-bold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtINR(c.amount)}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: '2px solid #f0f0f0', background: '#faf8f4' }}>
-                      <td className="px-5 py-3.5 text-[13px] font-semibold" style={{ color: '#1a1a1a' }}>Total</td>
-                      <td className="px-5 py-3.5 text-[13px] font-semibold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtInt(totals?.calls)}</td>
-                      <td className="px-5 py-3.5 text-[13px] tabular-nums" style={{ color: '#1a1a1a' }}>{fmt(totals?.minutes, 1)} min</td>
-                      <td className="px-5 py-3.5 text-[13px] tabular-nums" style={{ color: '#6b6b6b' }}>{fmtINR(totals?.subtotal)}</td>
-                      <td className="px-5 py-3.5 text-[13px] tabular-nums" style={{ color: '#6b6b6b' }}>{fmtINR(totals?.gst)}</td>
-                      <td className="px-5 py-3.5 text-[14px] font-bold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtINR(totals?.amount)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+              <p style={{
+                fontSize: 52, fontWeight: 900, color: isDanger ? '#fca5a5' : isLow ? '#fde68a' : '#fff',
+                margin: '0 0 4px', letterSpacing: '-0.04em', fontFamily: '"DM Serif Display", serif',
+              }}>
+                {fmtINR(balance)}
+              </p>
+            )}
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+              ≈ {estimatedMins.toLocaleString('en-IN')} min remaining · ₹{rate}/min
+            </p>
+
+            {isDanger && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, background: 'rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', width: 'fit-content' }}>
+                <AlertTriangle size={14} color="#fca5a5" />
+                <span style={{ color: '#fca5a5', fontSize: 12, fontWeight: 600 }}>Low balance — calls may stop soon</span>
+              </div>
+            )}
+            {!isDanger && isLow && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, background: 'rgba(245,158,11,0.2)', borderRadius: 8, padding: '8px 12px', width: 'fit-content' }}>
+                <AlertTriangle size={14} color="#fde68a" />
+                <span style={{ color: '#fde68a', fontSize: 12, fontWeight: 600 }}>Balance running low</span>
               </div>
             )}
           </div>
 
-          {/* Activity chart + monthly history */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="card p-5">
-              <p className="font-semibold text-[14px] mb-1" style={{ color: '#1a1a1a' }}>Daily Activity</p>
-              <p className="text-[11px] mb-5" style={{ color: '#a8a8a8' }}>Last 30 days · completed calls</p>
-              <BarChart data={activity} />
-            </div>
-
-            <div className="card p-5">
-              <p className="font-semibold text-[14px] mb-1" style={{ color: '#1a1a1a' }}>Monthly History</p>
-              <p className="text-[11px] mb-4" style={{ color: '#a8a8a8' }}>Last 6 months · incl. 18% GST</p>
-              {monthly.length === 0 ? (
-                <div className="text-center py-8 text-[13px]" style={{ color: '#c4c4c4' }}>No history yet</div>
-              ) : (
-                <div className="space-y-2.5">
-                  {monthly.map((m, i) => {
-                    const maxAmt = Math.max(...monthly.map(x => x.amount), 1)
-                    const pct = Math.max(4, (m.amount / maxAmt) * 100)
-                    return (
-                      <div key={i} className="flex items-center gap-3">
-                        <p className="text-[12px] w-20 flex-shrink-0" style={{ color: '#6b6b6b' }}>{m.month}</p>
-                        <div className="flex-1 h-5 rounded-md overflow-hidden" style={{ background: '#f5f1ea' }}>
-                          <div className="h-full rounded-md transition-all duration-500"
-                            style={{ width: `${pct}%`, background: i === 0 ? '#f5a623' : '#e0d9ce' }} />
-                        </div>
-                        <div className="text-right flex-shrink-0" style={{ minWidth: '100px' }}>
-                          <span className="text-[12px] font-semibold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtINR(m.amount)}</span>
-                          <span className="text-[11px] ml-1.5" style={{ color: '#a8a8a8' }}>{fmtInt(m.total_calls)} calls</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+            <button onClick={() => setShowModal(true)} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '12px 18px',
+              borderRadius: 12, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              backdropFilter: 'blur(8px)', whiteSpace: 'nowrap',
+            }}>
+              <Plus size={15} /> Add Money
+            </button>
+            <button onClick={loadAll} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px',
+              borderRadius: 10, background: 'transparent', border: '1px solid rgba(255,255,255,0.15)',
+              color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer',
+            }}>
+              <RefreshCw size={13} /> Refresh
+            </button>
           </div>
-        </>
-      )}
+        </div>
 
-      {/* ── INVOICES TAB ── */}
-      {tab === 'invoices' && (
-        <div>
-          {/* Generate invoice card */}
-          <div className="card p-5 mb-5">
-            <p className="font-semibold text-[14px] mb-1" style={{ color: '#1a1a1a' }}>Generate Invoice</p>
-            <p className="text-[12px] mb-4" style={{ color: '#a8a8a8' }}>Select a month to generate a GST invoice for all completed calls</p>
-            <div className="flex gap-3 flex-wrap">
-              <input
-                type="month"
-                value={genMonth}
-                max={new Date().toISOString().slice(0, 7)}
-                onChange={e => setGenMonth(e.target.value)}
-                className="input-field" style={{ minWidth: '160px' }}
-              />
-              <button
-                disabled={!genMonth || generating}
-                onClick={async () => {
-                  setGenerating(true)
-                  try {
-                    const res = await billingApi.generateInvoice(genMonth)
-                    const { invoice, already_exists } = res.data
-                    setInvoices(prev => {
-                      const exists = prev.find(i => i.id === invoice.id)
-                      if (exists) return prev
-                      return [invoice, ...prev]
-                    })
-                    toast.success(already_exists ? 'Invoice already exists for this month' : `Invoice ${invoice.invoice_number} generated!`)
-                  } catch (err) {
-                    toast.error(err.response?.data?.error || 'Failed to generate invoice')
-                  } finally { setGenerating(false) }
-                }}
-                className="btn-primary"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {generating ? 'Generating...' : '📄 Generate Invoice'}
-              </button>
+        {/* Bottom stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 28, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          {[
+            { label: 'Total Recharged', value: fmtINR(wallet?.total_recharged) },
+            { label: 'Total Spent',     value: fmtINR(wallet?.total_spent)     },
+            { label: 'Calls Today',     value: wallet?.stats?.calls_today || 0 },
+          ].map(s => (
+            <div key={s.label}>
+              <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</p>
+              <p style={{ color: '#fff', fontSize: 20, fontWeight: 800, fontFamily: '"DM Serif Display", serif' }}>{s.value}</p>
             </div>
-          </div>
+          ))}
+        </div>
+      </div>
 
-        <div className="card overflow-hidden">
-          <div className="px-6 py-4" style={{ borderBottom: '1px solid #f5f1ea' }}>
-            <h2 className="font-semibold text-[15px]" style={{ color: '#1a1a1a' }}>Invoices</h2>
-            <p className="text-[12px] mt-0.5" style={{ color: '#a8a8a8' }}>Generated invoices for billing records</p>
-          </div>
+      {/* ── Stats row ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
+        <Chip icon={Phone}     label="Total Calls"   value={Number(wallet?.stats?.total_calls || 0).toLocaleString('en-IN')} color="#6366f1" />
+        <Chip icon={Clock}     label="Total Minutes" value={Math.round((wallet?.stats?.total_seconds || 0) / 60).toLocaleString('en-IN')} color="#0ea5e9" />
+        <Chip icon={TrendingDown} label="Spent on Calls" value={fmtINR(wallet?.stats?.total_spent_calls)} color="#f43f5e" />
+        <Chip icon={Zap}       label="Today's Spend" value={fmtINR(wallet?.stats?.spent_today)} color="#f59e0b" />
+      </div>
 
-          {invoices.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: '#faf8f4' }}>
-                <IndianRupee size={22} style={{ color: '#d0c9be' }} />
-              </div>
-              <p className="font-semibold text-[14px] mb-1" style={{ color: '#3d3d3d', fontFamily: '"DM Serif Display",serif' }}>No invoices yet</p>
-              <p className="text-[12px] mb-4" style={{ color: '#a8a8a8' }}>Select a month above and click Generate Invoice</p>
-            </div>
+      {/* ── Spend chart ── */}
+      <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #f0f0f0', padding: '24px 28px', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111', margin: 0 }}>Daily Spend</h3>
+            <p style={{ fontSize: 12, color: '#9ca3af', margin: '2px 0 0' }}>Last 30 days</p>
+          </div>
+          <BarChart2 size={18} color="#d1d5db" />
+        </div>
+        <SpendChart data={dailySpend} />
+      </div>
+
+      {/* ── Transactions + Recharges ── */}
+      <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #f0f0f0', overflow: 'hidden' }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0' }}>
+          {[
+            { key: 'transactions', label: 'All Transactions' },
+            { key: 'recharges',    label: 'Recharge History' },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              padding: '16px 24px', fontSize: 14, fontWeight: activeTab === t.key ? 700 : 500,
+              color: activeTab === t.key ? '#6366f1' : '#6b7280',
+              borderBottom: activeTab === t.key ? '2px solid #6366f1' : '2px solid transparent',
+              background: 'none', border: 'none', borderBottom: activeTab === t.key ? '2px solid #6366f1' : '2px solid transparent',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        <div style={{ padding: '8px 24px 24px' }}>
+          {loading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#d1d5db', fontSize: 13 }}>Loading...</div>
+          ) : activeTab === 'transactions' ? (
+            txns.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#d1d5db', fontSize: 13 }}>No transactions yet. Add money to get started.</div>
+            ) : (
+              txns.map(tx => <TxRow key={tx.id} tx={tx} />)
+            )
           ) : (
-            <div>
-              {invoices.map((inv, i) => {
-                const statusStyle = {
-                  paid:    { bg: '#dcf3e5', color: '#228248' },
-                  sent:    { bg: '#fef3d0', color: '#b86f0e' },
-                  draft:   { bg: '#f5f1ea', color: '#6b6b6b' },
-                  overdue: { bg: '#fff1f2', color: '#e11d48' },
-                }[inv.status] || { bg: '#f5f1ea', color: '#6b6b6b' }
-
-                return (
-                  <div key={inv.id}
-                    className="flex items-center gap-4 px-6 py-4 hover:bg-[#fdfcfa] transition-colors"
-                    style={{ borderBottom: i < invoices.length - 1 ? '1px solid #f5f1ea' : 'none' }}>
-                    <div className="flex-1">
-                      <p className="text-[13px] font-semibold" style={{ color: '#1a1a1a' }}>
-                        {inv.invoice_number || `INV-${inv.id.slice(0, 8).toUpperCase()}`}
-                      </p>
-                      <p className="text-[11px] mt-0.5" style={{ color: '#a8a8a8' }}>
-                        {new Date(inv.period_start).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
-                        {' → '}
-                        {new Date(inv.period_end).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[14px] font-bold tabular-nums" style={{ color: '#1a1a1a' }}>{fmtINR(inv.total_amount)}</p>
-                      <p className="text-[11px]" style={{ color: '#a8a8a8' }}>{fmtInt(inv.total_calls)} calls · {fmt(inv.total_minutes, 1)} min · incl. GST</p>
-                    </div>
-                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg capitalize"
-                      style={{ background: statusStyle.bg, color: statusStyle.color }}>
-                      {inv.status}
-                    </span>
-                    <a href={billingApi.downloadInvoice(inv.id)}
-                      target="_blank" rel="noreferrer"
-                      className="btn-secondary" style={{ padding: '8px', display: 'inline-flex', alignItems: 'center' }}
-                      title="View / Print invoice">
-                      <Download size={14} style={{ color: '#8a8a8a' }} />
-                    </a>
-                  </div>
-                )
-              })}
-            </div>
+            recharges.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#d1d5db', fontSize: 13 }}>No recharge history</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ color: '#9ca3af', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <th style={{ padding: '12px 0', textAlign: 'left' }}>Date</th>
+                    <th style={{ padding: '12px 0', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '12px 0', textAlign: 'right' }}>GST</th>
+                    <th style={{ padding: '12px 0', textAlign: 'right' }}>Total Paid</th>
+                    <th style={{ padding: '12px 0', textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recharges.map(r => (
+                    <tr key={r.id} style={{ borderTop: '1px solid #f9fafb' }}>
+                      <td style={{ padding: '12px 0', color: '#374151' }}>{fmtDate(r.created_at)}</td>
+                      <td style={{ padding: '12px 0', textAlign: 'right', fontWeight: 600 }}>{fmtINR(r.amount)}</td>
+                      <td style={{ padding: '12px 0', textAlign: 'right', color: '#9ca3af' }}>{fmtINR(r.amount * 0.18)}</td>
+                      <td style={{ padding: '12px 0', textAlign: 'right', fontWeight: 700, color: '#6366f1' }}>{fmtINR(r.amount_with_gst)}</td>
+                      <td style={{ padding: '12px 0', textAlign: 'center' }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                          background: r.status === 'completed' ? '#d1fae5' : r.status === 'failed' ? '#fee2e2' : '#fef9c3',
+                          color: r.status === 'completed' ? '#065f46' : r.status === 'failed' ? '#991b1b' : '#92400e',
+                        }}>
+                          {r.status === 'completed' ? <CheckCircle2 size={11} /> : r.status === 'failed' ? <XCircle size={11} /> : <Clock size={11} />}
+                          {r.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
           )}
         </div>
-        </div>
+      </div>
+
+      {/* Rate info */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, padding: '12px 16px', background: '#f8fafc', borderRadius: 12 }}>
+        <Info size={14} color="#94a3b8" />
+        <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
+          Current rate: <strong style={{ color: '#64748b' }}>₹{rate}/minute</strong>. Billed per minute after each call ends. GST @ 18% applies to recharges only.
+        </p>
+      </div>
+
+      {/* Recharge modal */}
+      {showModal && (
+        <RechargeModal
+          onClose={() => setShowModal(false)}
+          onSuccess={onRechargeSuccess}
+          rate={rate}
+        />
       )}
     </div>
   )
