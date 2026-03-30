@@ -25,6 +25,7 @@ const simulateRoutes = require('./routes/simulate.routes')
 const settingsRoutes   = require('./routes/settings.routes')
 const resultsRoutes    = require('./routes/results.routes')
 const dashboardRoutes  = require('./routes/dashboard.routes')
+const walletRoutes = require('./routes/wallet.routes')
 
 // Integrations
 const { getOAuthUrl, exchangeCodeForToken } = require('./integrations/googleSheets')
@@ -97,6 +98,7 @@ app.use('/simulate',  simulateRoutes)
 app.use('/settings',   settingsRoutes)
 app.use('/results',    resultsRoutes)
 app.use('/dashboard',  dashboardRoutes)
+app.use('/wallet', walletRoutes)
 
 // ── Google Sheets OAuth ──────────────────────────────────────
 app.get('/auth/google/sheets', (req, res) => {
