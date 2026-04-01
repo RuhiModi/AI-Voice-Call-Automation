@@ -1,9 +1,9 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
 import {
   LayoutDashboard, Radio, Settings, LogOut, Plus,
   Menu, ChevronRight, Wallet, FlaskConical, X,
-  AlertTriangle, Zap
+  AlertTriangle, Bell, ChevronDown
 } from 'lucide-react'
 import axios from 'axios'
 import Logo from './Logo'
@@ -18,18 +18,131 @@ const NAV = [
   { to: '/dashboard/settings',  icon: Settings,        label: 'Settings',  end: true  },
 ]
 
-function fmtINR(n) {
-  return '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const PAGE_TITLES = {
+  '/dashboard':           { title: 'Dashboard',  sub: 'Overview of your voice campaigns' },
+  '/dashboard/campaigns': { title: 'Campaigns',  sub: 'Manage your outbound campaigns'   },
+  '/dashboard/simulate':  { title: 'Simulator',  sub: 'Test calls without real charges'  },
+  '/dashboard/billing':   { title: 'Wallet',     sub: 'Balance & transaction history'    },
+  '/dashboard/settings':  { title: 'Settings',   sub: 'Account & integrations'           },
 }
 
-export default function Layout() {
-  const navigate = useNavigate()
-  const [open,       setOpen]      = useState(false)
-  const [balance,    setBalance]   = useState(null)
-  const [loadingBal, setLoadingBal]= useState(true)
+const fmtINR = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const user    = JSON.parse(localStorage.getItem('user') || '{}')
+function useOutsideClick(ref, cb) {
+  useEffect(() => {
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) cb() }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [cb])
+}
+
+// ── Notifications ────────────────────────────────────────────────
+function NotifBell() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  useOutsideClick(ref, () => setOpen(false))
+  const notifs = [
+    { icon: '✅', text: 'Campaign "Bus Reminder" completed', time: '2m ago' },
+    { icon: '📞', text: '1,284 calls made today',            time: '1h ago' },
+    { icon: '💰', text: 'Low wallet balance',                time: '3h ago' },
+  ]
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: 38, height: 38, borderRadius: 10, border: '1px solid #E5E7EB',
+        background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', position: 'relative', transition: 'border-color .15s',
+      }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = '#D1D5DB'}
+        onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}>
+        <Bell size={15} color="#6B7280" />
+        <span style={{ position: 'absolute', top: 7, right: 8, width: 7, height: 7, borderRadius: '50%', background: '#FF6B35', border: '1.5px solid #fff' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 296, background: '#fff', borderRadius: 14, border: '1px solid #E5E7EB', boxShadow: '0 8px 32px rgba(0,0,0,.10)', zIndex: 200, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #F3F4F6', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f0f0f' }}>Notifications</span>
+            <span style={{ fontSize: 10, color: '#FF6B35', fontWeight: 700, cursor: 'pointer' }}>Mark all read</span>
+          </div>
+          {notifs.map((n, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, padding: '11px 16px', borderBottom: '1px solid #F9FAFB', cursor: 'pointer', background: i === 0 ? '#FAFAFA' : '#fff' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+              onMouseLeave={e => e.currentTarget.style.background = i === 0 ? '#FAFAFA' : '#fff'}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>{n.icon}</span>
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#374151', margin: 0, lineHeight: 1.4 }}>{n.text}</p>
+                <p style={{ fontSize: 10, color: '#9CA3AF', margin: '3px 0 0' }}>{n.time}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Profile dropdown ─────────────────────────────────────────────
+function ProfileMenu({ user, onLogout, onNavigate }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+  useOutsideClick(ref, () => setOpen(false))
   const initial = (user.company_name || user.email || 'S')[0].toUpperCase()
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px 5px 5px',
+        borderRadius: 12, border: '1px solid #E5E7EB', background: '#fff',
+        cursor: 'pointer', transition: 'border-color .15s',
+      }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = '#D1D5DB'}
+        onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}>
+        <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#FF8C42,#E63946)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff', flexShrink: 0 }}>
+          {initial}
+        </div>
+        <div style={{ textAlign: 'left', display: 'none' }} className="sm:block">
+          <p style={{ fontSize: 12, fontWeight: 700, color: '#0f0f0f', margin: 0, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.company_name || 'My Company'}</p>
+          <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>Admin</p>
+        </div>
+        <ChevronDown size={12} color="#9CA3AF" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 210, background: '#fff', borderRadius: 14, border: '1px solid #E5E7EB', boxShadow: '0 8px 32px rgba(0,0,0,.10)', zIndex: 200, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid #F3F4F6' }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: '#0f0f0f', margin: 0 }}>{user.company_name || 'My Company'}</p>
+            <p style={{ fontSize: 10, color: '#9CA3AF', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
+          </div>
+          {[
+            { icon: Settings, label: 'Settings', to: '/dashboard/settings' },
+            { icon: Wallet,   label: 'Wallet',   to: '/dashboard/billing'  },
+          ].map(({ icon: Ic, label, to }) => (
+            <button key={label} onClick={() => { onNavigate(to); setOpen(false) }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left', fontFamily: 'inherit', transition: 'background .1s' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+              <Ic size={14} color="#9CA3AF" /> {label}
+            </button>
+          ))}
+          <div style={{ borderTop: '1px solid #F3F4F6' }}>
+            <button onClick={() => { onLogout(); setOpen(false) }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#EF4444', textAlign: 'left', fontFamily: 'inherit' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+              <LogOut size={14} color="#EF4444" /> Sign Out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main ─────────────────────────────────────────────────────────
+export default function Layout() {
+  const navigate  = useNavigate()
+  const location  = useLocation()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [balance,    setBalance]    = useState(null)
+  const [loadingBal, setLoadingBal] = useState(true)
+
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -48,212 +161,114 @@ export default function Layout() {
 
   const isLow    = balance !== null && balance < 100
   const isDanger = balance !== null && balance < 20
+  const pageInfo = PAGE_TITLES[location.pathname] || { title: 'SamwadAI', sub: '' }
 
+  // ── Sidebar ────────────────────────────────────────────────────
   const Sidebar = () => (
-    <aside style={{
-      display: 'flex', flexDirection: 'column', height: '100%', width: 236,
-      background: '#ffffff',
-      borderRight: '1px solid #E5E7EB',
-    }}>
-
-      {/* Logo */}
-      <div
-        style={{ padding: '20px 20px 16px', cursor: 'pointer', borderBottom: '1px solid #F3F4F6' }}
-        onClick={() => navigate('/dashboard')}
-      >
+    <aside style={{ display: 'flex', flexDirection: 'column', height: '100%', width: 228, background: '#fff', borderRight: '1px solid #E5E7EB' }}>
+      {/* ✅ LOGO — only here, nowhere else */}
+      <div style={{ padding: '18px 20px', cursor: 'pointer', borderBottom: '1px solid #F3F4F6', flexShrink: 0 }} onClick={() => navigate('/dashboard')}>
         <Logo size="sm" />
       </div>
 
-      {/* Wallet balance card */}
-      <div style={{ padding: '12px 14px', borderBottom: '1px solid #F3F4F6' }}>
-        <div
-          onClick={() => navigate('/dashboard/billing')}
-          style={{
-            borderRadius: 14, padding: '14px 16px', cursor: 'pointer',
-            background: isDanger ? '#FEF2F2' : isLow ? '#FFFBEB' : 'linear-gradient(135deg, #FFF4F0 0%, #FFF8F6 100%)',
-            border: `1.5px solid ${isDanger ? '#FECACA' : isLow ? '#FDE68A' : '#FFD4C2'}`,
-            transition: 'all 0.2s',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Wallet size={12} color={isDanger ? '#EF4444' : isLow ? '#F59E0B' : '#FF6B35'} />
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: isDanger ? '#EF4444' : isLow ? '#F59E0B' : '#FF6B35' }}>
-                Wallet
-              </span>
-            </div>
-            {isDanger && <AlertTriangle size={11} color="#EF4444" />}
-            {isLow && !isDanger && <AlertTriangle size={11} color="#F59E0B" />}
-          </div>
-
-          {loadingBal ? (
-            <div style={{ height: 22, width: 70, borderRadius: 6, background: '#F3F4F6' }} />
-          ) : (
-            <p style={{
-              fontSize: 19, fontWeight: 800, margin: 0, letterSpacing: '-0.03em',
-              fontFamily: '"Plus Jakarta Sans", sans-serif',
-              color: isDanger ? '#DC2626' : isLow ? '#D97706' : '#0f0f0f',
-            }}>
-              {fmtINR(balance)}
-            </p>
-          )}
-          <p style={{ fontSize: 10, color: isDanger ? '#EF4444' : isLow ? '#D97706' : '#9CA3AF', marginTop: 3 }}>
-            {isDanger ? 'Add money now!' : isLow ? 'Running low' : 'Available balance'}
-          </p>
-        </div>
-      </div>
-
-      {/* User info */}
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid #F3F4F6' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: '#F9FAFB' }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 9, flexShrink: 0,
-            background: 'linear-gradient(135deg, #FF8C42, #E63946)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 800, color: '#fff',
-          }}>
-            {initial}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: '#0f0f0f', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user.company_name || 'My Company'}
-            </p>
-            <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user.email}
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-        <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#D1D5DB', padding: '0 8px', marginBottom: 8 }}>
-          Menu
-        </p>
-
+      <nav style={{ flex: 1, padding: '14px 10px', overflowY: 'auto' }}>
+        <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#D1D5DB', padding: '0 10px', marginBottom: 8 }}>Menu</p>
         {NAV.map(({ to, icon: Icon, label, end }) => (
-          <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}
+          <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}
             className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             {({ isActive }) => (
               <>
                 <Icon size={15} color={isActive ? '#FF6B35' : '#9CA3AF'} strokeWidth={isActive ? 2.2 : 1.8} />
                 <span>{label}</span>
-                {/* Low balance dot on Wallet */}
-                {label === 'Wallet' && isDanger && (
-                  <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
-                )}
-                {label === 'Wallet' && isLow && !isDanger && (
-                  <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#F59E0B', flexShrink: 0 }} />
-                )}
-                {isActive && !isLow && label !== 'Wallet' && (
-                  <ChevronRight size={12} style={{ marginLeft: 'auto', color: '#FFB99A', flexShrink: 0 }} />
-                )}
+                {label === 'Wallet' && isDanger && <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />}
+                {label === 'Wallet' && isLow && !isDanger && <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#F59E0B', flexShrink: 0 }} />}
+                {isActive && <ChevronRight size={11} style={{ marginLeft: 'auto', color: '#FFB99A', flexShrink: 0 }} />}
               </>
             )}
           </NavLink>
         ))}
 
-        {/* Quick action */}
-        <div style={{ marginTop: 20 }}>
-          <p style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#D1D5DB', padding: '0 8px', marginBottom: 8 }}>
-            Quick Actions
-          </p>
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #F3F4F6' }}>
           <button
-            onClick={() => { navigate('/dashboard/campaigns/new'); setOpen(false) }}
+            onClick={() => { navigate('/dashboard/campaigns/new'); setMobileOpen(false) }}
             style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-              padding: '10px 12px', borderRadius: 10,
-              border: '1.5px dashed #FFD4C2',
-              background: '#FFF8F6', color: '#FF6B35',
-              fontWeight: 700, fontSize: 13, cursor: 'pointer',
-              fontFamily: '"Plus Jakarta Sans", sans-serif',
-              transition: 'all 0.15s',
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              padding: '11px', borderRadius: 10, border: 'none',
+              background: 'linear-gradient(135deg,#FF8C42,#FF6B35,#E63946)',
+              color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              fontFamily: '"Plus Jakarta Sans",sans-serif',
+              boxShadow: '0 3px 14px rgba(255,107,53,.30)', transition: 'box-shadow .15s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#FFF0EB'; e.currentTarget.style.borderColor = '#FF6B35' }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#FFF8F6'; e.currentTarget.style.borderColor = '#FFD4C2' }}
-          >
+            onMouseEnter={e => e.currentTarget.style.boxShadow = '0 5px 20px rgba(255,107,53,.45)'}
+            onMouseLeave={e => e.currentTarget.style.boxShadow = '0 3px 14px rgba(255,107,53,.30)'}>
             <Plus size={14} /> New Campaign
           </button>
         </div>
       </nav>
 
-      {/* Footer */}
-      <div style={{ padding: '10px', borderTop: '1px solid #F3F4F6' }}>
-        {/* Powered by badge */}
-        <div style={{ padding: '6px 10px', borderRadius: 8, background: '#F9FAFB', marginBottom: 8, textAlign: 'center' }}>
-          <span style={{ fontSize: 9, color: '#D1D5DB', fontWeight: 600, letterSpacing: '0.05em' }}>
-            Powered by <span style={{ color: '#FF6B35' }}>SamwadAI</span> · RiseAscend Tech
-          </span>
-        </div>
-        <button
-          onClick={logout}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-            padding: '9px 12px', borderRadius: 10, border: 'none',
-            background: 'transparent', color: '#9CA3AF', fontSize: 13, fontWeight: 500,
-            cursor: 'pointer', fontFamily: '"Plus Jakarta Sans", sans-serif',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#EF4444' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9CA3AF' }}
-        >
-          <LogOut size={14} /> Logout
-        </button>
+      <div style={{ padding: '10px 14px', borderTop: '1px solid #F3F4F6' }}>
+        <p style={{ fontSize: 9, textAlign: 'center', color: '#D1D5DB', fontWeight: 600, letterSpacing: '0.05em' }}>SamwadAI v2.0 · RiseAscend Tech</p>
       </div>
     </aside>
   )
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#F7F8FA' }}>
-
-      {/* Mobile overlay */}
-      {open && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(2px)' }}
-          className="lg:hidden"
-          onClick={() => setOpen(false)}
-        />
-      )}
+      {mobileOpen && <div style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'rgba(0,0,0,.35)', backdropFilter: 'blur(2px)' }} className="lg:hidden" onClick={() => setMobileOpen(false)} />}
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:flex flex-shrink-0">
-        <Sidebar />
-      </div>
+      <div className="hidden lg:flex flex-shrink-0"><Sidebar /></div>
 
       {/* Mobile sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-40 transition-transform duration-300 lg:hidden ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`fixed inset-y-0 left-0 z-40 transition-transform duration-300 lg:hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div style={{ position: 'relative', height: '100%' }}>
           <Sidebar />
-          <button
-            onClick={() => setOpen(false)}
-            style={{
-              position: 'absolute', top: 16, right: -44, width: 36, height: 36,
-              borderRadius: '50%', background: '#fff', border: '1px solid #E5E7EB',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
+          <button onClick={() => setMobileOpen(false)} style={{ position: 'absolute', top: 16, right: -44, width: 36, height: 36, borderRadius: '50%', background: '#fff', border: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <X size={16} color="#6B7280" />
           </button>
         </div>
       </div>
 
-      {/* Main content */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Right side */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-        {/* Mobile topbar */}
-        <header className="lg:hidden" style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px', background: '#fff', borderBottom: '1px solid #E5E7EB',
-        }}>
-          <button
-            onClick={() => setOpen(true)}
-            style={{ padding: 8, borderRadius: 8, border: 'none', background: '#F9FAFB', cursor: 'pointer' }}
-          >
-            <Menu size={18} color="#374151" />
-          </button>
-          <Logo size="sm" />
-          <div style={{ width: 36 }} />
+        {/* ✅ TOPBAR — page title left, wallet+notif+profile right */}
+        <header style={{ height: 62, flexShrink: 0, background: '#fff', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', gap: 16 }}>
+
+          {/* Left */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={() => setMobileOpen(true)} style={{ padding: 8, borderRadius: 8, border: 'none', background: '#F9FAFB', cursor: 'pointer' }} className="block lg:hidden">
+              <Menu size={18} color="#374151" />
+            </button>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0f0f0f', margin: 0, letterSpacing: '-0.02em' }}>{pageInfo.title}</h2>
+              <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }} className="hidden sm:block">{pageInfo.sub}</p>
+            </div>
+          </div>
+
+          {/* Right: wallet + notif + profile */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Wallet chip */}
+            <button onClick={() => navigate('/dashboard/billing')} style={{
+              display: 'flex', alignItems: 'center', gap: 7, padding: '7px 13px',
+              borderRadius: 10, cursor: 'pointer', transition: 'all .15s',
+              background: isDanger ? '#FEF2F2' : isLow ? '#FFFBEB' : '#F9FAFB',
+              border: `1px solid ${isDanger ? '#FECACA' : isLow ? '#FDE68A' : '#E5E7EB'}`,
+            }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = isDanger ? '#FCA5A5' : isLow ? '#FCD34D' : '#D1D5DB'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = isDanger ? '#FECACA' : isLow ? '#FDE68A' : '#E5E7EB'}>
+              <Wallet size={13} color={isDanger ? '#EF4444' : isLow ? '#F59E0B' : '#FF6B35'} />
+              {loadingBal
+                ? <div style={{ width: 56, height: 14, borderRadius: 4, background: '#F3F4F6' }} />
+                : <span style={{ fontSize: 13, fontWeight: 800, color: isDanger ? '#DC2626' : isLow ? '#D97706' : '#0f0f0f', letterSpacing: '-0.02em' }}>{fmtINR(balance)}</span>
+              }
+              {(isLow || isDanger) && <AlertTriangle size={12} color={isDanger ? '#EF4444' : '#F59E0B'} />}
+            </button>
+
+            <NotifBell />
+            <ProfileMenu user={user} onLogout={logout} onNavigate={navigate} />
+          </div>
         </header>
 
         <main style={{ flex: 1, overflowY: 'auto' }}>
