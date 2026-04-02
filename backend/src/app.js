@@ -44,7 +44,20 @@ const allowedOrigins = [
   'http://localhost:5174',
   'http://localhost:3000',
 ]
-if (config.frontendUrl) allowedOrigins.push(config.frontendUrl)
+
+// Add FRONTEND_URL from env (supports comma-separated list for multiple domains)
+if (config.frontendUrl) {
+  config.frontendUrl.split(',').map(u => u.trim()).filter(Boolean).forEach(u => {
+    allowedOrigins.push(u)
+    // Also allow www variant automatically
+    if (u.startsWith('https://') && !u.startsWith('https://www.')) {
+      allowedOrigins.push(u.replace('https://', 'https://www.'))
+    }
+    if (u.startsWith('https://www.')) {
+      allowedOrigins.push(u.replace('https://www.', 'https://'))
+    }
+  })
+}
 
 app.use(cors({
   origin: (origin, callback) => {
