@@ -1,87 +1,73 @@
 import { useState, useEffect, useRef } from 'react'
 import { campaignApi, simulateApi } from '../hooks/api'
 import toast from 'react-hot-toast'
-import {
-  Phone, PhoneOff, Send, Bot, User, ChevronDown,
-  Loader, Zap, FileText, Globe, Upload, Info, RotateCcw
-} from 'lucide-react'
+import { Phone, PhoneOff, Send, Bot, User, Loader2, RotateCcw, Zap, ChevronDown } from 'lucide-react'
 
-const langNames = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }
+const BRAND = '#FF6B35'
+const GRAD  = 'linear-gradient(135deg,#FF8C42,#FF6B35,#E63946)'
 
-const actionLabels = {
-  end_call:   '📴 AI ended the call',
-  transfer:   '🔀 Transfer to human requested',
-  dnc:        '🚫 Do not call requested',
-  reschedule: '📅 Callback requested',
-}
+const LANGS = [{ code:'gu', label:'ગુજ', full:'Gujarati' },{ code:'hi', label:'हिं', full:'Hindi' },{ code:'en', label:'Eng', full:'English' }]
 
 const QUICK_REPLIES = {
-  gu: ['હા, બરાબર છે', 'ના, ભૂલ છે', 'હું વ્યસ્ત છું', 'મને સમજ ન પડ્યું', 'Human સાથે વાત'],
-  hi: ['हाँ, सही है', 'नहीं, गलत है', 'मैं व्यस्त हूं', 'समझ नहीं आया', 'Human से बात करें'],
-  en: ['Yes, correct', 'No, that\'s wrong', 'I\'m busy right now', 'I don\'t understand', 'Transfer to human'],
+  gu: ['હા, બરાબર છે', 'ના, ભૂલ છે', 'હું વ્યસ્ત છું', 'Human સાથે વાત'],
+  hi: ['हाँ, सही है', 'नहीं, गलत है', 'मैं व्यस्त हूं', 'Human से बात'],
+  en: ['Yes, correct', 'No, wrong', "I'm busy", 'Transfer to human'],
 }
 
-// ── Chat bubble ───────────────────────────────────────────────
+const ACTION_LABELS = {
+  end_call:'📴 Call ended by AI', transfer:'🔀 Transfer to human', dnc:'🚫 DNC requested', reschedule:'📅 Callback scheduled',
+}
+
 function Bubble({ msg }) {
   const isAI = msg.role === 'assistant'
   return (
-    <div className={`flex ${isAI ? 'justify-start' : 'justify-end'} gap-2 mb-3`}>
+    <div style={{ display:'flex', justifyContent:isAI?'flex-start':'flex-end', gap:10, marginBottom:14, alignItems:'flex-end' }}>
       {isAI && (
-        <div className="w-7 h-7 rounded-full flex-shrink-0 mt-1 flex items-center justify-center" style={{ background: '#f5a623' }}>
-          <Bot size={13} color="#fff" />
+        <div style={{ width:30, height:30, borderRadius:'50%', background:GRAD, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <Bot size={14} color="#fff"/>
         </div>
       )}
-      <div className="max-w-[80%]">
-        <div className="px-4 py-2.5 text-[13px] leading-relaxed"
-          style={isAI
-            ? { background: '#fff', border: '1px solid #e8e3db', borderRadius: '4px 16px 16px 16px', color: '#1a1a1a' }
-            : { background: '#1a1a1a', borderRadius: '16px 4px 16px 16px', color: '#fff' }}>
+      <div style={{ maxWidth:'75%' }}>
+        <div style={{
+          padding:'10px 14px', fontSize:13, lineHeight:1.6, wordBreak:'break-word',
+          ...(isAI
+            ? { background:'#fff', border:'1px solid #E5E7EB', borderRadius:'4px 16px 16px 16px', color:'#0f0f0f' }
+            : { background:GRAD, borderRadius:'16px 4px 16px 16px', color:'#fff' })
+        }}>
           {msg.content}
         </div>
-        {msg.action && actionLabels[msg.action] && (
-          <p className="text-[11px] mt-1 px-1" style={{ color: '#a8a8a8' }}>{actionLabels[msg.action]}</p>
+        {msg.action && ACTION_LABELS[msg.action] && (
+          <p style={{ fontSize:11, color:'#9CA3AF', margin:'4px 4px 0' }}>{ACTION_LABELS[msg.action]}</p>
         )}
-        <p className="text-[10px] mt-0.5 px-1" style={{ color: '#d0c9be' }}>
-          {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
+        <p style={{ fontSize:10, color:'#D1D5DB', margin:'3px 4px 0' }}>
+          {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-IN',{ hour:'2-digit', minute:'2-digit', second:'2-digit' }) : ''}
         </p>
       </div>
       {!isAI && (
-        <div className="w-7 h-7 rounded-full flex-shrink-0 mt-1 flex items-center justify-center" style={{ background: '#e8e3db' }}>
-          <User size={13} color="#6b6b6b" />
+        <div style={{ width:30, height:30, borderRadius:'50%', background:'#F3F4F6', border:'1px solid #E5E7EB', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <User size={14} color="#6B7280"/>
         </div>
       )}
     </div>
   )
 }
 
-// ── Main ──────────────────────────────────────────────────────
 export default function Simulate() {
-  const [campaigns,     setCampaigns]     = useState([])
-  const [campaignId,    setCampaignId]    = useState('')
-  const [session,       setSession]       = useState(null)
-  const [transcript,    setTranscript]    = useState([])
-  const [input,         setInput]         = useState('')
-  const [loading,       setLoading]       = useState(false)
-  const [starting,      setStarting]      = useState(false)
-  const [ended,         setEnded]         = useState(false)
-  const [collectedData, setCollectedData] = useState({})
-  const [showSetup,     setShowSetup]     = useState(true)
-
-  // Script config
-  const [script,      setScript]      = useState('')
-  const [language,    setLanguage]    = useState('en')
-  const [contactName, setContactName] = useState('Rajesh Bhai')
-  const [personaName, setPersonaName] = useState('Priya')
-
-  // Script input mode
-  const [scriptTab,   setScriptTab]   = useState('text')
-  const [urlInput,    setUrlInput]    = useState('')
-  const [urlLoading,  setUrlLoading]  = useState(false)
-  const [pdfLoading,  setPdfLoading]  = useState(false)
-
-  const bottomRef = useRef(null)
-  const inputRef  = useRef(null)
-  const fileRef   = useRef(null)
+  const [campaigns,     setCampaigns]    = useState([])
+  const [campaignId,    setCampaignId]   = useState('')
+  const [session,       setSession]      = useState(null)
+  const [transcript,    setTranscript]   = useState([])
+  const [input,         setInput]        = useState('')
+  const [loading,       setLoading]      = useState(false)
+  const [starting,      setStarting]     = useState(false)
+  const [ended,         setEnded]        = useState(false)
+  const [collectedData, setCollectedData]= useState({})
+  const [script,        setScript]       = useState('')
+  const [language,      setLanguage]     = useState('en')
+  const [contactName,   setContactName]  = useState('Rajesh Bhai')
+  const [personaName,   setPersonaName]  = useState('Priya')
+  const bottomRef = useRef()
+  const inputRef  = useRef()
 
   useEffect(() => {
     campaignApi.list()
@@ -91,383 +77,208 @@ export default function Simulate() {
         if (camps.length) {
           const first = camps[0]
           setCampaignId(first.id)
-          setLanguage(first.language_priority || 'en')
-          setPersonaName(first.persona_name   || 'Priya')
+          setLanguage(first.language_priority||'en')
+          setPersonaName(first.persona_name||'Priya')
           if (first.script_content) setScript(first.script_content)
         }
-      })
-      .catch(() => {})
+      }).catch(()=>{})
   }, [])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [transcript])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }) }, [transcript])
 
-  function handleCampaignChange(id) {
-    setCampaignId(id)
-    if (!id) return
-    const camp = campaigns.find(c => c.id === id)
-    if (!camp) return
-    setLanguage(camp.language_priority || 'en')
-    setPersonaName(camp.persona_name   || 'Priya')
-    if (camp.script_content) setScript(camp.script_content)
-  }
-
-  async function fetchUrl() {
-    if (!urlInput.trim()) return
-    setUrlLoading(true)
-    try {
-      const res = await simulateApi.extractUrl(urlInput.trim())
-      setScript(res.data.text || '')
-      setScriptTab('text')
-      toast.success('Website content extracted!')
-    } catch {
-      toast.error('Could not fetch URL — paste content manually instead')
-    } finally { setUrlLoading(false) }
-  }
-
-  async function uploadPdf(file) {
-    if (!file) return
-    setPdfLoading(true)
-    try {
-      const form = new FormData()
-      form.append('pdf', file)
-      const res = await simulateApi.extractPdf(form)
-      setScript(res.data.text || '')
-      setScriptTab('text')
-      toast.success(`PDF extracted: ${file.name}`)
-    } catch {
-      toast.error('Could not read PDF')
-    } finally { setPdfLoading(false) }
-  }
-
-  async function startSim() {
+  async function startSession() {
+    if (!script.trim()) return toast.error('Enter a script first')
     setStarting(true)
-    setEnded(false)
-    setCollectedData({})
     try {
-      const res = await simulateApi.start(
-        campaignId || null,
-        script,
-        personaName,
-        language,
-        contactName
-      )
+      const res = await simulateApi.start({
+        campaign_id: campaignId||undefined, script_content:script,
+        language, contact_name:contactName, persona_name:personaName,
+      })
       setSession(res.data)
-      setTranscript(res.data.transcript || [])
-      setShowSetup(false)
-      toast.success('Simulation started!')
-      setTimeout(() => inputRef.current?.focus(), 200)
+      setTranscript(res.data.transcript||[])
+      setEnded(false); setCollectedData({})
+      setTimeout(()=>inputRef.current?.focus(), 100)
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to start simulation')
+      toast.error(err.response?.data?.error||'Failed to start simulation')
     } finally { setStarting(false) }
   }
 
-  async function send(text) {
-    const msg = (text || input).trim()
-    if (!msg || !session || ended) return
+  async function sendMessage(text) {
+    const msg = text||input.trim()
+    if (!msg || !session || loading) return
     setInput('')
+    setTranscript(t => [...t, { role:'user', content:msg, timestamp:new Date().toISOString() }])
     setLoading(true)
     try {
-      const res = await simulateApi.message(session.session_id, msg)
-      setTranscript(res.data.transcript || [])
-      if (res.data.collected_data) setCollectedData(res.data.collected_data)
-      if (res.data.session_status === 'ended') {
-        setEnded(true)
-        toast('Call ended', { icon: '📴' })
-      }
+      const res = await simulateApi.respond({ session_id:session.session_id, message:msg })
+      const d = res.data
+      if (d.reply) setTranscript(t => [...t, { role:'assistant', content:d.reply, action:d.action, timestamp:new Date().toISOString() }])
+      if (d.collected_data) setCollectedData(d.collected_data)
+      if (d.action === 'end_call') setEnded(true)
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Error sending message')
-    } finally {
-      setLoading(false)
-      inputRef.current?.focus()
-    }
-  }
-
-  async function endSim() {
-    if (!session) return
-    setLoading(true)
-    try {
-      const res = await simulateApi.end(session.session_id, 'manual')
-      setEnded(true)
-      setTranscript(res.data.transcript || transcript)
-      toast.success(`Ended · ${res.data.duration_sec}s · ${res.data.total_turns} turns`)
-    } catch { toast.error('Failed to end') }
-    finally { setLoading(false) }
+      toast.error(err.response?.data?.error||'Failed to get response')
+    } finally { setLoading(false) }
   }
 
   function reset() {
-    setSession(null); setTranscript([])
-    setEnded(false);  setCollectedData({})
-    setInput('');     setShowSetup(true)
+    setSession(null); setTranscript([]); setEnded(false); setCollectedData({}); setInput('')
   }
 
-  const quickReplies = QUICK_REPLIES[language] || QUICK_REPLIES.en
+  const hasCollected = Object.keys(collectedData).length > 0
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto animate-fade-in">
+    <div style={{ padding:'24px 28px 56px', maxWidth:1100, margin:'0 auto' }}>
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div style={{ marginBottom:24 }}>
+        <h1 style={{ fontSize:22, fontWeight:800, color:'#0f0f0f', margin:0, letterSpacing:'-0.025em' }}>Simulator</h1>
+        <p style={{ fontSize:13, color:'#9CA3AF', margin:'4px 0 0' }}>Test your AI script without making real calls</p>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:session?'360px 1fr':'1fr', gap:16, alignItems:'start' }}>
+
+        {/* Setup panel */}
         <div>
-          <h1 className="text-3xl" style={{ color: '#1a1a1a', fontFamily: '"DM Serif Display",serif' }}>Call Simulator</h1>
-          <p className="text-sm mt-1" style={{ color: '#8a8a8a' }}>Test your AI agent without making real calls</p>
-        </div>
-        {session && (
-          <button onClick={reset} className="btn-secondary gap-2 text-[13px]">
-            <RotateCcw size={13} /> New Simulation
-          </button>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="flex items-start gap-3 p-4 rounded-xl mb-5" style={{ background: '#f0faf4', border: '1px solid #b8e6cb' }}>
-        <Info size={14} style={{ color: '#228248', flexShrink: 0, marginTop: 1 }} />
-        <p className="text-[12px]" style={{ color: '#1c673a' }}>
-          <strong>No Vobiz or phone needed.</strong> Type/upload your script → set language & agent name → Start → 
-          type what the contact would say. The AI responds using your actual script via Groq.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        {/* ── LEFT: Config ── */}
-        <div className="space-y-4">
-
-          {/* Campaign selector */}
-          <div className="card p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: '#a8a8a8' }}>Campaign (optional)</p>
-            <div className="relative">
-              <select value={campaignId} onChange={e => handleCampaignChange(e.target.value)}
-                disabled={!!session}
-                className="input-field appearance-none text-[13px]" style={{ paddingRight: 28 }}>
-                <option value="">— No campaign (use script below) —</option>
-                {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#a8a8a8' }} />
+          <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', overflow:'hidden' }}>
+            <div style={{ padding:'16px 20px', borderBottom:'1px solid #F3F4F6' }}>
+              <h3 style={{ fontSize:14, fontWeight:700, color:'#0f0f0f', margin:0 }}>Configuration</h3>
             </div>
-          </div>
+            <div style={{ padding:'18px 20px' }}>
 
-          {/* Setup — only before starting */}
-          {showSetup && (
-            <>
-              {/* Basic config */}
-              <div className="card p-5 space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#a8a8a8' }}>Settings</p>
-
-                <div>
-                  <label className="text-[11px] font-medium mb-1 block" style={{ color: '#6b6b6b' }}>Language</label>
-                  <div className="relative">
-                    <select value={language} onChange={e => setLanguage(e.target.value)}
-                      className="input-field appearance-none text-[13px]" style={{ paddingRight: 28 }}>
-                      <option value="en">English</option>
-                      <option value="gu">Gujarati</option>
-                      <option value="hi">Hindi</option>
-                    </select>
-                    <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#a8a8a8' }} />
-                  </div>
+              {/* Campaign picker */}
+              {campaigns.length > 0 && (
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color:'#6B7280', marginBottom:6 }}>Campaign (optional)</label>
+                  <select value={campaignId} onChange={e=>{
+                    setCampaignId(e.target.value)
+                    const c = campaigns.find(c=>c.id===e.target.value)
+                    if (c) { setLanguage(c.language_priority||'en'); setPersonaName(c.persona_name||'Priya'); if(c.script_content) setScript(c.script_content) }
+                  }} style={{ width:'100%', padding:'10px 14px', border:'1.5px solid #E5E7EB', borderRadius:11, fontSize:13, color:'#374151', background:'#fff', fontFamily:'inherit', cursor:'pointer' }}>
+                    <option value="">— Manual setup —</option>
+                    {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
                 </div>
+              )}
 
-                <div>
-                  <label className="text-[11px] font-medium mb-1 block" style={{ color: '#6b6b6b' }}>Contact Name</label>
-                  <input value={contactName} onChange={e => setContactName(e.target.value)}
-                    placeholder="e.g. Rajesh Bhai" className="input-field text-[13px]" />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-medium mb-1 block" style={{ color: '#6b6b6b' }}>Agent / Persona Name</label>
-                  <input value={personaName} onChange={e => setPersonaName(e.target.value)}
-                    placeholder="e.g. Priya, Rahul" className="input-field text-[13px]" />
-                </div>
-              </div>
-
-              {/* Script input */}
-              <div className="card p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: '#a8a8a8' }}>Script / Context</p>
-
-                {/* Tabs */}
-                <div className="flex gap-1 p-1 rounded-lg mb-3" style={{ background: '#f5f1ea' }}>
-                  {[
-                    ['text', <FileText size={11} />, 'Type'],
-                    ['url',  <Globe size={11} />,    'URL'],
-                    ['pdf',  <Upload size={11} />,   'PDF'],
-                  ].map(([key, icon, label]) => (
-                    <button key={key} onClick={() => setScriptTab(key)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all"
-                      style={scriptTab === key
-                        ? { background: '#fff', color: '#1a1a1a', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
-                        : { color: '#8a8a8a' }}>
-                      {icon}{label}
+              {/* Language */}
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color:'#6B7280', marginBottom:6 }}>Language</label>
+                <div style={{ display:'flex', gap:8 }}>
+                  {LANGS.map(l => (
+                    <button key={l.code} onClick={()=>setLanguage(l.code)} style={{ flex:1, padding:'8px', borderRadius:10, fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .15s', background:language===l.code?GRAD:'#F9FAFB', color:language===l.code?'#fff':'#374151', border:`1px solid ${language===l.code?'transparent':'#E5E7EB'}` }}>
+                      {l.label}
                     </button>
                   ))}
                 </div>
-
-                {/* Text */}
-                {scriptTab === 'text' && (
-                  <>
-                    <textarea value={script} onChange={e => setScript(e.target.value)} rows={7}
-                      placeholder={`Paste your call script here...\n\nExample:\nHello! I'm calling to confirm your appointment tomorrow at 10 AM. Can you confirm attendance?\n\nIf they can't make it, ask for a preferred reschedule time.`}
-                      className="input-field w-full resize-none text-[12px] leading-relaxed"
-                      style={{ fontFamily: 'monospace' }} />
-                    {script && (
-                      <div className="flex justify-between mt-1">
-                        <span className="text-[10px]" style={{ color: '#a8a8a8' }}>{script.length} chars</span>
-                        <button onClick={() => setScript('')} className="text-[10px]" style={{ color: '#f43f5e' }}>Clear</button>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* URL */}
-                {scriptTab === 'url' && (
-                  <div className="space-y-2">
-                    <p className="text-[11px]" style={{ color: '#8a8a8a' }}>Extract content from any website to use as script context</p>
-                    <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && fetchUrl()}
-                      placeholder="https://yourwebsite.com/product-page"
-                      className="input-field text-[13px]" />
-                    <button onClick={fetchUrl} disabled={urlLoading || !urlInput.trim()}
-                      className="btn-primary w-full justify-center gap-2 text-[13px]"
-                      style={{ background: urlLoading || !urlInput.trim() ? '#d0c9be' : '#1a1a1a' }}>
-                      {urlLoading
-                        ? <><Loader size={13} className="animate-spin" /> Fetching...</>
-                        : <><Globe size={13} /> Extract Content</>}
-                    </button>
-                    {script && <p className="text-[11px] text-center" style={{ color: '#52b87c' }}>✅ Content extracted — switch to Text tab to review</p>}
-                  </div>
-                )}
-
-                {/* PDF */}
-                {scriptTab === 'pdf' && (
-                  <div className="space-y-2">
-                    <p className="text-[11px]" style={{ color: '#8a8a8a' }}>Upload a PDF — script, brochure, policy doc</p>
-                    <input ref={fileRef} type="file" accept=".pdf" className="hidden"
-                      onChange={e => uploadPdf(e.target.files[0])} />
-                    <button onClick={() => fileRef.current?.click()} disabled={pdfLoading}
-                      className="w-full flex flex-col items-center gap-2 py-7 rounded-xl border-2 border-dashed transition-all"
-                      style={{ borderColor: '#e8e3db', background: '#faf8f4', cursor: 'pointer' }}>
-                      {pdfLoading
-                        ? <><Loader size={18} className="animate-spin" style={{ color: '#a8a8a8' }} /><span className="text-[11px]" style={{ color: '#a8a8a8' }}>Reading PDF...</span></>
-                        : <><Upload size={18} style={{ color: '#a8a8a8' }} /><span className="text-[11px]" style={{ color: '#6b6b6b' }}>Click to upload PDF (max 5MB)</span></>
-                      }
-                    </button>
-                    {script && <p className="text-[11px] text-center" style={{ color: '#52b87c' }}>✅ PDF extracted — switch to Text tab to review</p>}
-                  </div>
-                )}
               </div>
-            </>
-          )}
 
-          {/* Start button */}
-          {!session ? (
-            <button onClick={startSim} disabled={starting}
-              className="btn-primary w-full justify-center gap-2"
-              style={{ background: '#2fa05c', padding: '13px' }}>
-              {starting
-                ? <><Loader size={14} className="animate-spin" /> Starting...</>
-                : <><Phone size={14} /> Start Simulation</>}
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 p-3 rounded-xl"
-                style={{ background: ended ? '#f5f1ea' : '#dcf3e5' }}>
-                {!ended && <div className="w-2 h-2 rounded-full" style={{ background: '#52b87c', boxShadow: '0 0 0 3px rgba(82,184,124,0.2)', animation: 'pulse 1.5s infinite' }} />}
-                <span className="text-[12px] font-semibold" style={{ color: ended ? '#6b6b6b' : '#228248' }}>
-                  {ended ? 'Call Ended' : `Live · ${langNames[language]}`}
-                </span>
+              {/* Names */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+                {[['Contact Name', contactName, setContactName,'Rajesh Bhai'],['AI Agent Name', personaName, setPersonaName,'Priya']].map(([l,v,fn,ph])=>(
+                  <div key={l}>
+                    <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color:'#6B7280', marginBottom:6 }}>{l}</label>
+                    <input value={v} onChange={e=>fn(e.target.value)} placeholder={ph}
+                      style={{ width:'100%', padding:'9px 12px', border:'1.5px solid #E5E7EB', borderRadius:10, fontSize:13, color:'#374151', background:'#fff', fontFamily:'inherit', boxSizing:'border-box' }}
+                      onFocus={e=>{e.target.style.borderColor=BRAND}} onBlur={e=>{e.target.style.borderColor='#E5E7EB'}}
+                    />
+                  </div>
+                ))}
               </div>
-              {!ended
-                ? <button onClick={endSim} disabled={loading}
-                    className="btn-secondary w-full justify-center gap-2 text-[13px]"
-                    style={{ borderColor: '#fecdd3', color: '#e11d48' }}>
-                    <PhoneOff size={13} /> End Call
-                  </button>
-                : <button onClick={reset} className="btn-primary w-full justify-center gap-2 text-[13px]">
-                    <Phone size={13} /> New Simulation
-                  </button>
-              }
+
+              {/* Script */}
+              <div style={{ marginBottom:16 }}>
+                <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color:'#6B7280', marginBottom:6 }}>Script / Prompt</label>
+                <textarea value={script} onChange={e=>setScript(e.target.value)} rows={5} placeholder="Enter your call script here. You can use {{name}}, {{time}} placeholders..."
+                  style={{ width:'100%', padding:'11px 14px', border:'1.5px solid #E5E7EB', borderRadius:11, fontSize:13, color:'#374151', background:'#fff', fontFamily:'inherit', boxSizing:'border-box', resize:'vertical' }}
+                  onFocus={e=>{e.target.style.borderColor=BRAND}} onBlur={e=>{e.target.style.borderColor='#E5E7EB'}}
+                />
+              </div>
+
+              <button onClick={startSession} disabled={starting||!script.trim()||(!!session&&!ended)} style={{ width:'100%', padding:'12px', borderRadius:11, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:14, cursor:starting||!script.trim()||(session&&!ended)?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, opacity:session&&!ended?0.5:1, boxShadow:'0 3px 14px rgba(255,107,53,.25)', fontFamily:'inherit' }}>
+                {starting ? <Loader2 size={15} style={{ animation:'spin .7s linear infinite' }}/> : <Zap size={15}/>}
+                {session && !ended ? 'Session active...' : ended ? 'Start New Session' : 'Start Simulation'}
+              </button>
+
+              {session && (
+                <button onClick={reset} style={{ width:'100%', marginTop:8, padding:'10px', borderRadius:11, border:'1px solid #E5E7EB', background:'#fff', color:'#6B7280', fontWeight:600, fontSize:13, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:7, fontFamily:'inherit' }}>
+                  <RotateCcw size={13}/> Reset
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Collected data */}
-          {Object.keys(collectedData).length > 0 && (
-            <div className="card p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#a8a8a8' }}>Collected Data</p>
-              {Object.entries(collectedData).map(([k, v]) => (
-                <div key={k} className="flex justify-between py-1.5 text-[12px]" style={{ borderBottom: '1px solid #f5f1ea' }}>
-                  <span style={{ color: '#a8a8a8' }}>{k}</span>
-                  <span className="font-semibold" style={{ color: '#1a1a1a' }}>{String(v)}</span>
-                </div>
-              ))}
+          {hasCollected && (
+            <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', marginTop:14, overflow:'hidden' }}>
+              <div style={{ padding:'14px 20px', borderBottom:'1px solid #F3F4F6' }}>
+                <h3 style={{ fontSize:13, fontWeight:700, color:'#0f0f0f', margin:0 }}>Collected Data</h3>
+              </div>
+              <div style={{ padding:'14px 20px' }}>
+                {Object.entries(collectedData).map(([k,v]) => (
+                  <div key={k} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #F9FAFB', fontSize:13 }}>
+                    <span style={{ color:'#6B7280', textTransform:'capitalize', fontWeight:500 }}>{k.replace(/_/g,' ')}</span>
+                    <span style={{ fontWeight:700, color:'#0f0f0f' }}>{String(v)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* ── RIGHT: Chat ── */}
-        <div className="lg:col-span-2 flex flex-col" style={{ minHeight: 560 }}>
-          <div className="card flex flex-col h-full overflow-hidden">
-
+        {/* Chat panel */}
+        {session && (
+          <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', overflow:'hidden', display:'flex', flexDirection:'column', height:'calc(100vh - 140px)', minHeight:500 }}>
             {/* Chat header */}
-            <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid #f5f1ea' }}>
-              <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#fef3d0' }}>
-                <Bot size={17} style={{ color: '#f5a623' }} />
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #F3F4F6', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:36, height:36, borderRadius:'50%', background:GRAD, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Bot size={16} color="#fff"/>
+                </div>
+                <div>
+                  <p style={{ fontSize:13, fontWeight:700, color:'#0f0f0f', margin:0 }}>{personaName} (AI)</p>
+                  <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                    <span style={{ width:6, height:6, borderRadius:'50%', background:ended?'#D1D5DB':'#10B981', animation:ended?'none':'ping 1.5s ease-in-out infinite', display:'inline-block' }}/>
+                    <span style={{ fontSize:11, color:'#9CA3AF' }}>{ended?'Call ended':'Live session'}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="text-[13px] font-semibold" style={{ color: '#1a1a1a' }}>
-                  {personaName} · {session?.campaign_name || 'Custom Script'}
-                </p>
-                <p className="text-[11px]" style={{ color: '#a8a8a8' }}>
-                  {!session ? 'Configure on the left → Start'
-                    : ended ? 'Call ended'
-                    : `Active · ${langNames[language]} · Groq AI`}
-                </p>
+              <div style={{ display:'flex', gap:6 }}>
+                <span style={{ fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20, background:'#FFF4F0', color:BRAND }}>{LANGS.find(l=>l.code===language)?.full}</span>
+                {ended && <span style={{ fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20, background:'#F9FAFB', color:'#9CA3AF' }}>Ended</span>}
               </div>
-              {session && !ended && (
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: '#dcf3e5', color: '#228248' }}>
-                  🔴 LIVE
-                </span>
-              )}
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-5" style={{ background: '#fdfcfa', minHeight: 360 }}>
+            <div style={{ flex:1, overflowY:'auto', padding:'20px' }}>
               {transcript.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: '#f5f1ea' }}>
-                    <Zap size={24} style={{ color: '#d0c9be' }} />
-                  </div>
-                  <p style={{ fontFamily: '"DM Serif Display",serif', fontSize: 15, color: '#6b6b6b' }}>Ready to simulate</p>
-                  <p className="text-[12px] max-w-xs" style={{ color: '#a8a8a8' }}>
-                    {script ? '✅ Script loaded — click Start Simulation' : 'Add a script or select a campaign, then start'}
-                  </p>
+                <div style={{ height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, color:'#D1D5DB' }}>
+                  <Bot size={36} color="#E5E7EB"/>
+                  <p style={{ fontSize:13, color:'#D1D5DB', margin:0 }}>Session started. AI will speak first...</p>
                 </div>
-              ) : (
-                <>
-                  {transcript.map((msg, i) => <Bubble key={i} msg={msg} />)}
-                  {loading && (
-                    <div className="flex gap-2 mb-3">
-                      <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#f5a623' }}>
-                        <Bot size={13} color="#fff" />
-                      </div>
-                      <div className="px-4 py-3" style={{ background: '#fff', border: '1px solid #e8e3db', borderRadius: '4px 16px 16px 16px' }}>
-                        <div className="flex gap-1">
-                          {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#d0c9be', animationDelay: `${i*0.15}s` }} />)}
-                        </div>
-                      </div>
+              ) : transcript.map((msg,i) => <Bubble key={i} msg={msg}/>)}
+              {loading && (
+                <div style={{ display:'flex', gap:10, alignItems:'flex-end', marginBottom:14 }}>
+                  <div style={{ width:30, height:30, borderRadius:'50%', background:GRAD, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <Bot size={14} color="#fff"/>
+                  </div>
+                  <div style={{ padding:'12px 16px', background:'#fff', border:'1px solid #E5E7EB', borderRadius:'4px 16px 16px 16px' }}>
+                    <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                      {[0,.2,.4].map(d=><div key={d} style={{ width:6, height:6, borderRadius:'50%', background:'#D1D5DB', animation:`bounce .9s ease-in-out ${d}s infinite` }}/>)}
                     </div>
-                  )}
-                  <div ref={bottomRef} />
-                </>
+                  </div>
+                </div>
               )}
+              <div ref={bottomRef}/>
             </div>
 
             {/* Quick replies */}
-            {session && !ended && transcript.length > 0 && (
-              <div className="px-4 py-2.5 flex gap-2 overflow-x-auto" style={{ borderTop: '1px solid #f5f1ea' }}>
-                {quickReplies.map(r => (
-                  <button key={r} onClick={() => send(r)} disabled={loading}
-                    className="flex-shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-full"
-                    style={{ background: '#f5f1ea', color: '#525252', border: '1px solid #e8e3db', whiteSpace: 'nowrap' }}>
+            {!ended && !loading && transcript.length > 0 && (
+              <div style={{ padding:'8px 16px', borderTop:'1px solid #F9FAFB', display:'flex', gap:6, overflowX:'auto' }}>
+                {(QUICK_REPLIES[language]||QUICK_REPLIES.en).map(r => (
+                  <button key={r} onClick={()=>sendMessage(r)} style={{ padding:'6px 12px', borderRadius:20, fontSize:11, fontWeight:600, background:'#F9FAFB', border:'1px solid #E5E7EB', color:'#374151', cursor:'pointer', whiteSpace:'nowrap', fontFamily:'inherit', transition:'all .15s' }}
+                    onMouseEnter={e=>{e.currentTarget.style.background='#FFF4F0';e.currentTarget.style.borderColor=BRAND;e.currentTarget.style.color=BRAND}}
+                    onMouseLeave={e=>{e.currentTarget.style.background='#F9FAFB';e.currentTarget.style.borderColor='#E5E7EB';e.currentTarget.style.color='#374151'}}>
                     {r}
                   </button>
                 ))}
@@ -475,29 +286,42 @@ export default function Simulate() {
             )}
 
             {/* Input */}
-            <div className="p-4" style={{ borderTop: '1px solid #f5f1ea' }}>
-              {!session ? (
-                <p className="text-center text-[12px] py-1" style={{ color: '#c4c4c4' }}>Start a simulation to begin chatting</p>
-              ) : ended ? (
-                <p className="text-center text-[12px] py-1" style={{ color: '#a8a8a8' }}>Call ended — click "New Simulation" to start again</p>
-              ) : (
-                <div className="flex gap-2">
-                  <input ref={inputRef} value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-                    placeholder={`Type what ${contactName || 'the contact'} would say... (Enter to send)`}
-                    disabled={loading} className="input-field flex-1 text-[13px]" />
-                  <button onClick={() => send()} disabled={loading || !input.trim()}
-                    className="btn-primary flex-shrink-0 px-4"
-                    style={{ background: loading || !input.trim() ? '#d0c9be' : '#1a1a1a' }}>
-                    {loading ? <Loader size={14} className="animate-spin" /> : <Send size={14} />}
-                  </button>
-                </div>
-              )}
-            </div>
+            {!ended && (
+              <div style={{ padding:'14px 16px', borderTop:'1px solid #F3F4F6', display:'flex', gap:10 }}>
+                <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} placeholder={`Reply as ${contactName}...`}
+                  onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}}
+                  disabled={loading}
+                  style={{ flex:1, padding:'11px 14px', border:'1.5px solid #E5E7EB', borderRadius:11, fontSize:14, color:'#374151', background:'#fff', fontFamily:'inherit', outline:'none', transition:'border-color .15s' }}
+                  onFocus={e=>e.target.style.borderColor=BRAND} onBlur={e=>e.target.style.borderColor='#E5E7EB'}
+                />
+                <button onClick={()=>sendMessage()} disabled={loading||!input.trim()} style={{ width:44, height:44, borderRadius:11, border:'none', background:input.trim()?GRAD:'#F3F4F6', display:'flex', alignItems:'center', justifyContent:'center', cursor:input.trim()?'pointer':'not-allowed', flexShrink:0, transition:'all .15s' }}>
+                  {loading ? <Loader2 size={16} color="#9CA3AF" style={{ animation:'spin .7s linear infinite' }}/> : <Send size={16} color={input.trim()?'#fff':'#D1D5DB'}/>}
+                </button>
+              </div>
+            )}
+
+            {ended && (
+              <div style={{ padding:'16px', borderTop:'1px solid #F3F4F6', textAlign:'center' }}>
+                <p style={{ fontSize:13, color:'#9CA3AF', margin:'0 0 10px' }}>This simulation has ended.</p>
+                <button onClick={reset} style={{ padding:'10px 24px', borderRadius:10, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>
+                  Start New Simulation
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        )}
+
+        {/* No session yet — placeholder */}
+        {!session && (
+          <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'64px 32px', textAlign:'center' }}>
+            <div style={{ width:72, height:72, borderRadius:20, background:'#FFF4F0', border:'1px solid #FFD4C2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20, fontSize:32 }}>🤖</div>
+            <h3 style={{ fontSize:17, fontWeight:800, color:'#0f0f0f', margin:'0 0 8px' }}>Ready to Test</h3>
+            <p style={{ fontSize:14, color:'#9CA3AF', margin:'0 0 4px', maxWidth:320 }}>Configure your script on the left and click Start Simulation to begin a live AI conversation.</p>
+            <p style={{ fontSize:12, color:'#D1D5DB', margin:'12px 0 0' }}>No real calls are made · Charges may apply for AI usage</p>
+          </div>
+        )}
       </div>
+      <style>{`@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}} @keyframes ping{0%,100%{opacity:1}50%{opacity:.35}}`}</style>
     </div>
   )
 }
