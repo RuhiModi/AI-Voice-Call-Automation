@@ -418,8 +418,9 @@ export default function Billing() {
             <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
               padding: '16px 24px', fontSize: 14, fontWeight: activeTab === t.key ? 700 : 500,
               color: activeTab === t.key ? '#6366f1' : '#6b7280',
+              background: 'none',
+              borderTop: 'none', borderLeft: 'none', borderRight: 'none',
               borderBottom: activeTab === t.key ? '2px solid #6366f1' : '2px solid transparent',
-              background: 'none', border: 'none', borderBottom: activeTab === t.key ? '2px solid #6366f1' : '2px solid transparent',
               cursor: 'pointer', transition: 'all 0.15s',
             }}>{t.label}</button>
           ))}
