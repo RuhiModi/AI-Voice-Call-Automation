@@ -5,255 +5,191 @@ import toast from 'react-hot-toast'
 import {
   Play, Pause, Phone, ArrowLeft, Users, Download,
   MessageSquare, Mic, Edit2, X, Check, ChevronDown,
-  ChevronUp, Settings, RefreshCw, Rocket
+  ChevronUp, RefreshCw, Rocket, Loader2, BarChart2
 } from 'lucide-react'
 
-const outcomeConfig = {
-  completed:   { label: 'Completed',   color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-200', dot: 'bg-green-500'  },
-  rescheduled: { label: 'Rescheduled', color: 'text-gray-600',   bg: 'bg-gray-50',   border: 'border-gray-200',  dot: 'bg-gray-400'   },
-  busy:        { label: 'Busy',        color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200',dot: 'bg-yellow-500' },
-  no_answer:   { label: 'No Answer',   color: 'text-gray-500',   bg: 'bg-gray-50',   border: 'border-gray-200',  dot: 'bg-gray-300'   },
-  transferred: { label: 'Transferred', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200',dot: 'bg-purple-400' },
-  failed:      { label: 'Failed',      color: 'text-red-500',    bg: 'bg-red-50',    border: 'border-red-200',   dot: 'bg-red-400'    },
-  in_progress: { label: 'Calling',     color: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-blue-200',  dot: 'bg-blue-400'   },
-  dnc:         { label: 'DNC',         color: 'text-gray-400',   bg: 'bg-gray-50',   border: 'border-gray-200',  dot: 'bg-gray-300'   },
-  pending:     { label: 'Pending',     color: 'text-gray-500',   bg: 'bg-gray-50',   border: 'border-gray-200',  dot: 'bg-gray-300'   },
-  calling:     { label: 'Calling',     color: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-blue-200',  dot: 'bg-blue-400'   },
+const BRAND = '#FF6B35'
+const GRAD  = 'linear-gradient(135deg,#FF8C42,#FF6B35,#E63946)'
+
+const OUTCOME_META = {
+  completed:   { label:'Completed',   c:'#10B981', bg:'#ECFDF5' },
+  rescheduled: { label:'Rescheduled', c:'#6B7280', bg:'#F9FAFB' },
+  busy:        { label:'Busy',        c:'#F59E0B', bg:'#FFFBEB' },
+  no_answer:   { label:'No Answer',   c:'#9CA3AF', bg:'#F9FAFB' },
+  transferred: { label:'Transferred', c:'#8B5CF6', bg:'#F5F3FF' },
+  failed:      { label:'Failed',      c:'#EF4444', bg:'#FEF2F2' },
+  in_progress: { label:'Calling',     c:'#3B82F6', bg:'#EFF6FF' },
+  dnc:         { label:'DNC',         c:'#9CA3AF', bg:'#F9FAFB' },
+  pending:     { label:'Pending',     c:'#9CA3AF', bg:'#F9FAFB' },
+  calling:     { label:'Calling',     c:'#3B82F6', bg:'#EFF6FF' },
+}
+const STATUS_META = {
+  active:    { label:'Live',      c:'#10B981', pulse:true  },
+  completed: { label:'Completed', c:'#9CA3AF', pulse:false },
+  paused:    { label:'Paused',    c:'#F59E0B', pulse:false },
+  draft:     { label:'Draft',     c:'#D1D5DB', pulse:false },
+}
+const LANG_NAMES = { gu:'Gujarati', hi:'Hindi', en:'English' }
+
+function getContactName(vars, fallback='Unknown') {
+  try {
+    const v = typeof vars==='string' ? JSON.parse(vars) : (vars||{})
+    return v.name||v.Name||v.driver_name||v['Driver Name']||v.contact_name||fallback
+  } catch { return fallback }
 }
 
-const statusMeta = {
-  active:    { label: 'Live',      dot: 'bg-green-500',  text: 'text-green-700',  bg: 'bg-green-50',  pulse: true  },
-  completed: { label: 'Completed', dot: 'bg-gray-400',   text: 'text-gray-600',   bg: 'bg-gray-100',  pulse: false },
-  paused:    { label: 'Paused',    dot: 'bg-yellow-500', text: 'text-yellow-700', bg: 'bg-yellow-50', pulse: false },
-  draft:     { label: 'Draft',     dot: 'bg-gray-300',   text: 'text-gray-500',   bg: 'bg-gray-50',   pulse: false },
-}
+function pct(n, total) { return total>0 ? Math.round((n/total)*100) : 0 }
 
-const langNames = { gu: 'Gujarati', hi: 'Hindi', en: 'English' }
-
-function StatCard({ label, value, color }) {
-  const colors = {
-    green:  'bg-green-50 text-green-700 border-green-200',
-    orange: 'bg-orange-50 text-orange-700 border-orange-200',
-    gray:   'bg-gray-50 text-gray-600 border-gray-200',
-    blue:   'bg-blue-50 text-blue-600 border-blue-200',
-    red:    'bg-red-50 text-red-500 border-red-200',
-  }
+function ProgressBar({ value, color='#10B981' }) {
   return (
-    <div className={`flex flex-col items-center px-3 py-3 rounded-xl border ${colors[color] || colors.gray}`}>
-      <span className="font-bold text-xl">{value}</span>
-      <span className="text-xs font-medium mt-0.5">{label}</span>
+    <div style={{ height:6, background:'#F3F4F6', borderRadius:99, overflow:'hidden' }}>
+      <div style={{ height:6, width:`${Math.min(value,100)}%`, background:color===BRAND?GRAD:color, borderRadius:99, transition:'width .7s' }}/>
     </div>
   )
 }
 
-// Helper: extract name from contact variables (handles string JSON or object)
-function getContactName(variables, fallback = 'Unknown') {
-  try {
-    const v = typeof variables === 'string' ? JSON.parse(variables) : (variables || {})
-    return v.name || v.Name || v.contact_name || v['Contact Name'] || v.NAME || fallback
-  } catch {
-    return fallback
-  }
+function StatPill({ label, value, color='#9CA3AF' }) {
+  return (
+    <div style={{ padding:'12px 16px', borderRadius:14, background:color+'12', border:`1px solid ${color}25`, textAlign:'center', minWidth:80 }}>
+      <p style={{ fontSize:22, fontWeight:900, color, margin:0, letterSpacing:'-0.03em' }}>{value}</p>
+      <p style={{ fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color, margin:'3px 0 0', opacity:.8 }}>{label}</p>
+    </div>
+  )
 }
 
+function Spinner() {
+  return <div style={{ width:16, height:16, border:'2px solid rgba(255,255,255,.3)', borderTop:'2px solid #fff', borderRadius:'50%', animation:'spin .7s linear infinite', flexShrink:0 }}/>
+}
 
-// ── Plain-language Results Summary — designed for non-tech clients ──────────
+function Btn({ children, onClick, disabled, loading, variant='primary', icon:Icon, size='md' }) {
+  const sizes = { sm:{padding:'7px 14px',fontSize:12}, md:{padding:'10px 18px',fontSize:13} }
+  const variants = {
+    primary: { background:GRAD, color:'#fff', border:'none', boxShadow:'0 3px 14px rgba(255,107,53,.25)' },
+    outline: { background:'#fff', color:'#374151', border:'1.5px solid #E5E7EB', boxShadow:'none' },
+    green:   { background:'#10B981', color:'#fff', border:'none', boxShadow:'0 3px 14px rgba(16,185,129,.25)' },
+    danger:  { background:'#FEF2F2', color:'#DC2626', border:'1px solid #FECACA', boxShadow:'none' },
+  }
+  return (
+    <button onClick={onClick} disabled={disabled||loading} style={{ display:'inline-flex', alignItems:'center', gap:7, borderRadius:10, fontWeight:700, fontFamily:'inherit', cursor:loading||disabled?'not-allowed':'pointer', opacity:disabled&&!loading?0.5:1, transition:'all .15s', ...sizes[size], ...variants[variant] }}>
+      {loading ? <Spinner/> : Icon ? <Icon size={14}/> : null}
+      {children}
+    </button>
+  )
+}
+
+// Results summary component
 function ResultsSummary({ calls, campaign, stats }) {
-  if (!calls || calls.length === 0) {
-    return (
-      <div className="p-12 text-center text-gray-400">
-        <div className="text-5xl mb-4">📊</div>
-        <p className="font-semibold text-gray-500">No results yet</p>
-        <p className="text-sm mt-1">Results will appear here as calls complete</p>
-      </div>
-    )
-  }
+  if (!calls?.length) return (
+    <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', padding:'52px 24px', textAlign:'center' }}>
+      <div style={{ fontSize:40, marginBottom:14 }}>📊</div>
+      <p style={{ fontSize:15, fontWeight:700, color:'#374151', margin:'0 0 6px' }}>No results yet</p>
+      <p style={{ fontSize:13, color:'#9CA3AF', margin:0 }}>Results will appear here as calls complete</p>
+    </div>
+  )
 
-  const isAnnouncement = campaign?.campaign_type === 'announcement' || campaign?.campaign_type === 'reminder'
   const total      = calls.length
-  const completed  = calls.filter(c => c.outcome === 'completed').length
-  const rescheduled= calls.filter(c => c.outcome === 'rescheduled').length
-  const busy       = calls.filter(c => c.outcome === 'busy').length
-  const noAnswer   = calls.filter(c => c.outcome === 'no_answer' || c.outcome === 'failed').length
-  const dnc        = calls.filter(c => c.outcome === 'dnc').length
-  const acknowledged = calls.filter(c => c.acknowledged === true).length
-  const notAcked   = calls.filter(c => c.acknowledged === false).length
-  const pct = n => total ? Math.round((n / total) * 100) : 0
+  const completed  = calls.filter(c=>c.outcome==='completed').length
+  const rescheduled= calls.filter(c=>c.outcome==='rescheduled').length
+  const busy       = calls.filter(c=>c.outcome==='busy').length
+  const noAnswer   = calls.filter(c=>c.outcome==='no_answer'||c.outcome==='failed').length
+  const acknowledged = calls.filter(c=>c.acknowledged===true).length
+  const needFollowUp = calls.filter(c=>c.confusion_count>=2||(c.acknowledged===false&&c.outcome==='completed'))
+  const isAnnouncement = campaign?.campaign_type==='announcement'||campaign?.campaign_type==='reminder'
 
-  // Parse collected_data per call
-  const getCD = c => {
-    if (!c.collected_data) return {}
-    if (typeof c.collected_data === 'object') return c.collected_data
-    try { return JSON.parse(c.collected_data) } catch { return {} }
-  }
-
-  // For survey campaigns — aggregate collected fields
   const allFields = {}
   calls.forEach(c => {
-    const cd = getCD(c)
-    Object.entries(cd).forEach(([k, v]) => {
-      if (!allFields[k]) allFields[k] = []
-      if (v) allFields[k].push(String(v))
-    })
+    const cd = typeof c.collected_data==='string' ? JSON.parse(c.collected_data||'{}') : (c.collected_data||{})
+    Object.entries(cd).forEach(([k,v]) => { if(!allFields[k]) allFields[k]=[]; if(v) allFields[k].push(String(v)) })
   })
 
-  // Need manual follow-up = confusion ≥ 2 OR not acknowledged
-  const needFollowUp = calls.filter(c =>
-    (c.confusion_count >= 2) || (c.acknowledged === false && c.outcome === 'completed')
-  )
-
-  const getContactName = (call) => {
-    try {
-      const v = typeof call.variables === 'string' ? JSON.parse(call.variables) : (call.variables || {})
-      return v.name || v.Name || v.driver_name || v['Driver Name'] || call.phone
-    } catch { return call.phone }
-  }
-
   return (
-    <div className="divide-y divide-gray-100">
-
-      {/* ── Hero numbers — big, plain language ─── */}
-      <div className="p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <BigStat
-          emoji="📞" value={total}
-          label="Total Contacts" color="bg-gray-50 border-gray-200" />
-        <BigStat
-          emoji="✅" value={completed}
-          label="Calls Answered" sub={`${pct(completed)}% of total`}
-          color="bg-green-50 border-green-200" textColor="text-green-700" />
-        <BigStat
-          emoji="📵" value={noAnswer}
-          label="No Answer" sub={`${pct(noAnswer)}% of total`}
-          color="bg-gray-50 border-gray-200" />
-        <BigStat
-          emoji="📳" value={busy}
-          label="Line Busy" sub="Number was busy"
-          color="bg-yellow-50 border-yellow-200" textColor="text-yellow-700" />
-        <BigStat
-          emoji="🔄" value={rescheduled}
-          label="Called Back Later" sub="Requested callback"
-          color="bg-blue-50 border-blue-200" textColor="text-blue-600" />
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Hero stats */}
+      <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', padding:'20px', display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))', gap:10 }}>
+        {[
+          { emoji:'📞', label:'Total', value:total, c:'#374151' },
+          { emoji:'✅', label:'Answered', value:completed, c:'#10B981' },
+          { emoji:'📵', label:'No Answer', value:noAnswer, c:'#9CA3AF' },
+          { emoji:'📳', label:'Busy', value:busy, c:'#F59E0B' },
+          { emoji:'🔄', label:'Callback', value:rescheduled, c:'#3B82F6' },
+        ].map(s => (
+          <div key={s.label} style={{ textAlign:'center', padding:'14px 8px', borderRadius:12, background:s.c+'10' }}>
+            <div style={{ fontSize:22, marginBottom:6 }}>{s.emoji}</div>
+            <p style={{ fontSize:24, fontWeight:900, color:s.c, margin:0, letterSpacing:'-0.03em' }}>{s.value}</p>
+            <p style={{ fontSize:10, color:s.c, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', margin:'3px 0 0' }}>{s.label}</p>
+            <p style={{ fontSize:10, color:'#9CA3AF', margin:'2px 0 0' }}>{pct(s.value,total)}%</p>
+          </div>
+        ))}
       </div>
 
-      {/* ── Announcement-specific: acknowledged ── */}
-      {isAnnouncement && (acknowledged > 0 || notAcked > 0) && (
-        <div className="p-6">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">
-            Message Confirmation
-          </h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="p-4 bg-green-50 border border-green-200 rounded-2xl text-center">
-              <p className="text-3xl font-bold text-green-700">{acknowledged}</p>
-              <p className="text-sm font-semibold text-green-600 mt-1">✅ Confirmed</p>
-              <p className="text-xs text-green-500 mt-0.5">Understood the message</p>
+      {/* Acknowledgement (announcement campaigns) */}
+      {isAnnouncement && acknowledged > 0 && (
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', padding:'20px' }}>
+          <h3 style={{ fontSize:13, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', margin:'0 0 14px' }}>Message Confirmation</h3>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+            <div style={{ padding:'16px', borderRadius:12, background:'#ECFDF5', textAlign:'center' }}>
+              <p style={{ fontSize:28, fontWeight:900, color:'#10B981', margin:0 }}>{acknowledged}</p>
+              <p style={{ fontSize:12, fontWeight:700, color:'#065F46', margin:'4px 0 2px' }}>✅ Confirmed</p>
+              <p style={{ fontSize:11, color:'#6EE7B7', margin:0 }}>Understood the message</p>
             </div>
-            <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl text-center">
-              <p className="text-3xl font-bold text-orange-700">{notAcked}</p>
-              <p className="text-sm font-semibold text-orange-600 mt-1">❓ Unclear</p>
-              <p className="text-xs text-orange-500 mt-0.5">May need follow-up</p>
+            <div style={{ padding:'16px', borderRadius:12, background:'#FFFBEB', textAlign:'center' }}>
+              <p style={{ fontSize:28, fontWeight:900, color:'#F59E0B', margin:0 }}>{completed-acknowledged}</p>
+              <p style={{ fontSize:12, fontWeight:700, color:'#92400E', margin:'4px 0 2px' }}>❓ Unclear</p>
+              <p style={{ fontSize:11, color:'#FCD34D', margin:0 }}>May need follow-up</p>
             </div>
           </div>
-          {/* Progress bar */}
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 rounded-full transition-all"
-              style={{ width: `${pct(acknowledged)}%` }} />
-          </div>
-          <p className="text-xs text-gray-500 mt-1.5">
-            {pct(acknowledged)}% confirmed · {pct(notAcked)}% unclear
-          </p>
+          <ProgressBar value={pct(acknowledged,completed||1)} color="#10B981"/>
+          <p style={{ fontSize:11, color:'#9CA3AF', margin:'6px 0 0' }}>{pct(acknowledged,total)}% confirmed · {pct(completed-acknowledged,total)}% unclear</p>
         </div>
       )}
 
-      {/* ── Survey: collected data summary ── */}
+      {/* Survey data */}
       {!isAnnouncement && Object.keys(allFields).length > 0 && (
-        <div className="p-6">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">
-            What We Learned
-          </h3>
-          <div className="space-y-4">
-            {Object.entries(allFields).map(([field, values]) => {
-              const counts = {}
-              values.forEach(v => { counts[v] = (counts[v] || 0) + 1 })
-              const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1])
-              const fieldLabel = field.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase())
-              return (
-                <div key={field}>
-                  <p className="text-xs font-semibold text-gray-600 mb-2">{fieldLabel}</p>
-                  <div className="space-y-1.5">
-                    {sorted.slice(0, 5).map(([val, count]) => (
-                      <div key={val} className="flex items-center gap-3">
-                        <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-[#1a1a1a] rounded-full transition-all"
-                            style={{ width: `${Math.round((count/values.length)*100)}%` }} />
-                        </div>
-                        <span className="text-xs text-gray-600 w-28 truncate">{val}</span>
-                        <span className="text-xs font-bold text-gray-800 w-8 text-right">{count}</span>
-                      </div>
-                    ))}
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', padding:'20px' }}>
+          <h3 style={{ fontSize:13, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', margin:'0 0 16px' }}>Collected Data</h3>
+          {Object.entries(allFields).map(([field,values]) => {
+            const counts = {}
+            values.forEach(v => { counts[v]=(counts[v]||0)+1 })
+            const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1])
+            return (
+              <div key={field} style={{ marginBottom:18 }}>
+                <p style={{ fontSize:12, fontWeight:700, color:'#374151', marginBottom:8, textTransform:'capitalize' }}>{field.replace(/_/g,' ')}</p>
+                {sorted.slice(0,5).map(([val,count]) => (
+                  <div key={val} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+                    <div style={{ flex:1, height:6, background:'#F3F4F6', borderRadius:99, overflow:'hidden' }}>
+                      <div style={{ height:6, width:`${pct(count,values.length)}%`, background:GRAD, borderRadius:99 }}/>
+                    </div>
+                    <span style={{ fontSize:12, color:'#374151', minWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{val}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:'#0f0f0f', minWidth:24, textAlign:'right' }}>{count}</span>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                ))}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* ── Needs follow-up ── */}
+      {/* Follow-up needed */}
       {needFollowUp.length > 0 && (
-        <div className="p-6">
-          <h3 className="text-xs font-bold text-orange-600 uppercase tracking-wider mb-1">
-            ⚠️ Needs Manual Follow-up ({needFollowUp.length})
-          </h3>
-          <p className="text-xs text-gray-400 mb-4">
-            These contacts were confused or didn't confirm — call them manually
-          </p>
-          <div className="space-y-2">
-            {needFollowUp.slice(0, 10).map(c => (
-              <div key={c.id} className="flex items-center gap-3 p-3 bg-orange-50 border border-orange-100 rounded-xl">
-                <div className="w-8 h-8 bg-orange-100 rounded-xl flex items-center justify-center text-sm font-bold text-orange-600">
-                  {getContactName(c)[0]?.toUpperCase() || '?'}
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #FDE68A', padding:'20px' }}>
+          <h3 style={{ fontSize:13, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#92400E', margin:'0 0 4px' }}>⚠️ Needs Follow-up ({needFollowUp.length})</h3>
+          <p style={{ fontSize:12, color:'#9CA3AF', margin:'0 0 14px' }}>These contacts were confused or didn't confirm</p>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {needFollowUp.slice(0,10).map(c => (
+              <div key={c.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10, background:'#FFFBEB', border:'1px solid #FDE68A' }}>
+                <div style={{ width:32, height:32, borderRadius:10, background:'#FEF9C3', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, color:'#92400E', flexShrink:0 }}>
+                  {getContactName(c)[0]?.toUpperCase()||'?'}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 truncate">{getContactName(c)}</p>
-                  <p className="text-xs text-gray-500">{c.phone}</p>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ fontSize:13, fontWeight:600, color:'#374151', margin:0 }}>{getContactName(c)}</p>
+                  <p style={{ fontSize:11, color:'#9CA3AF', margin:0 }}>{c.phone}</p>
                 </div>
-                <span className="text-xs text-orange-600 font-medium flex-shrink-0">
-                  {c.confusion_count >= 2 ? `${c.confusion_count} confusions` : 'Did not confirm'}
-                </span>
+                <span style={{ fontSize:11, color:'#F59E0B', fontWeight:600 }}>{c.confusion_count>=2?`${c.confusion_count} confusions`:'No confirmation'}</span>
               </div>
             ))}
-            {needFollowUp.length > 10 && (
-              <p className="text-xs text-gray-400 text-center pt-1">
-                +{needFollowUp.length - 10} more contacts need follow-up
-              </p>
-            )}
           </div>
         </div>
       )}
-
-      {/* ── DNC ── */}
-      {dnc > 0 && (
-        <div className="p-6">
-          <div className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
-            <span className="text-lg">🚫</span>
-            <p className="text-sm text-gray-600">
-              <span className="font-bold">{dnc} contacts</span> asked not to be called again — removed from future campaigns
-            </p>
-          </div>
-        </div>
-      )}
-
-    </div>
-  )
-}
-
-function BigStat({ emoji, value, label, sub, color = 'bg-gray-50 border-gray-200', textColor = 'text-gray-800' }) {
-  return (
-    <div className={`p-4 rounded-2xl border ${color} text-center`}>
-      <div className="text-2xl mb-1">{emoji}</div>
-      <p className={`text-3xl font-bold ${textColor}`}>{value}</p>
-      <p className="text-xs font-semibold text-gray-600 mt-1 leading-tight">{label}</p>
-      {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
     </div>
   )
 }
@@ -270,39 +206,29 @@ export default function CampaignDetail() {
   const [activeTab,     setActiveTab]     = useState('calls')
   const [loading,       setLoading]       = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
-  const [showEdit,      setShowEdit]      = useState(false)
-  const [editForm,      setEditForm]      = useState({})
 
   const loadAll = useCallback(async () => {
     try {
-      const [campRes, callsRes] = await Promise.all([
-        campaignApi.get(id),
-        campaignApi.calls(id),
-      ])
+      const [campRes, callsRes] = await Promise.all([campaignApi.get(id), campaignApi.calls(id)])
       setCampaign(campRes.data.campaign)
       setStats(campRes.data.stats)
-      setCalls(callsRes.data.logs || [])
-    } catch {
-      toast.error('Failed to load campaign')
-    } finally {
-      setLoading(false)
-    }
+      setCalls(callsRes.data.logs||[])
+    } catch { toast.error('Failed to load campaign') }
+    finally { setLoading(false) }
   }, [id])
 
   const loadContacts = useCallback(async () => {
     try {
       const res = await campaignApi.getContacts(id)
-      setContacts(res.data.contacts || [])
-      setContactTotal(res.data.total || 0)
-    } catch {
-      toast.error('Failed to load contacts')
-    }
+      setContacts(res.data.contacts||[])
+      setContactTotal(res.data.total||0)
+    } catch { toast.error('Failed to load contacts') }
   }, [id])
 
   useEffect(() => { loadAll() }, [loadAll])
-  useEffect(() => { if (activeTab === 'contacts') loadContacts() }, [activeTab, loadContacts])
+  useEffect(() => { if (activeTab==='contacts') loadContacts() }, [activeTab, loadContacts])
   useEffect(() => {
-    if (campaign?.status !== 'active') return
+    if (campaign?.status!=='active') return
     const t = setInterval(loadAll, 8000)
     return () => clearInterval(t)
   }, [campaign?.status, loadAll])
@@ -310,270 +236,254 @@ export default function CampaignDetail() {
   async function toggleCampaign() {
     setActionLoading(true)
     try {
-      if (campaign.status === 'active') {
-        await campaignApi.pause(id)
-        toast.success('Campaign paused')
-      } else if (campaign.status === 'completed') {
-        // Relaunch — reset contacts and start again
-        await campaignApi.launch(id)
-        toast.success('Campaign relaunched! 🚀')
+      if (campaign.status==='active') {
+        await campaignApi.pause(id); toast.success('Campaign paused')
       } else {
         const res = await campaignApi.launch(id)
-        if (res.data.scheduled_at) {
-          toast.success(`Campaign scheduled for ${new Date(res.data.scheduled_at).toLocaleString('en-IN')} 📅`)
-        } else {
-          toast.success('Campaign launched! 🚀')
-        }
+        toast.success(res.data.scheduled_at ? `Scheduled for ${new Date(res.data.scheduled_at).toLocaleString('en-IN')} 📅` : 'Campaign launched 🚀')
       }
       await loadAll()
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Action failed'
-      toast.error(msg)
-      console.error('Launch error:', err.response?.data)
-    } finally { setActionLoading(false) }
-  }
-
-  function openEdit() {
-    setEditForm({
-      name: campaign.name,
-      persona_name: campaign.persona_name || '',
-      persona_tone: campaign.persona_tone || '',
-      max_concurrent_calls: campaign.max_concurrent_calls || 5,
-      max_retries: campaign.max_retries || 2,
-      calling_hours_start: campaign.calling_hours_start || '09:00',
-      calling_hours_end: campaign.calling_hours_end || '21:00',
-    })
-    setShowEdit(true)
-  }
-
-  async function saveEdit() {
-    setActionLoading(true)
-    try {
-      await campaignApi.update(id, editForm)
-      toast.success('Campaign updated!')
-      setShowEdit(false)
-      await loadAll()
-    } catch { toast.error('Update failed') }
+    } catch (err) { toast.error(err.response?.data?.error||'Action failed') }
     finally { setActionLoading(false) }
   }
 
   function exportCSV() {
-    const header = ['Phone','Name','Outcome','Duration(s)','Time']
-    const rows = calls.map(c => [c.phone, getContactName(c.variables, ''), c.outcome, c.duration_sec, new Date(c.started_at).toLocaleString('en-IN')])
-    const csv = [header,...rows].map(r=>r.join(',')).join('\n')
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}))
-    a.download = `${campaign?.name}-calls.csv`
-    a.click()
+    const rows = calls.map(c => [c.phone, getContactName(c.variables,''), c.outcome, c.duration_sec||0, new Date(c.started_at).toLocaleString('en-IN')])
+    const csv  = [['Phone','Name','Outcome','Duration(s)','Time'], ...rows].map(r=>r.join(',')).join('\n')
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`${campaign?.name}-calls.csv`; a.click()
   }
 
-  if (loading) return <div className="p-10 flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" /></div>
-  if (!campaign) return <div className="p-10 text-center"><p className="text-gray-500">Campaign not found</p><Link to="/dashboard/campaigns" className="font-semibold mt-2 block">← Back</Link></div>
+  if (loading) return (
+    <div style={{ padding:'28px', display:'flex', justifyContent:'center', alignItems:'center', height:300 }}>
+      <div style={{ width:32, height:32, border:'3px solid #F3F4F6', borderTop:`3px solid ${BRAND}`, borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+  if (!campaign) return (
+    <div style={{ padding:'28px', textAlign:'center' }}>
+      <p style={{ fontSize:15, color:'#9CA3AF', marginBottom:16 }}>Campaign not found</p>
+      <Link to="/dashboard/campaigns" style={{ color:BRAND, fontWeight:700, textDecoration:'none' }}>← Back to campaigns</Link>
+    </div>
+  )
 
-  const total = campaign.total_contacts || 0
-  // Progress = all processed calls (completed + busy + no_answer + failed + rescheduled)
-  // NOT just completed — a busy call was still attempted
-  const done  = parseInt(stats?.completed || 0)
-    + parseInt(stats?.busy      || 0)
-    + parseInt(stats?.no_answer || 0)
-    + parseInt(stats?.failed    || 0)
-    + parseInt(stats?.rescheduled || 0)
-  const pct   = total > 0 ? Math.round((Math.min(done, total)/total)*100) : 0
-  const meta  = statusMeta[campaign.status] || statusMeta.draft
+  const total = campaign.total_contacts||0
+  const done  = parseInt(stats?.completed||0) + parseInt(stats?.busy||0) + parseInt(stats?.no_answer||0) + parseInt(stats?.failed||0) + parseInt(stats?.rescheduled||0)
+  const progress = total>0 ? Math.round((Math.min(done,total)/total)*100) : 0
+  const sm = STATUS_META[campaign.status]||STATUS_META.draft
+
+  const TABS = [
+    { key:'results',  label:'Results',             count:calls.length },
+    { key:'calls',    label:'Call Logs',            count:calls.length },
+    { key:'contacts', label:'Contacts',             count:total        },
+    { key:'settings', label:'Settings',             count:null         },
+  ]
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto">
+    <div style={{ padding:'24px 28px 56px', maxWidth:1200, margin:'0 auto' }}>
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes ping{0%,100%{opacity:1}50%{opacity:.35}}`}</style>
 
-      <Link to="/dashboard/campaigns" className="inline-flex items-center gap-1.5 text-gray-500 hover:text-gray-800 text-sm font-medium mb-6">
-        <ArrowLeft size={14} /> All Campaigns
+      {/* Back */}
+      <Link to="/dashboard/campaigns" style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:13, color:'#9CA3AF', textDecoration:'none', marginBottom:20, fontWeight:600 }}
+        onMouseEnter={e=>e.currentTarget.style.color=BRAND} onMouseLeave={e=>e.currentTarget.style.color='#9CA3AF'}>
+        <ArrowLeft size={14}/> All Campaigns
       </Link>
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:22, flexWrap:'wrap', gap:12 }}>
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="font-bold text-2xl lg:text-3xl text-gray-900">{campaign.name}</h1>
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${meta.bg}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${meta.dot} ${meta.pulse ? 'animate-pulse' : ''}`} />
-              <span className={`text-xs font-bold ${meta.text}`}>{meta.label}</span>
-            </div>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+            <h1 style={{ fontSize:22, fontWeight:800, color:'#0f0f0f', margin:0, letterSpacing:'-0.025em' }}>{campaign.name}</h1>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 11px', borderRadius:20, background:sm.c+'15', color:sm.c }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:sm.c, animation:sm.pulse?'ping 1.5s ease-in-out infinite':'none' }}/>
+              {sm.label}
+            </span>
           </div>
-          <p className="text-gray-500 text-sm">{langNames[campaign.language_priority]||'Gujarati'} · {campaign.persona_name} · {campaign.campaign_type}</p>
+          <p style={{ fontSize:13, color:'#9CA3AF', margin:0 }}>
+            {LANG_NAMES[campaign.language_priority]||'Gujarati'} · {campaign.persona_name} · <span style={{ textTransform:'capitalize' }}>{campaign.campaign_type}</span>
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={loadAll} className="p-2.5 border border-gray-200 rounded-xl text-gray-500 hover:border-gray-400 transition-all"><RefreshCw size={14}/></button>
-          <button onClick={() => navigate(`/dashboard/campaigns/${id}/edit`)} className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-gray-400 transition-all"><Edit2 size={14}/> Edit</button>
-          <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-gray-400 transition-all"><Download size={14}/> Export</button>
-          {campaign.status !== 'completed' && (
-            <button onClick={toggleCampaign} disabled={actionLoading}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50
-                ${campaign.status==='active' ? 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100' : 'bg-[#228248] text-white hover:bg-green-700'}`}>
-              {actionLoading ? <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin"/> :
-                campaign.status==='active' ? <><Pause size={15}/> Pause</> : <><Rocket size={15}/> {campaign.status==='draft'?'Launch':'Resume'}</>}
-            </button>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <Btn onClick={loadAll} variant="outline" size="sm" icon={RefreshCw}>Refresh</Btn>
+          <Btn onClick={() => navigate(`/dashboard/campaigns/${id}/edit`)} variant="outline" size="sm" icon={Edit2}>Edit</Btn>
+          <Btn onClick={exportCSV} variant="outline" size="sm" icon={Download}>Export</Btn>
+          {campaign.status!=='completed' && (
+            <Btn
+              onClick={toggleCampaign} loading={actionLoading}
+              variant={campaign.status==='active'?'outline':'green'}
+              icon={campaign.status==='active'?Pause:Rocket}
+              size="sm">
+              {campaign.status==='active' ? 'Pause' : campaign.status==='draft' ? 'Launch' : 'Resume'}
+            </Btn>
           )}
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
-        <StatCard label="Total"     value={total}                 color="blue"  />
-        <StatCard label="Completed" value={stats?.completed||0}   color="green" />
-        <StatCard label="Pending"   value={stats?.pending||0}     color="orange"/>
-        <StatCard label="Busy"      value={stats?.busy||0}        color="orange"/>
-        <StatCard label="No Answer" value={stats?.no_answer||0}   color="gray"  />
-        <StatCard label="Failed"    value={stats?.failed||0}      color="red"   />
+      {/* Stats row */}
+      <div style={{ display:'flex', gap:10, marginBottom:18, flexWrap:'wrap' }}>
+        {[
+          { label:'Total',     value:total,                  c:'#374151' },
+          { label:'Completed', value:stats?.completed||0,    c:'#10B981' },
+          { label:'Pending',   value:stats?.pending||0,      c:BRAND     },
+          { label:'Busy',      value:stats?.busy||0,         c:'#F59E0B' },
+          { label:'No Answer', value:stats?.no_answer||0,    c:'#9CA3AF' },
+          { label:'Failed',    value:stats?.failed||0,       c:'#EF4444' },
+        ].map(s => <StatPill key={s.label} {...s}/>)}
       </div>
 
       {/* Progress */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-semibold text-gray-700 text-sm">Overall Progress</p>
-          <span className="font-bold text-lg">{pct}%</span>
+      <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', padding:'18px 22px', marginBottom:22 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <p style={{ fontSize:13, fontWeight:700, color:'#374151', margin:0 }}>Overall Progress</p>
+          <span style={{ fontSize:20, fontWeight:900, color:'#0f0f0f', letterSpacing:'-0.03em' }}>{progress}%</span>
         </div>
-        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-[#228248] to-green-400 rounded-full transition-all duration-700" style={{width:`${pct}%`}}/>
-        </div>
-        {campaign.status==='active' && <p className="text-sm text-green-700 mt-2 flex items-center gap-2"><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse inline-block"/>Calls running live</p>}
+        <ProgressBar value={progress} color="#10B981"/>
+        {campaign.status==='active' && (
+          <p style={{ fontSize:12, color:'#10B981', margin:'8px 0 0', display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ width:7, height:7, borderRadius:'50%', background:'#10B981', display:'inline-block', animation:'ping 1.5s ease-in-out infinite' }}/>
+            Calls running live — refreshing every 8 seconds
+          </p>
+        )}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
-        {[
-          {id:'results',  label:'Results Summary'},
-          {id:'calls',    label:`Call Logs (${calls.length})`},
-          {id:'contacts', label:`Contacts (${total})`},
-          {id:'settings', label:'Settings'},
-        ].map(tab => (
-          <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all
-              ${activeTab===tab.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-            {tab.label}
+      <div style={{ display:'flex', borderBottom:'1px solid #E5E7EB', marginBottom:20 }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={()=>setActiveTab(t.key)} style={{
+            padding:'12px 18px', fontSize:13, fontWeight:activeTab===t.key?700:500,
+            color:activeTab===t.key?BRAND:'#6B7280',
+            borderTop:'none', borderLeft:'none', borderRight:'none',
+            borderBottom:activeTab===t.key?`2px solid ${BRAND}`:'2px solid transparent',
+            background:'none', cursor:'pointer', transition:'all .15s',
+            display:'flex', alignItems:'center', gap:7, fontFamily:'inherit',
+          }}>
+            {t.label}
+            {t.count!==null && <span style={{ fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:20, background:activeTab===t.key?BRAND+'15':'#F3F4F6', color:activeTab===t.key?BRAND:'#9CA3AF' }}>{t.count}</span>}
           </button>
         ))}
       </div>
 
-      {/* Call Logs Tab */}
-      {activeTab==='results' && (
-        <ResultsSummary calls={calls} campaign={campaign} stats={stats} />
-      )}
+      {/* Results tab */}
+      {activeTab==='results' && <ResultsSummary calls={calls} campaign={campaign} stats={stats}/>}
 
+      {/* Calls tab */}
       {activeTab==='calls' && (
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', overflow:'hidden' }}>
           {calls.length===0 ? (
-            <div className="p-16 text-center">
-              <div className="w-16 h-16 bg-gray-50 rounded-xl flex items-center justify-center mx-auto mb-4"><Phone size={28} className="text-gray-300"/></div>
-              <p className="font-bold text-gray-500 mb-1">No calls yet</p>
-              <p className="text-gray-400 text-sm">{campaign.status==='draft'||campaign.status==='paused' ? 'Launch the campaign to start making calls' : 'Calls will appear here as they complete'}</p>
+            <div style={{ padding:'52px 24px', textAlign:'center' }}>
+              <div style={{ width:56, height:56, borderRadius:16, background:'#F9FAFB', border:'1px solid #E5E7EB', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}><Phone size={24} color="#D1D5DB"/></div>
+              <p style={{ fontSize:15, fontWeight:700, color:'#374151', margin:'0 0 6px' }}>No calls yet</p>
+              <p style={{ fontSize:13, color:'#9CA3AF', margin:0 }}>{campaign.status==='draft'||campaign.status==='paused'?'Launch the campaign to start making calls':'Calls will appear here as they complete'}</p>
             </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {calls.map(call => {
-                const oc = outcomeConfig[call.outcome]||outcomeConfig.completed
-                const isExpanded = expandedCall===call.id
-                const transcript = Array.isArray(call.transcript) ? call.transcript : (()=>{try{return JSON.parse(call.transcript||'[]')}catch{return []}})()
-                const cd = (()=>{if(!call.collected_data)return{};if(typeof call.collected_data==='object')return call.collected_data;try{return JSON.parse(call.collected_data)}catch{return{}}})()
-                const contactName = getContactName(call.variables, null)
-                return (
-                  <div key={call.id}>
-                    <button onClick={()=>setExpandedCall(isExpanded?null:call.id)} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors text-left">
-                      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-sm font-bold text-gray-500 flex-shrink-0">
-                        {(contactName || call.phone || '?')[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">{contactName || call.phone || 'Unknown'}</p>
-                        <p className="text-xs text-gray-500">{call.phone} · {call.duration_sec||0}s</p>
-                      </div>
-                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${oc.bg} ${oc.border}`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${oc.dot}`}/>
-                        <span className={`text-xs font-semibold ${oc.color}`}>{oc.label}</span>
-                      </div>
-                      <span className="text-xs text-gray-400 hidden sm:block">{new Date(call.started_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>
-                      {isExpanded ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
-                    </button>
-                    {isExpanded && (
-                      <div className="mx-6 mb-4 bg-gray-50 rounded-xl p-5 border border-gray-200">
-                        {transcript.length>0 ? (
-                          <div className="space-y-3 mb-4">
-                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2"><MessageSquare size={12}/> Transcript</p>
-                            {transcript.map((t,ti)=>(
-                              <div key={ti} className={`flex ${t.role==='assistant'?'justify-start':'justify-end'}`}>
-                                <div className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm ${t.role==='assistant'?'bg-white border border-gray-200 text-gray-800':'bg-gray-800 text-white'}`}>
-                                  <p className={`text-[10px] font-bold mb-1 ${t.role==='assistant'?'text-gray-400':'text-gray-400'}`}>
-                                    {t.role==='assistant' ? '🤖 AI Agent' : ('👤 ' + (contactName || 'Contact'))}
-                                  </p>
-                                  {t.content||t.text}
-                                </div>
+          ) : calls.map(call => {
+            const oc = OUTCOME_META[call.outcome]||OUTCOME_META.completed
+            const isExp = expandedCall===call.id
+            const transcript = Array.isArray(call.transcript)?call.transcript:(()=>{try{return JSON.parse(call.transcript||'[]')}catch{return[]}})()
+            const cd = (()=>{if(!call.collected_data)return{};if(typeof call.collected_data==='object')return call.collected_data;try{return JSON.parse(call.collected_data)}catch{return{}}})()
+            const cName = getContactName(call.variables, null)
+            return (
+              <div key={call.id} style={{ borderBottom:'1px solid #F3F4F6' }}>
+                <button onClick={()=>setExpandedCall(isExp?null:call.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 20px', background:'none', border:'none', cursor:'pointer', textAlign:'left', transition:'background .15s', fontFamily:'inherit' }}
+                  onMouseEnter={e=>e.currentTarget.style.background='#F9FAFB'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <div style={{ width:38, height:38, borderRadius:11, background:'#F3F4F6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#6B7280', flexShrink:0 }}>
+                    {(cName||call.phone||'?')[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:13, fontWeight:700, color:'#0f0f0f', margin:0 }}>{cName||call.phone||'Unknown'}</p>
+                    <p style={{ fontSize:11, color:'#9CA3AF', margin:'2px 0 0' }}>{call.phone} · {call.duration_sec||0}s</p>
+                  </div>
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:20, background:oc.bg, color:oc.c, flexShrink:0 }}>
+                    <span style={{ width:5, height:5, borderRadius:'50%', background:oc.c }}/>{oc.label}
+                  </span>
+                  <span style={{ fontSize:11, color:'#D1D5DB', display:'none' }} className="sm-show">{new Date(call.started_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>
+                  {isExp ? <ChevronUp size={15} color="#9CA3AF"/> : <ChevronDown size={15} color="#9CA3AF"/>}
+                </button>
+                {isExp && (
+                  <div style={{ margin:'0 20px 16px', padding:'18px', background:'#F9FAFB', borderRadius:12, border:'1px solid #F3F4F6' }}>
+                    {transcript.length > 0 ? (
+                      <div style={{ marginBottom:16 }}>
+                        <p style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', margin:'0 0 12px', display:'flex', alignItems:'center', gap:6 }}>
+                          <MessageSquare size={11}/> Transcript
+                        </p>
+                        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                          {transcript.map((t,i) => (
+                            <div key={i} style={{ display:'flex', justifyContent:t.role==='assistant'?'flex-start':'flex-end' }}>
+                              <div style={{ maxWidth:'80%', padding:'9px 13px', borderRadius:t.role==='assistant'?'4px 12px 12px 12px':'12px 4px 12px 12px', fontSize:13, lineHeight:1.5, background:t.role==='assistant'?'#fff':'#0f0f0f', color:t.role==='assistant'?'#374151':'#fff', border:t.role==='assistant'?'1px solid #E5E7EB':'none' }}>
+                                <p style={{ fontSize:9, fontWeight:700, color:t.role==='assistant'?'#9CA3AF':'rgba(255,255,255,.5)', margin:'0 0 4px', textTransform:'uppercase', letterSpacing:'0.06em' }}>
+                                  {t.role==='assistant'?'🤖 AI Agent':'👤 Contact'}
+                                </p>
+                                {t.content||t.text}
                               </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 mb-4 text-gray-400"><Mic size={14}/><p className="text-xs italic">No transcript available</p></div>
-                        )}
-                        {Object.keys(cd).length>0 && (
-                          <div className="pt-3 border-t border-gray-200">
-                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Collected Data</p>
-                            <div className="flex flex-wrap gap-2">
-                              {Object.entries(cd).map(([k,v])=>(
-                                <div key={k} className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-gray-200">
-                                  <span className="text-xs font-semibold text-gray-500">{k}:</span>
-                                  <span className="text-xs text-gray-800">{String(v)}</span>
-                                </div>
-                              ))}
                             </div>
-                          </div>
-                        )}
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', alignItems:'center', gap:7, color:'#D1D5DB', marginBottom:Object.keys(cd).length?16:0 }}>
+                        <Mic size={13}/><span style={{ fontSize:12 }}>No transcript available</span>
+                      </div>
+                    )}
+                    {Object.keys(cd).length > 0 && (
+                      <div style={{ paddingTop:12, borderTop:'1px solid #E5E7EB' }}>
+                        <p style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', margin:'0 0 10px' }}>Collected Data</p>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                          {Object.entries(cd).map(([k,v]) => (
+                            <div key={k} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:20, background:'#fff', border:'1px solid #E5E7EB', fontSize:12 }}>
+                              <span style={{ color:'#9CA3AF', fontWeight:600 }}>{k}:</span>
+                              <span style={{ color:'#0f0f0f', fontWeight:700 }}>{String(v)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-                )
-              })}
-            </div>
-          )}
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Contacts Tab */}
+      {/* Contacts tab */}
       {activeTab==='contacts' && (
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', overflow:'hidden' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 22px', borderBottom:'1px solid #F3F4F6' }}>
             <div>
-              <h2 className="font-bold text-gray-900">Contact List</h2>
-              <p className="text-xs text-gray-500 mt-0.5">{contactTotal} total contacts</p>
+              <h3 style={{ fontSize:14, fontWeight:700, color:'#0f0f0f', margin:0 }}>Contact List</h3>
+              <p style={{ fontSize:11, color:'#9CA3AF', margin:'3px 0 0' }}>{contactTotal.toLocaleString('en-IN')} total contacts</p>
             </div>
           </div>
           {contacts.length===0 ? (
-            <div className="p-16 text-center">
-              <div className="w-16 h-16 bg-gray-50 rounded-xl flex items-center justify-center mx-auto mb-4"><Users size={28} className="text-gray-300"/></div>
-              <p className="font-bold text-gray-500 mb-1">No contacts yet</p>
-              <p className="text-gray-400 text-sm">Upload a CSV or Excel file to add contacts</p>
+            <div style={{ padding:'52px 24px', textAlign:'center' }}>
+              <Users size={28} color="#D1D5DB" style={{ display:'block', margin:'0 auto 14px' }}/>
+              <p style={{ fontSize:14, fontWeight:700, color:'#374151', margin:'0 0 6px' }}>No contacts yet</p>
+              <p style={{ fontSize:13, color:'#9CA3AF', margin:0 }}>Upload a CSV file to add contacts</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['#','Phone','Name','Status','Calls Made','Last Outcome'].map(h=>(
-                      <th key={h} className="text-left px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">{h}</th>
+                  <tr style={{ borderBottom:'1px solid #F3F4F6' }}>
+                    {['#','Phone','Name','Status','Calls','Last Outcome'].map(h => (
+                      <th key={h} style={{ padding:'10px 18px', textAlign:'left', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {contacts.map((contact,i)=>{
-                    const oc = outcomeConfig[contact.status]||outcomeConfig.pending
+                <tbody>
+                  {contacts.map((c,i) => {
+                    const oc = OUTCOME_META[c.status]||OUTCOME_META.pending
                     return (
-                      <tr key={contact.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-3 text-gray-400 text-xs">{i+1}</td>
-                        <td className="px-6 py-3 font-medium text-gray-800">{contact.phone}</td>
-                        <td className="px-6 py-3 text-gray-600">{getContactName(contact.variables, '—')}</td>
-                        <td className="px-6 py-3">
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${oc.bg} ${oc.border}`}>
-                            <div className={`w-1.5 h-1.5 rounded-full ${oc.dot}`}/>
-                            <span className={`text-xs font-medium ${oc.color}`}>{oc.label}</span>
-                          </div>
+                      <tr key={c.id} style={{ borderBottom:'1px solid #F9FAFB', transition:'background .15s' }}
+                        onMouseEnter={e=>e.currentTarget.style.background='#F9FAFB'} onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
+                        <td style={{ padding:'12px 18px', color:'#D1D5DB', fontSize:11 }}>{i+1}</td>
+                        <td style={{ padding:'12px 18px', fontWeight:600, color:'#0f0f0f' }}>{c.phone}</td>
+                        <td style={{ padding:'12px 18px', color:'#6B7280' }}>{getContactName(c.variables,'—')}</td>
+                        <td style={{ padding:'12px 18px' }}>
+                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:20, background:oc.bg, color:oc.c }}>
+                            <span style={{ width:5, height:5, borderRadius:'50%', background:oc.c }}/>{oc.label}
+                          </span>
                         </td>
-                        <td className="px-6 py-3 text-gray-600">{contact.call_count||0}</td>
-                        <td className="px-6 py-3 text-gray-600">{contact.last_outcome||'—'}</td>
+                        <td style={{ padding:'12px 18px', color:'#6B7280' }}>{c.call_count||0}</td>
+                        <td style={{ padding:'12px 18px', color:'#9CA3AF' }}>{c.last_outcome||'—'}</td>
                       </tr>
                     )
                   })}
@@ -584,88 +494,31 @@ export default function CampaignDetail() {
         </div>
       )}
 
-      {/* Settings Tab */}
+      {/* Settings tab */}
       {activeTab==='settings' && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="font-bold text-gray-900">Campaign Settings</h2>
-            <button onClick={() => navigate(`/dashboard/campaigns/${id}/edit`)} className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-all">
-              <Edit2 size={14}/> Edit Settings
-            </button>
+        <div style={{ background:'#fff', borderRadius:16, border:'1px solid #E5E7EB', padding:'20px 22px' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+            <h3 style={{ fontSize:15, fontWeight:700, color:'#0f0f0f', margin:0 }}>Campaign Settings</h3>
+            <Btn onClick={() => navigate(`/dashboard/campaigns/${id}/edit`)} variant="outline" size="sm" icon={Edit2}>Edit</Btn>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:10 }}>
             {[
-              {label:'Campaign Name',  value:campaign.name},
-              {label:'Language',       value:langNames[campaign.language_priority]||'Gujarati'},
-              {label:'Agent Name',     value:campaign.persona_name},
-              {label:'Agent Tone',     value:campaign.persona_tone},
-              {label:'Campaign Type',  value:campaign.campaign_type},
-              {label:'Concurrent Calls',value:campaign.max_concurrent_calls||5},
-              {label:'Max Retries',    value:campaign.max_retries||2},
-              {label:'Calling Hours',  value:`${campaign.calling_hours_start||'09:00'} – ${campaign.calling_hours_end||'21:00'}`},
-              {label:'Total Contacts', value:campaign.total_contacts||0},
-              {label:'Created',        value:new Date(campaign.created_at).toLocaleDateString('en-IN')},
-            ].map(({label,value})=>(
-              <div key={label} className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-                <p className="text-sm font-medium text-gray-800">{value}</p>
+              ['Campaign Name',   campaign.name],
+              ['Language',        LANG_NAMES[campaign.language_priority]||'Gujarati'],
+              ['Agent Name',      campaign.persona_name||'—'],
+              ['Agent Tone',      campaign.persona_tone||'—'],
+              ['Campaign Type',   campaign.campaign_type],
+              ['Concurrent Calls',campaign.max_concurrent_calls||5],
+              ['Max Retries',     campaign.max_retries||2],
+              ['Calling Hours',   `${campaign.calling_hours_start||'09:00'} – ${campaign.calling_hours_end||'21:00'}`],
+              ['Total Contacts',  campaign.total_contacts||0],
+              ['Created',         new Date(campaign.created_at).toLocaleDateString('en-IN')],
+            ].map(([l,v]) => (
+              <div key={l} style={{ padding:'14px 16px', background:'#F9FAFB', borderRadius:12, border:'1px solid #F3F4F6' }}>
+                <p style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', margin:'0 0 5px' }}>{l}</p>
+                <p style={{ fontSize:14, fontWeight:600, color:'#0f0f0f', margin:0 }}>{v}</p>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* Edit Modal */}
-      {showEdit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-xl">Edit Campaign</h3>
-              <button onClick={()=>setShowEdit(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
-            </div>
-            <div className="space-y-4">
-              {[
-                {label:'Campaign Name', key:'name', type:'text'},
-                {label:'Agent Name',    key:'persona_name', type:'text'},
-              ].map(({label,key,type})=>(
-                <div key={key}>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">{label}</label>
-                  <input type={type} value={editForm[key]||''} onChange={e=>setEditForm(f=>({...f,[key]:e.target.value}))}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-gray-400 focus:outline-none"/>
-                </div>
-              ))}
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  {label:'Concurrent Calls',key:'max_concurrent_calls',min:1,max:30},
-                  {label:'Max Retries',     key:'max_retries',         min:0,max:5},
-                ].map(({label,key,min,max})=>(
-                  <div key={key}>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">{label}</label>
-                    <input type="number" min={min} max={max} value={editForm[key]||0}
-                      onChange={e=>setEditForm(f=>({...f,[key]:parseInt(e.target.value)}))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-gray-400 focus:outline-none"/>
-                  </div>
-                ))}
-                {[
-                  {label:'Start Time',key:'calling_hours_start'},
-                  {label:'End Time',  key:'calling_hours_end'},
-                ].map(({label,key})=>(
-                  <div key={key}>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">{label}</label>
-                    <input type="time" value={editForm[key]||'09:00'}
-                      onChange={e=>setEditForm(f=>({...f,[key]:e.target.value}))}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-gray-400 focus:outline-none"/>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={()=>setShowEdit(false)} className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:border-gray-400 transition-all">Cancel</button>
-              <button onClick={saveEdit} disabled={actionLoading}
-                className="flex-1 py-3 bg-[#228248] text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-                {actionLoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <><Check size={15}/> Save Changes</>}
-              </button>
-            </div>
           </div>
         </div>
       )}
