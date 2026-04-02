@@ -39,33 +39,47 @@ const uploadsDir = path.join(__dirname, '..', 'uploads')
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
 
 // ── CORS ─────────────────────────────────────────────────────
+// Build allowed origins from env + always allow localhost dev
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
 ]
 
-// Add FRONTEND_URL from env (supports comma-separated list for multiple domains)
-if (config.frontendUrl) {
-  config.frontendUrl.split(',').map(u => u.trim()).filter(Boolean).forEach(u => {
-    allowedOrigins.push(u)
-    // Also allow www variant automatically
-    if (u.startsWith('https://') && !u.startsWith('https://www.')) {
-      allowedOrigins.push(u.replace('https://', 'https://www.'))
-    }
-    if (u.startsWith('https://www.')) {
-      allowedOrigins.push(u.replace('https://www.', 'https://'))
-    }
-  })
-}
+// Support comma-separated FRONTEND_URL for multiple domains
+// e.g. FRONTEND_URL=https://samwadai.com,https://www.samwadai.com
+const frontendUrls = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(u => u.trim())
+  .filter(Boolean)
+
+frontendUrls.forEach(url => {
+  // Add as-is
+  allowedOrigins.push(url)
+  // Auto-add www ↔ non-www variant
+  if (url.startsWith('https://www.')) {
+    allowedOrigins.push(url.replace('https://www.', 'https://'))
+  } else if (url.startsWith('https://')) {
+    allowedOrigins.push(url.replace('https://', 'https://www.'))
+  }
+})
+
+// Log allowed origins on startup so you can verify in Render logs
+console.log('[CORS] Allowed origins:', allowedOrigins)
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow server-to-server requests (no origin header)
     if (!origin) return callback(null, true)
+    // Allow any *.vercel.app preview URL
     if (/\.vercel\.app$/.test(origin)) return callback(null, true)
+    // Allow localhost on any port in dev
     if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true)
+    // Check explicit allowlist
     if (allowedOrigins.includes(origin)) return callback(null, true)
-    if (config.nodeEnv !== 'production') return callback(null, true)
+    // In non-production, allow everything (for testing)
+    if (process.env.NODE_ENV !== 'production') return callback(null, true)
+    // Block anything else
     callback(new Error(`CORS: ${origin} not allowed`))
   },
   credentials: true,
