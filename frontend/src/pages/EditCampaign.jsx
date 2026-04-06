@@ -270,7 +270,7 @@ export default function EditCampaign() {
     }
   }
 
-  const inp = 'w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#a8a8a8] focus:outline-none'
+  const inp = 'w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-4 py-3 text-sm text-[#2c2c2c] focus:border-[#9CA3AF] focus:outline-none'
   const isActive   = campaignStatus === 'active'
   const statusMeta = STATUS_META[campaignStatus] || STATUS_META.draft
 
@@ -318,7 +318,7 @@ export default function EditCampaign() {
               Calls in progress will finish before it stops.
             </p>
             <button onClick={handlePause} disabled={pausing}
-              className="mt-3 inline-flex items-center gap-2 px-5 py-2.5 bg-[#1a1a1a] text-white rounded-xl text-sm font-bold hover:bg-[#333] transition-all disabled:opacity-50">
+              className="mt-3 inline-flex items-center gap-2 px-5 py-2.5 bg-[#0f172a] text-white rounded-xl text-sm font-bold  transition-all disabled:opacity-50">
               {pausing
                 ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Pausing...</>
                 : <><Pause size={15}/> Pause Campaign to Edit</>}
@@ -378,7 +378,7 @@ export default function EditCampaign() {
               {TYPE_OPTIONS.map(t => (
                 <button key={t.type} onClick={() => set('campaign_type', t.type)}
                   className={`py-2.5 px-3 rounded-xl text-sm font-medium border-2 transition-all
-                    ${form.campaign_type === t.type ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white' : 'border-gray-200 hover:border-gray-400 text-gray-600'}`}>
+                    ${form.campaign_type === t.type ? 'border-[#0f172a] bg-[#0f172a] text-white' : 'border-gray-200 hover:border-gray-400 text-gray-600'}`}>
                   {t.label}
                 </button>
               ))}
@@ -389,7 +389,7 @@ export default function EditCampaign() {
               {LANG_OPTIONS.map(l => (
                 <button key={l.code} onClick={() => set('language_priority', l.code)}
                   className={`flex-1 py-3 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${form.language_priority === l.code ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
+                    ${form.language_priority === l.code ? 'border-[#0f172a] bg-[#0f172a] text-white' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
                   {l.flag} {l.label}
                 </button>
               ))}
@@ -404,12 +404,12 @@ export default function EditCampaign() {
               <Field label="Message Template" hint="Use {{driver_name}}, {{route}}, {{timing}} to insert contact data">
                 <textarea value={form.announcement_template} onChange={e => set('announcement_template', e.target.value)}
                   rows={3} placeholder="નમસ્તે {{driver_name}}, આજનો રૂટ {{route}} છે, સમય {{timing}} છે. સમજ્યા?"
-                  className="w-full bg-white border border-[#fde59a] rounded-xl px-4 py-3 text-sm font-mono resize-none focus:outline-none focus:border-[#f5a623]"/>
+                  className="w-full bg-white border border-[#fde59a] rounded-xl px-4 py-3 text-sm font-mono resize-none focus:outline-none focus:border-[#0EA5E9]"/>
               </Field>
               <Field label="Closing Message" hint="Spoken after contact confirms">
                 <input value={form.closing_message} onChange={e => set('closing_message', e.target.value)}
                   placeholder="ઠીક છે. ધ્યાન રાખજો. આભાર."
-                  className="w-full bg-white border border-[#fde59a] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#f5a623]"/>
+                  className="w-full bg-white border border-[#fde59a] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0EA5E9]"/>
               </Field>
             </div>
           )}
@@ -417,7 +417,7 @@ export default function EditCampaign() {
             <Field label="Upload New PDF Script" hint="Replaces current script — processed on relaunch">
               <label onClick={() => pdfRef.current?.click()}
                 className={`flex items-center gap-3 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all
-                  ${pdfFile ? 'border-[#228248] bg-[#f0faf4]' : 'border-gray-200 hover:border-gray-400 bg-gray-50'}`}>
+                  ${pdfFile ? 'border-[#0EA5E9] bg-[#f0faf4]' : 'border-gray-200 hover:border-gray-400 bg-gray-50'}`}>
                 <input ref={pdfRef} type="file" accept=".pdf"
                   onChange={e => { setPdfFile(e.target.files[0]); setHasUnsaved(true) }} className="hidden"/>
                 <span className="text-2xl">{pdfFile ? '📄' : '📎'}</span>
@@ -449,7 +449,7 @@ export default function EditCampaign() {
               {TONE_OPTIONS.map(t => (
                 <button key={t.value} onClick={() => set('persona_tone', t.value)}
                   className={`p-4 rounded-xl border-2 text-left transition-all
-                    ${form.persona_tone === t.value ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white' : 'border-gray-200 hover:border-gray-300'}`}>
+                    ${form.persona_tone === t.value ? 'border-[#0f172a] bg-[#0f172a] text-white' : 'border-gray-200 hover:border-gray-300'}`}>
                   <p className={`font-bold text-sm ${form.persona_tone === t.value ? 'text-white' : 'text-gray-800'}`}>{t.label}</p>
                   <p className={`text-xs mt-0.5 ${form.persona_tone === t.value ? 'text-white/60' : 'text-gray-400'}`}>{t.desc}</p>
                 </button>
@@ -476,7 +476,7 @@ export default function EditCampaign() {
           <Field label="Upload New / Updated Contact List" hint="New contacts added. Existing pending contacts replaced.">
             <label onClick={() => fileRef.current?.click()}
               className={`flex flex-col items-center gap-3 border-2 border-dashed rounded-xl p-8 cursor-pointer transition-all
-                ${contactFile ? 'border-[#228248] bg-[#f0faf4]' : 'border-gray-200 hover:border-gray-400 bg-gray-50'}`}>
+                ${contactFile ? 'border-[#0EA5E9] bg-[#f0faf4]' : 'border-gray-200 hover:border-gray-400 bg-gray-50'}`}>
               <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls"
                 onChange={e => { setContactFile(e.target.files[0]); setHasUnsaved(true) }} className="hidden"/>
               <span className="text-3xl">{contactFile ? '📊' : '📎'}</span>
@@ -488,7 +488,7 @@ export default function EditCampaign() {
             {contactFile && (
               <div className="flex gap-2 mt-3">
                 <button onClick={handleUploadContacts} disabled={uploadLoading}
-                  className="flex-1 py-3 bg-[#228248] text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                  className="flex-1 py-3 bg-[#0EA5E9] text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                   {uploadLoading
                     ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Uploading...</>
                     : <><Upload size={14}/> Upload Now</>}
@@ -566,7 +566,7 @@ export default function EditCampaign() {
                 <button key={opt.value}
                   onClick={() => { set('_scheduleMode', opt.value); if (opt.value === 'now') set('schedule_start', '') }}
                   className={`py-3 rounded-xl text-sm font-semibold border-2 transition-all
-                    ${form._scheduleMode === opt.value ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white' : 'border-gray-200 text-gray-500 hover:border-gray-400'}`}>
+                    ${form._scheduleMode === opt.value ? 'border-[#0f172a] bg-[#0f172a] text-white' : 'border-gray-200 text-gray-500 hover:border-gray-400'}`}>
                   {opt.label}
                 </button>
               ))}
@@ -628,7 +628,7 @@ export default function EditCampaign() {
           {isActive ? (<>
             <p className="flex-1 text-sm text-gray-500">Pause to edit script, contacts or settings</p>
             <button onClick={handlePause} disabled={pausing}
-              className="flex items-center gap-2 px-6 py-3 bg-[#1a1a1a] text-white rounded-xl text-sm font-bold hover:bg-[#333] transition-all disabled:opacity-50">
+              className="flex items-center gap-2 px-6 py-3 bg-[#0f172a] text-white rounded-xl text-sm font-bold  transition-all disabled:opacity-50">
               {pausing
                 ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Pausing</>
                 : <><Pause size={15}/> Pause to Edit</>}
@@ -645,7 +645,7 @@ export default function EditCampaign() {
                 : <><Save size={14}/> Save Only</>}
             </button>
             <button onClick={handleSaveAndRelaunch} disabled={relaunching}
-              className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#1a1a1a] hover:bg-[#333] active:scale-[0.98] text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50">
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#0f172a]  active:scale-[0.98] text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50">
               {relaunching ? (
                 <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Relaunching...</>
               ) : campaignStatus === 'paused' ? (
