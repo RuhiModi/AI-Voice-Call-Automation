@@ -160,9 +160,9 @@ export default function Settings() {
       </Section>
 
       {/* Telephony */}
-      <Section title="Telephony — Vobiz" desc="Configure your calling credentials" badge="Required">
+      <Section title="Telephony" desc="Configure your calling credentials" badge="Required">
         <Alert type="info">
-          Get your Auth ID and Token from <strong>Vobiz Dashboard → API Settings</strong>. Your caller ID must be approved before use.
+          Get your Auth ID and Token from <strong>Telephony Dashboard → API Settings</strong>. Your caller ID must be approved before use.
         </Alert>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
           <Field label="Auth ID" value={vobiz.vobiz_auth_id} onChange={v=>setVobiz(p=>({...p,vobiz_auth_id:v}))} placeholder="VA-XXXXXXXXXX"/>
@@ -171,7 +171,7 @@ export default function Settings() {
             suffix={<button type="button" onClick={()=>setShowToken(s=>!s)} style={{ background:'none',border:'none',cursor:'pointer',color:'#9CA3AF',display:'flex',padding:0 }}>{showToken?<EyeOff size={15}/>:<Eye size={15}/>}</button>}
           />
         </div>
-        <Field label="Caller ID" value={vobiz.vobiz_from_number} onChange={v=>setVobiz(p=>({...p,vobiz_from_number:v}))} placeholder="+919876543210" hint="Must be an approved DID number on your Vobiz account"/>
+        <Field label="Caller ID" value={vobiz.vobiz_from_number} onChange={v=>setVobiz(p=>({...p,vobiz_from_number:v}))} placeholder="+919876543210" hint="Must be an approved DID number on your account"/>
         {testResult && (
           <Alert type={testResult.success?'success':'danger'}>
             {testResult.success ? `✅ Connected! Account: ${testResult.account||'Active'}` : `❌ ${testResult.error}`}
