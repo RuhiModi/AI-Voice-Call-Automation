@@ -1,426 +1,536 @@
-import { useState, useEffect } from 'react'
-import { billingApi } from '../hooks/api'
+import { useState, useEffect, useCallback } from 'react'
+import axios from 'axios'
 import toast from 'react-hot-toast'
-import { IndianRupee, Calendar, TrendingUp, Download, Receipt, ChevronDown, Wallet, Phone, Clock, Zap, Check } from 'lucide-react'
+import {
+  Wallet, Plus, ArrowDownLeft, ArrowUpRight, Clock,
+  CheckCircle2, AlertTriangle, RefreshCw, ChevronRight,
+  IndianRupee, Phone, TrendingDown, Copy, X, Receipt,
+  ShieldCheck, Zap, Info
+} from 'lucide-react'
 
-const SKY  = '#0EA5E9', SKYL = '#38BDF8', SKYD = '#0284C7'
-const GRAD = 'linear-gradient(135deg,#38BDF8,#0EA5E9,#0284C7)'
-const BG   = '#F0F9FF', BORD = '#BAE6FD', GLOW = '0 3px 16px rgba(14,165,233,.22)'
+const API  = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const SKY  = '#0EA5E9'
+const SKYD = '#0284C7'
+const GRAD = 'linear-gradient(135deg,#38BDF8 0%,#0EA5E9 50%,#0284C7 100%)'
+const BG   = '#F0F9FF'
+const BORD = '#BAE6FD'
+const GLOW = '0 4px 20px rgba(14,165,233,.25)'
+const MIN  = 500  // ₹500 minimum top-up
 
-const fmtINR = n => '₹' + Number(n||0).toFixed(2)
+// ── Helpers ───────────────────────────────────────────────────
+const fmtINR = n => '₹' + Number(n||0).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 })
 const fmtInt = n => Number(n||0).toLocaleString('en-IN')
-const fmt    = (n, d=2) => Number(n||0).toFixed(d)
-
-function monthOptions() {
-  const opts = [], now = new Date()
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1)
-    opts.push({ val:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label:d.toLocaleDateString('en-IN',{month:'long',year:'numeric'}) })
-  }
-  return opts
+const fmtTime = iso => {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
 }
 
-function Card({ children, style={} }) {
-  return <div style={{ background:'#fff', borderRadius:16, border:`1px solid ${BORD}`, ...style }}>{children}</div>
+function authHeaders() {
+  const token = localStorage.getItem('token')
+  return { Authorization: `Bearer ${token}` }
 }
 
-function StatCard({ label, value, sub, icon:Icon, color=SKY }) {
-  return (
-    <Card style={{ padding:'20px' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
-        <p style={{ fontSize:12, color:'#9CA3AF', fontWeight:500, margin:0 }}>{label}</p>
-        <div style={{ width:34, height:34, borderRadius:10, background:color+'15', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <Icon size={15} color={color}/>
-        </div>
-      </div>
-      <p style={{ fontSize:26, fontWeight:800, color:'#0f172a', margin:'0 0 4px', letterSpacing:'-0.03em', lineHeight:1 }}>{value}</p>
-      {sub && <p style={{ fontSize:11, color:'#9CA3AF', margin:0 }}>{sub}</p>}
-    </Card>
-  )
-}
+// ── Top-up modal ──────────────────────────────────────────────
+const PRESETS = [500, 1000, 2000, 5000]
 
-function PBar({ pct, color=SKY, warn, danger }) {
-  const bg = danger?'#EF4444':warn?'#F59E0B':color
-  return (
-    <div style={{ height:8, background:BG, borderRadius:99, overflow:'hidden' }}>
-      <div style={{ height:8, width:`${Math.min(pct,100)}%`, background:bg, borderRadius:99, transition:'width .7s' }}/>
-    </div>
-  )
-}
+function TopupModal({ onClose, onSuccess }) {
+  const [amount,    setAmount]  = useState('')
+  const [custom,    setCustom]  = useState(false)
+  const [loading,   setLoading] = useState(false)
+  const [step,      setStep]    = useState('select') // select | confirm | success
 
-function Section({ title, sub, children }) {
-  return (
-    <Card style={{ overflow:'hidden', marginBottom:14 }}>
-      <div style={{ padding:'16px 22px', borderBottom:`1px solid ${BG}` }}>
-        <h3 style={{ fontSize:15, fontWeight:700, color:'#0f172a', margin:0 }}>{title}</h3>
-        {sub && <p style={{ fontSize:12, color:'#9CA3AF', margin:'3px 0 0' }}>{sub}</p>}
-      </div>
-      <div style={{ padding:'20px 22px' }}>{children}</div>
-    </Card>
-  )
-}
+  const numAmount = parseFloat(amount) || 0
+  const gst       = numAmount * 0.18
+  const total     = numAmount + gst
+  const valid     = numAmount >= MIN
 
-function MiniBar({ data=[] }) {
-  if (!data.length) return <div style={{ padding:'24px', textAlign:'center', fontSize:13, color:BORD }}>No activity data yet</div>
-  const max = Math.max(...data.map(d=>d.calls), 1)
-  return (
-    <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:80 }}>
-      {data.map((d,i) => (
-        <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3, position:'relative' }}>
-          <div title={`${d.calls} calls`} style={{ width:'100%', borderRadius:'3px 3px 0 0', background:d.calls>0?GRAD:BG, height:`${Math.max(4,(d.calls/max)*72)}px`, transition:'height .3s', cursor:'pointer' }}/>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-export default function Billing() {
-  const months = monthOptions()
-  const [selectedMonth, setSelectedMonth] = useState(months[0].val)
-  const [summary,      setSummary]      = useState(null)
-  const [monthly,      setMonthly]      = useState([])
-  const [activity,     setActivity]     = useState([])
-  const [invoices,     setInvoices]     = useState([])
-  const [usageSummary, setUsageSummary] = useState(null)
-  const [plans,        setPlans]        = useState([])
-  const [upgrading,    setUpgrading]    = useState(null)
-  const [generating,   setGenerating]   = useState(false)
-  const [genMonth,     setGenMonth]     = useState('')
-  const [loading,      setLoading]      = useState(true)
-  const [tab,          setTab]          = useState('plan')
-
-  useEffect(() => {
+  async function handlePay() {
+    if (!valid) return toast.error(`Minimum top-up is ${fmtINR(MIN)}`)
     setLoading(true)
-    Promise.all([
-      billingApi.summary(selectedMonth),
-      billingApi.monthly(),
-      billingApi.activity(),
-      billingApi.invoices(),
-      billingApi.usageSummary(),
-      billingApi.plans(),
-    ])
-      .then(([s,m,a,inv,us,pl]) => {
-        setSummary(s.data)
-        setMonthly(m.data.months||[])
-        setActivity(a.data.days||[])
-        setInvoices(inv.data.invoices||[])
-        setUsageSummary(us.data)
-        setPlans(pl.data.plans||[])
-      })
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false))
-  }, [selectedMonth])
+    try {
+      // In production: open Razorpay here. For now → demo instant credit.
+      await axios.post(`${API}/wallet/recharge`, { amount: numAmount }, { headers: authHeaders() })
+      setStep('success')
+      toast.success(`${fmtINR(numAmount)} added to your wallet! 🎉`)
+      setTimeout(() => { onSuccess(); onClose() }, 2200)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Top-up failed. Please try again.')
+    } finally { setLoading(false) }
+  }
 
-  const { totals, campaigns=[], rate_per_min } = summary || {}
+  // Close on Escape
+  useEffect(() => {
+    const h = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:20, background:'rgba(7,89,133,.45)', backdropFilter:'blur(8px)' }}
+      onClick={onClose}>
+      <div style={{ background:'#fff', borderRadius:22, width:'100%', maxWidth:440, boxShadow:'0 24px 80px rgba(14,165,233,.20)', overflow:'hidden' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ background:GRAD, padding:'22px 24px', position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', top:-40, right:-40, width:150, height:150, borderRadius:'50%', background:'rgba(255,255,255,.07)' }}/>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', position:'relative' }}>
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                <Wallet size={18} color="#fff"/>
+                <h2 style={{ fontSize:17, fontWeight:800, color:'#fff', margin:0 }}>Add Money to Wallet</h2>
+              </div>
+              <p style={{ fontSize:12, color:'rgba(255,255,255,.65)', margin:0 }}>Minimum top-up: {fmtINR(MIN)} · 18% GST applicable</p>
+            </div>
+            <button onClick={onClose} style={{ width:30, height:30, borderRadius:8, background:'rgba(255,255,255,.15)', border:'none', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+              <X size={14} color="#fff"/>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding:'24px' }}>
+          {step === 'success' ? (
+            /* Success state */
+            <div style={{ textAlign:'center', padding:'24px 0' }}>
+              <div style={{ width:72, height:72, borderRadius:'50%', background:'#ECFDF5', border:'3px solid #A7F3D0', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 18px' }}>
+                <CheckCircle2 size={36} color="#10B981"/>
+              </div>
+              <h3 style={{ fontSize:20, fontWeight:800, color:'#0f172a', margin:'0 0 8px' }}>Payment Successful!</h3>
+              <p style={{ fontSize:14, color:'#9CA3AF', margin:0 }}>{fmtINR(numAmount)} has been added to your wallet</p>
+            </div>
+          ) : step === 'confirm' ? (
+            /* Confirm step */
+            <>
+              <div style={{ background:BG, borderRadius:14, border:`1px solid ${BORD}`, padding:'16px 18px', marginBottom:20 }}>
+                <h4 style={{ fontSize:13, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 14px' }}>Payment Summary</h4>
+                {[
+                  ['Top-up Amount', fmtINR(numAmount), '#0f172a'],
+                  ['GST @ 18%',     fmtINR(gst),       '#9CA3AF'],
+                ].map(([l, v, c]) => (
+                  <div key={l} style={{ display:'flex', justifyContent:'space-between', marginBottom:10, fontSize:14, color:c }}>
+                    <span>{l}</span><span style={{ fontWeight:600 }}>{v}</span>
+                  </div>
+                ))}
+                <div style={{ borderTop:`1.5px solid ${BORD}`, paddingTop:12, marginTop:4, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:15, fontWeight:700, color:'#0f172a' }}>Total Payable</span>
+                  <span style={{ fontSize:20, fontWeight:900, color:SKY }}>{fmtINR(total)}</span>
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:10 }}>
+                <button onClick={() => setStep('select')} style={{ flex:1, padding:'12px', borderRadius:11, border:`1.5px solid ${BORD}`, background:'#fff', color:'#374151', fontWeight:600, fontSize:14, cursor:'pointer', fontFamily:'inherit' }}>
+                  Back
+                </button>
+                <button onClick={handlePay} disabled={loading}
+                  style={{ flex:2, padding:'12px', borderRadius:11, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:14, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', boxShadow:GLOW, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  {loading ? (
+                    <div style={{ width:18, height:18, border:'2px solid rgba(255,255,255,.3)', borderTop:'2px solid #fff', borderRadius:'50%', animation:'bl-spin .7s linear infinite' }}/>
+                  ) : <><ShieldCheck size={16}/>Pay {fmtINR(total)}</>}
+                </button>
+              </div>
+              <p style={{ fontSize:11, color:'#D1D5DB', textAlign:'center', marginTop:12 }}>
+                🔒 Secured by Razorpay · Your payment info is never stored
+              </p>
+            </>
+          ) : (
+            /* Select amount */
+            <>
+              {/* Preset amounts */}
+              <p style={{ fontSize:13, fontWeight:700, color:'#374151', marginBottom:12 }}>Select amount</p>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:16 }}>
+                {PRESETS.map(p => (
+                  <button key={p} onClick={() => { setAmount(String(p)); setCustom(false) }}
+                    style={{
+                      padding:'12px 8px', borderRadius:12, border:`1.5px solid ${amount===String(p)&&!custom?SKY:BORD}`,
+                      background:amount===String(p)&&!custom?BG:'#fff',
+                      color:amount===String(p)&&!custom?SKY:'#374151',
+                      fontWeight:700, fontSize:14, cursor:'pointer', fontFamily:'inherit',
+                      boxShadow:amount===String(p)&&!custom?`0 0 0 3px rgba(14,165,233,.12)`:'none',
+                      transition:'all .15s',
+                    }}>
+                    ₹{fmtInt(p)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom amount */}
+              <div style={{ marginBottom:20 }}>
+                <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'#9CA3AF', marginBottom:8 }}>
+                  Or enter custom amount
+                </label>
+                <div style={{ position:'relative' }}>
+                  <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', fontSize:18, fontWeight:700, color:'#9CA3AF' }}>₹</span>
+                  <input
+                    type="number" min={MIN} step="100"
+                    value={custom ? amount : ''}
+                    placeholder={`${MIN} minimum`}
+                    onFocus={() => setCustom(true)}
+                    onChange={e => { setCustom(true); setAmount(e.target.value) }}
+                    style={{
+                      width:'100%', padding:'13px 14px 13px 32px', border:`1.5px solid ${custom?SKY:BORD}`,
+                      borderRadius:12, fontSize:16, fontWeight:700, color:'#0f172a',
+                      background:'#fff', fontFamily:'inherit', boxSizing:'border-box', outline:'none',
+                      boxShadow:custom?`0 0 0 3px rgba(14,165,233,.10)`:'none', transition:'all .15s',
+                    }}
+                  />
+                </div>
+                {numAmount > 0 && numAmount < MIN && (
+                  <p style={{ fontSize:11, color:'#EF4444', marginTop:6, display:'flex', alignItems:'center', gap:4 }}>
+                    <AlertTriangle size={11}/> Minimum top-up is {fmtINR(MIN)}
+                  </p>
+                )}
+              </div>
+
+              {/* GST preview */}
+              {numAmount >= MIN && (
+                <div style={{ background:BG, borderRadius:10, border:`1px solid ${BORD}`, padding:'12px 14px', marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:13, color:'#64748B' }}>You'll pay (incl. 18% GST)</span>
+                  <span style={{ fontSize:16, fontWeight:800, color:SKY }}>{fmtINR(total)}</span>
+                </div>
+              )}
+
+              <button onClick={() => valid && setStep('confirm')} disabled={!valid}
+                style={{ width:'100%', padding:'13px', borderRadius:12, border:'none', background:valid?GRAD:'#F3F4F6', color:valid?'#fff':'#9CA3AF', fontWeight:700, fontSize:15, cursor:valid?'pointer':'not-allowed', fontFamily:'inherit', boxShadow:valid?GLOW:'none', transition:'all .2s', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                <Zap size={16}/> Proceed to Pay
+              </button>
+
+              <div style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'center', marginTop:14 }}>
+                <ShieldCheck size={12} color="#9CA3AF"/>
+                <span style={{ fontSize:11, color:'#9CA3AF' }}>Secured by Razorpay · GST Invoice provided</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes bl-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+}
+
+// ── Transaction row ───────────────────────────────────────────
+function TxnRow({ txn }) {
+  const isCredit = txn.type === 'credit' || txn.amount > 0
+  const ic = isCredit
+    ? { Icon:ArrowDownLeft, color:'#10B981', bg:'#ECFDF5', sign:'+' }
+    : { Icon:ArrowUpRight,  color:'#EF4444', bg:'#FEF2F2', sign:'-' }
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0', borderBottom:`1px solid ${BG}` }}>
+      <div style={{ width:38, height:38, borderRadius:11, background:ic.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        <ic.Icon size={17} color={ic.color}/>
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <p style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {txn.description || (isCredit ? 'Wallet Top-up' : 'Call Charges')}
+        </p>
+        <p style={{ fontSize:11, color:'#9CA3AF', margin:'2px 0 0' }}>{fmtTime(txn.created_at)}</p>
+      </div>
+      <div style={{ textAlign:'right', flexShrink:0 }}>
+        <p style={{ fontSize:15, fontWeight:800, color:ic.color, margin:0, letterSpacing:'-0.02em' }}>
+          {ic.sign}{fmtINR(Math.abs(txn.amount))}
+        </p>
+        {txn.balance_after !== undefined && (
+          <p style={{ fontSize:10, color:'#9CA3AF', margin:'2px 0 0' }}>Bal: {fmtINR(txn.balance_after)}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Recharge history row ──────────────────────────────────────
+function RechargeRow({ r }) {
+  const statusMap = {
+    completed: { label:'Success',  color:'#10B981', bg:'#ECFDF5' },
+    pending:   { label:'Pending',  color:'#F59E0B', bg:'#FFFBEB' },
+    failed:    { label:'Failed',   color:'#EF4444', bg:'#FEF2F2' },
+  }
+  const s = statusMap[r.status] || statusMap.pending
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0', borderBottom:`1px solid ${BG}` }}>
+      <div style={{ width:38, height:38, borderRadius:11, background:BG, border:`1px solid ${BORD}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        <Receipt size={17} color={SKY}/>
+      </div>
+      <div style={{ flex:1 }}>
+        <p style={{ fontSize:14, fontWeight:600, color:'#0f172a', margin:0 }}>{fmtINR(r.amount)}</p>
+        <p style={{ fontSize:11, color:'#9CA3AF', margin:'2px 0 0' }}>{fmtTime(r.created_at)}</p>
+      </div>
+      <span style={{ fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:20, background:s.bg, color:s.color }}>{s.label}</span>
+    </div>
+  )
+}
+
+// ── Main Wallet Page ──────────────────────────────────────────
+export default function Billing() {
+  const [wallet,   setWallet]   = useState(null)
+  const [txns,     setTxns]     = useState([])
+  const [recharge, setRecharge] = useState([])
+  const [daily,    setDaily]    = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [tab,      setTab]      = useState('transactions')
+  const [showTopup,setShowTopup]= useState(false)
+  const [refreshing,setRefreshing]=useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const [w, t, r, d] = await Promise.all([
+        axios.get(`${API}/wallet`,                  { headers:authHeaders() }),
+        axios.get(`${API}/wallet/transactions`,     { headers:authHeaders() }),
+        axios.get(`${API}/wallet/recharge-history`, { headers:authHeaders() }),
+        axios.get(`${API}/wallet/daily-spend`,      { headers:authHeaders() }),
+      ])
+      setWallet(w.data)
+      setTxns(t.data.transactions || t.data || [])
+      setRecharge(r.data.requests || r.data || [])
+      setDaily(d.data.days || d.data || [])
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load wallet data')
+    } finally { setLoading(false); setRefreshing(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function refresh() { setRefreshing(true); load() }
+
+  const balance    = parseFloat(wallet?.wallet_balance || 0)
+  const recharged  = parseFloat(wallet?.total_recharged || 0)
+  const spent      = parseFloat(wallet?.total_spent || 0)
+  const ratePerMin = wallet?.rate_per_min || 0
+  const callsLeft  = ratePerMin > 0 ? Math.floor(balance / ratePerMin) : '∞'
+
+  const isLow    = balance < 100
+  const isDanger = balance < 20
+
+  // Sparkline data from daily spend
+  const maxSpend = Math.max(...daily.map(d => d.amount || 0), 1)
+
+  const TABS = [
+    { key:'transactions', label:'Transactions', count:txns.length },
+    { key:'recharges',    label:'Top-up History', count:recharge.length },
+    { key:'usage',        label:'Usage Trend', count:null },
+  ]
 
   if (loading) return (
     <div style={{ padding:'24px 28px', background:BG, minHeight:'100%' }}>
-      {[1,2,3].map(i => <div key={i} style={{ background:'#fff', borderRadius:16, border:`1px solid ${BORD}`, height:120, marginBottom:14, animation:'bl-pulse 1.4s ease infinite' }}/>)}
-      <style>{`@keyframes bl-pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
+      {[1,2,3].map(i => <div key={i} style={{ height:100, background:'#fff', borderRadius:16, border:`1px solid ${BORD}`, marginBottom:14, animation:'bl-ld 1.4s ease infinite' }}/>)}
+      <style>{`@keyframes bl-ld{0%,100%{opacity:1}50%{opacity:.5}} @keyframes bl-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
-  const TABS = [
-    { key:'plan',     label:'Plan & Usage' },
-    { key:'usage',    label:'Usage'        },
-    { key:'invoices', label:'Invoices'     },
-    { key:'upgrade',  label:'Upgrade'      },
-  ]
-
   return (
-    <div style={{ padding:'24px 28px 56px', maxWidth:1100, margin:'0 auto', background:BG, minHeight:'100%' }}>
+    <div style={{ padding:'24px 28px 56px', maxWidth:1000, margin:'0 auto', background:BG, minHeight:'100%' }}>
+      <style>{`@keyframes bl-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes bl-ping{0%,100%{opacity:1}50%{opacity:.35}}`}</style>
 
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:12 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:800, color:'#0f172a', margin:0, letterSpacing:'-0.025em' }}>Wallet & Billing</h1>
-          <p style={{ fontSize:13, color:'#9CA3AF', margin:'4px 0 0' }}>Usage charges and plan management</p>
+          <h1 style={{ fontSize:22, fontWeight:800, color:'#0f172a', margin:0, letterSpacing:'-0.025em' }}>Wallet</h1>
+          <p style={{ fontSize:13, color:'#9CA3AF', margin:'4px 0 0' }}>Prepaid balance for AI voice calls</p>
         </div>
-        <div style={{ position:'relative' }}>
-          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
-            style={{ padding:'9px 36px 9px 14px', border:`1.5px solid ${BORD}`, borderRadius:10, fontSize:13, color:'#374151', background:'#fff', cursor:'pointer', fontFamily:'inherit', outline:'none', appearance:'none', backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%230EA5E9' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`, backgroundRepeat:'no-repeat', backgroundPosition:'right 12px center', minWidth:160 }}>
-            {months.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
-          </select>
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={refresh} style={{ width:36, height:36, borderRadius:10, border:`1px solid ${BORD}`, background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+            <RefreshCw size={14} color={SKY} style={{ animation:refreshing?'bl-spin 1s linear infinite':'none' }}/>
+          </button>
+          <button onClick={() => setShowTopup(true)}
+            style={{ display:'flex', alignItems:'center', gap:7, padding:'10px 20px', borderRadius:10, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', boxShadow:GLOW, fontFamily:'inherit', transition:'all .15s' }}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 6px 28px rgba(14,165,233,.40)'}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow=GLOW}>
+            <Plus size={14}/> Add Money
+          </button>
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:12, marginBottom:20 }}>
-        <StatCard label="Total Amount" value={fmtINR(totals?.total_with_gst)} sub="incl. 18% GST" icon={IndianRupee} color={SKY}/>
-        <StatCard label="Total Calls"  value={fmtInt(totals?.total_calls)}    sub="this period"   icon={Phone}      color="#10B981"/>
-        <StatCard label="Total Minutes" value={fmt(totals?.total_minutes,1)} sub="minutes billed" icon={Clock}      color="#8B5CF6"/>
-        <StatCard label="Rate / Min"   value={`₹${fmt(rate_per_min)}`}       sub="+18% GST"      icon={TrendingUp} color="#F59E0B"/>
+      {/* Low balance warning */}
+      {isLow && (
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 18px', borderRadius:14, background:isDanger?'#FEF2F2':'#FFFBEB', border:`1px solid ${isDanger?'#FECACA':'#FDE68A'}`, marginBottom:20, cursor:'pointer' }}
+          onClick={() => setShowTopup(true)}>
+          <AlertTriangle size={18} color={isDanger?'#EF4444':'#F59E0B'} style={{ flexShrink:0 }}/>
+          <div style={{ flex:1 }}>
+            <p style={{ fontSize:14, fontWeight:700, color:isDanger?'#991B1B':'#92400E', margin:0 }}>
+              {isDanger ? 'Critical: Balance nearly exhausted — calls will stop!' : 'Low balance — top up to keep campaigns running'}
+            </p>
+            <p style={{ fontSize:12, color:isDanger?'#EF4444':'#F59E0B', margin:'2px 0 0' }}>
+              Current balance: {fmtINR(balance)}
+            </p>
+          </div>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:9, background:isDanger?'#EF4444':'#F59E0B', color:'#fff', fontWeight:700, fontSize:13, flexShrink:0 }}>
+            <Plus size={13}/> Add Money
+          </span>
+        </div>
+      )}
+
+      {/* Main balance card */}
+      <div style={{ borderRadius:20, background:GRAD, padding:'28px 32px', marginBottom:16, position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', top:-60, right:-60, width:240, height:240, borderRadius:'50%', background:'rgba(255,255,255,.06)', pointerEvents:'none' }}/>
+        <div style={{ position:'absolute', bottom:-80, right:80, width:300, height:300, borderRadius:'50%', background:'rgba(255,255,255,.04)', pointerEvents:'none' }}/>
+
+        <div style={{ position:'relative', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:20 }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+              <Wallet size={16} color="rgba(255,255,255,.7)"/>
+              <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,.7)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Available Balance</span>
+            </div>
+            <p style={{ fontSize:46, fontWeight:900, color:'#fff', margin:'0 0 6px', letterSpacing:'-0.04em', lineHeight:1 }}>
+              {fmtINR(balance)}
+            </p>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <Phone size={12} color="rgba(255,255,255,.55)"/>
+              <span style={{ fontSize:13, color:'rgba(255,255,255,.55)' }}>
+                ~{typeof callsLeft==='number' ? callsLeft.toLocaleString('en-IN') : callsLeft} calls remaining
+                {ratePerMin > 0 && ` at ₹${ratePerMin}/min`}
+              </span>
+            </div>
+          </div>
+          <button onClick={() => setShowTopup(true)}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 24px', borderRadius:12, border:'2px solid rgba(255,255,255,.35)', background:'rgba(255,255,255,.15)', color:'#fff', fontWeight:700, fontSize:14, cursor:'pointer', fontFamily:'inherit', transition:'all .2s', backdropFilter:'blur(4px)' }}
+            onMouseEnter={e=>{e.currentTarget.style.background='rgba(255,255,255,.25)';e.currentTarget.style.borderColor='rgba(255,255,255,.55)'}}
+            onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.15)';e.currentTarget.style.borderColor='rgba(255,255,255,.35)'}}>
+            <Plus size={16}/> Add Money
+          </button>
+        </div>
+      </div>
+
+      {/* Stat pills */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:22 }}>
+        {[
+          { icon:ArrowDownLeft, label:'Total Recharged', value:fmtINR(recharged), color:'#10B981', bg:'#ECFDF5' },
+          { icon:ArrowUpRight,  label:'Total Spent',     value:fmtINR(spent),     color:'#EF4444', bg:'#FEF2F2' },
+          { icon:Phone,         label:'Rate per Min',    value:ratePerMin?`₹${ratePerMin}/min`:'—', color:SKY,   bg:BG  },
+        ].map(({ icon:Icon, label, value, color, bg }) => (
+          <div key={label} style={{ background:'#fff', borderRadius:14, border:`1px solid ${BORD}`, padding:'16px 18px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10 }}>
+              <div style={{ width:30, height:30, borderRadius:9, background:bg, border:`1px solid ${BORD}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <Icon size={14} color={color}/>
+              </div>
+              <span style={{ fontSize:11, color:'#9CA3AF', fontWeight:600 }}>{label}</span>
+            </div>
+            <p style={{ fontSize:20, fontWeight:800, color, margin:0, letterSpacing:'-0.02em' }}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* How it works banner */}
+      <div style={{ background:'#fff', borderRadius:14, border:`1px solid ${BORD}`, padding:'14px 18px', marginBottom:20, display:'flex', alignItems:'center', gap:12 }}>
+        <Info size={16} color={SKY} style={{ flexShrink:0 }}/>
+        <p style={{ fontSize:13, color:'#64748B', margin:0 }}>
+          <strong style={{ color:'#0f172a' }}>How it works:</strong> Add money to your wallet (min ₹500) → your campaigns deduct balance per call at ₹{ratePerMin || 'X'}/min + 18% GST. Balance never expires.
+        </p>
       </div>
 
       {/* Tabs */}
       <div style={{ display:'flex', borderBottom:`1px solid ${BORD}`, marginBottom:20 }}>
         {TABS.map(t => (
-          <button key={t.key} onClick={()=>setTab(t.key)} style={{
+          <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding:'12px 20px', fontSize:13, fontWeight:tab===t.key?700:500,
             color:tab===t.key?SKY:'#6B7280',
             borderTop:'none', borderLeft:'none', borderRight:'none',
             borderBottom:tab===t.key?`2px solid ${SKY}`:'2px solid transparent',
             background:'none', cursor:'pointer', transition:'all .15s', fontFamily:'inherit',
+            display:'flex', alignItems:'center', gap:7,
           }}>
             {t.label}
+            {t.count !== null && t.count > 0 && (
+              <span style={{ fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:20, background:tab===t.key?BG:'#F3F4F6', color:tab===t.key?SKY:'#9CA3AF' }}>{t.count}</span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* ── PLAN & USAGE ── */}
-      {tab==='plan' && usageSummary && (
-        <>
-          {/* Plan banner */}
-          <Card style={{ padding:'20px 24px', marginBottom:14 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
-              <div>
-                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                  <span style={{ fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:20, background:BG, color:SKY, border:`1px solid ${BORD}`, textTransform:'uppercase', letterSpacing:'.05em' }}>
-                    {usageSummary.plan.name} Plan
-                  </span>
-                  {usageSummary.plan.id==='free' && <span style={{ fontSize:11, color:'#9CA3AF' }}>· Limited features</span>}
-                </div>
-                <p style={{ fontSize:13, color:'#64748B', margin:0 }}>
-                  Rate: <strong style={{ color:'#0f172a' }}>₹{fmt(usageSummary.plan.rate_per_min)}/min</strong> + 18% GST · Billed from ringing
-                </p>
-              </div>
-              <button onClick={()=>setTab('upgrade')}
-                style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'10px 20px', borderRadius:10, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', boxShadow:GLOW, fontFamily:'inherit' }}>
-                <Zap size={14}/> Upgrade Plan
-              </button>
-            </div>
-          </Card>
-
-          {/* Usage meters */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
-            {/* Calls */}
-            <Card style={{ padding:'20px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
-                <div>
-                  <p style={{ fontSize:14, fontWeight:700, color:'#0f172a', margin:0 }}>Calls This Month</p>
-                  <p style={{ fontSize:11, color:'#9CA3AF', margin:'3px 0 0' }}>Resets on 1st of each month</p>
-                </div>
-                <p style={{ fontSize:13, fontWeight:800, color:usageSummary.at_limit?.calls?'#EF4444':SKY }}>
-                  {fmtInt(usageSummary.usage?.calls_this_month)}
-                  {usageSummary.limits?.calls_per_month && ` / ${fmtInt(usageSummary.limits.calls_per_month)}`}
-                </p>
-              </div>
-              {usageSummary.limits?.calls_per_month ? (
-                <>
-                  <PBar pct={usageSummary.percentages?.calls||0} warn={usageSummary.warnings?.calls} danger={usageSummary.at_limit?.calls}/>
-                  {usageSummary.warnings?.calls && !usageSummary.at_limit?.calls && (
-                    <p style={{ fontSize:11, color:'#F59E0B', fontWeight:600, marginTop:6 }}>⚠️ {usageSummary.percentages?.calls}% used — running low</p>
-                  )}
-                  {usageSummary.at_limit?.calls && (
-                    <p style={{ fontSize:11, color:'#EF4444', fontWeight:600, marginTop:6 }}>⛔ Limit reached — upgrade to continue</p>
-                  )}
-                </>
-              ) : <p style={{ fontSize:12, color:'#10B981', marginTop:8 }}>✅ Unlimited calls</p>}
-            </Card>
-            {/* Campaigns */}
-            <Card style={{ padding:'20px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
-                <div>
-                  <p style={{ fontSize:14, fontWeight:700, color:'#0f172a', margin:0 }}>Total Campaigns</p>
-                  <p style={{ fontSize:11, color:'#9CA3AF', margin:'3px 0 0' }}>All campaigns in your account</p>
-                </div>
-                <p style={{ fontSize:13, fontWeight:800, color:usageSummary.at_limit?.campaigns?'#EF4444':SKY }}>
-                  {fmtInt(usageSummary.usage?.campaigns_total)}
-                  {usageSummary.limits?.campaigns_limit && ` / ${fmtInt(usageSummary.limits.campaigns_limit)}`}
-                </p>
-              </div>
-              {usageSummary.limits?.campaigns_limit ? (
-                <>
-                  <PBar pct={usageSummary.percentages?.campaigns||0} warn={usageSummary.warnings?.campaigns} danger={usageSummary.at_limit?.campaigns}/>
-                  {usageSummary.at_limit?.campaigns && (
-                    <p style={{ fontSize:11, color:'#EF4444', fontWeight:600, marginTop:6 }}>⛔ Limit reached — upgrade to create more</p>
-                  )}
-                </>
-              ) : <p style={{ fontSize:12, color:'#10B981', marginTop:8 }}>✅ Unlimited campaigns</p>}
-            </Card>
+      {/* Transactions tab */}
+      {tab === 'transactions' && (
+        <div style={{ background:'#fff', borderRadius:16, border:`1px solid ${BORD}`, overflow:'hidden' }}>
+          <div style={{ padding:'16px 22px', borderBottom:`1px solid ${BG}` }}>
+            <h3 style={{ fontSize:14, fontWeight:700, color:'#0f172a', margin:0 }}>All Transactions</h3>
           </div>
-        </>
+          <div style={{ padding:'0 22px' }}>
+            {txns.length === 0 ? (
+              <div style={{ padding:'48px 0', textAlign:'center' }}>
+                <Clock size={28} color={BORD} style={{ display:'block', margin:'0 auto 12px' }}/>
+                <p style={{ fontSize:14, fontWeight:600, color:'#374151', margin:'0 0 4px' }}>No transactions yet</p>
+                <p style={{ fontSize:12, color:'#9CA3AF', margin:0 }}>Add money to get started</p>
+              </div>
+            ) : txns.map((t, i) => <TxnRow key={t.id || i} txn={t}/>)}
+          </div>
+        </div>
       )}
 
-      {/* ── USAGE TAB ── */}
-      {tab==='usage' && (
-        <>
-          <Section title="Monthly Trend" sub="Call volume per month">
-            <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
-                <thead>
-                  <tr style={{ borderBottom:`1px solid ${BG}` }}>
-                    {['Month','Calls','Minutes','Amount (excl. GST)','GST','Total'].map(h => (
-                      <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF', whiteSpace:'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthly.length===0 ? (
-                    <tr><td colSpan={6} style={{ padding:'32px', textAlign:'center', color:BORD, fontSize:13 }}>No usage data yet</td></tr>
-                  ) : monthly.map((m,i) => (
-                    <tr key={i} style={{ borderBottom:`1px solid ${BG}`, transition:'background .15s' }}
-                      onMouseEnter={e=>e.currentTarget.style.background=BG} onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
-                      <td style={{ padding:'12px 16px', fontWeight:600, color:'#0f172a' }}>{m.month_label||m.month}</td>
-                      <td style={{ padding:'12px 16px', color:'#374151' }}>{fmtInt(m.total_calls)}</td>
-                      <td style={{ padding:'12px 16px', color:'#374151' }}>{fmt(m.total_minutes,1)}</td>
-                      <td style={{ padding:'12px 16px', color:'#374151' }}>{fmtINR(m.subtotal)}</td>
-                      <td style={{ padding:'12px 16px', color:'#374151' }}>{fmtINR(m.gst)}</td>
-                      <td style={{ padding:'12px 16px', fontWeight:700, color:SKY }}>{fmtINR(m.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
+      {/* Recharge history tab */}
+      {tab === 'recharges' && (
+        <div style={{ background:'#fff', borderRadius:16, border:`1px solid ${BORD}`, overflow:'hidden' }}>
+          <div style={{ padding:'16px 22px', borderBottom:`1px solid ${BG}` }}>
+            <h3 style={{ fontSize:14, fontWeight:700, color:'#0f172a', margin:0 }}>Top-up History</h3>
+          </div>
+          <div style={{ padding:'0 22px' }}>
+            {recharge.length === 0 ? (
+              <div style={{ padding:'48px 0', textAlign:'center' }}>
+                <Wallet size={28} color={BORD} style={{ display:'block', margin:'0 auto 12px' }}/>
+                <p style={{ fontSize:14, fontWeight:600, color:'#374151', margin:'0 0 4px' }}>No top-ups yet</p>
+                <p style={{ fontSize:12, color:'#9CA3AF', margin:'0 0 20px' }}>Add money to your wallet to get started</p>
+                <button onClick={() => setShowTopup(true)}
+                  style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'10px 20px', borderRadius:10, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:'inherit', boxShadow:GLOW }}>
+                  <Plus size={14}/> Add Money
+                </button>
+              </div>
+            ) : recharge.map((r, i) => <RechargeRow key={r.id || i} r={r}/>)}
+          </div>
+        </div>
+      )}
 
-          <Section title="Daily Activity" sub="Calls per day this month">
-            <MiniBar data={activity}/>
-          </Section>
-
-          <Section title="Campaign Breakdown" sub={`Charges for ${selectedMonth}`}>
-            {campaigns.length===0 ? (
-              <p style={{ fontSize:13, color:BORD, textAlign:'center', padding:'24px' }}>No campaigns with charges for this period</p>
+      {/* Usage trend tab */}
+      {tab === 'usage' && (
+        <div style={{ background:'#fff', borderRadius:16, border:`1px solid ${BORD}`, overflow:'hidden' }}>
+          <div style={{ padding:'16px 22px', borderBottom:`1px solid ${BG}` }}>
+            <h3 style={{ fontSize:14, fontWeight:700, color:'#0f172a', margin:0 }}>30-Day Spend Trend</h3>
+          </div>
+          <div style={{ padding:'20px 22px' }}>
+            {daily.length === 0 ? (
+              <div style={{ padding:'32px 0', textAlign:'center' }}>
+                <TrendingDown size={28} color={BORD} style={{ display:'block', margin:'0 auto 12px' }}/>
+                <p style={{ fontSize:13, color:'#9CA3AF' }}>No usage data yet</p>
+              </div>
             ) : (
-              <div style={{ overflowX:'auto' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
-                  <thead>
-                    <tr style={{ borderBottom:`1px solid ${BG}` }}>
-                      {['Campaign','Calls','Minutes','Amount'].map(h => (
-                        <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:'#9CA3AF' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {campaigns.map((c,i) => (
-                      <tr key={i} style={{ borderBottom:`1px solid ${BG}`, transition:'background .15s' }}
-                        onMouseEnter={e=>e.currentTarget.style.background=BG} onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
-                        <td style={{ padding:'12px 16px', fontWeight:600, color:'#0f172a' }}>{c.name}</td>
-                        <td style={{ padding:'12px 16px', color:'#374151' }}>{fmtInt(c.total_calls)}</td>
-                        <td style={{ padding:'12px 16px', color:'#374151' }}>{fmt(c.total_minutes,1)}</td>
-                        <td style={{ padding:'12px 16px', fontWeight:700, color:SKY }}>{fmtINR(c.total_with_gst)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
-        </>
-      )}
-
-      {/* ── INVOICES TAB ── */}
-      {tab==='invoices' && (
-        <>
-          {/* Generate */}
-          <Card style={{ padding:'20px 22px', marginBottom:14 }}>
-            <h3 style={{ fontSize:15, fontWeight:700, color:'#0f172a', margin:'0 0 14px' }}>Generate Invoice</h3>
-            <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-              <select value={genMonth} onChange={e=>setGenMonth(e.target.value)}
-                style={{ padding:'9px 32px 9px 14px', border:`1.5px solid ${BORD}`, borderRadius:10, fontSize:13, color:'#374151', background:'#fff', cursor:'pointer', fontFamily:'inherit', outline:'none', appearance:'none', backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%230EA5E9' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`, backgroundRepeat:'no-repeat', backgroundPosition:'right 12px center', minWidth:160 }}>
-                <option value="">Select month...</option>
-                {months.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
-              </select>
-              <button onClick={async()=>{
-                if(!genMonth) return toast.error('Select a month first')
-                setGenerating(true)
-                try { await billingApi.generateInvoice(genMonth); toast.success('Invoice generated'); const inv=await billingApi.invoices(); setInvoices(inv.data.invoices||[]) }
-                catch(err) { toast.error(err.response?.data?.error||'Failed to generate') }
-                finally { setGenerating(false) }
-              }} disabled={generating||!genMonth}
-                style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'10px 18px', borderRadius:10, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:13, cursor:generating||!genMonth?'not-allowed':'pointer', boxShadow:GLOW, fontFamily:'inherit', opacity:!genMonth?0.5:1 }}>
-                <Receipt size={14}/> {generating?'Generating...':'Generate'}
-              </button>
-            </div>
-          </Card>
-
-          <Section title="Invoice History" sub="All generated invoices">
-            {invoices.length===0 ? (
-              <div style={{ textAlign:'center', padding:'32px' }}>
-                <Receipt size={28} color={BORD} style={{ display:'block', margin:'0 auto 12px' }}/>
-                <p style={{ fontSize:14, fontWeight:600, color:'#374151', margin:'0 0 4px' }}>No invoices yet</p>
-                <p style={{ fontSize:12, color:'#9CA3AF', margin:0 }}>Generate your first invoice above</p>
-              </div>
-            ) : invoices.map((inv,i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0', borderBottom:`1px solid ${BG}` }}>
-                <div style={{ width:38, height:38, borderRadius:11, background:BG, border:`1px solid ${BORD}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <Receipt size={16} color={SKY}/>
-                </div>
-                <div style={{ flex:1 }}>
-                  <p style={{ fontSize:13, fontWeight:700, color:'#0f172a', margin:0 }}>{inv.month_label||inv.month}</p>
-                  <p style={{ fontSize:11, color:'#9CA3AF', margin:'2px 0 0' }}>Generated {new Date(inv.generated_at).toLocaleDateString('en-IN')}</p>
-                </div>
-                <p style={{ fontSize:14, fontWeight:800, color:SKY }}>{fmtINR(inv.total_with_gst)}</p>
-                <a href={billingApi.downloadInvoice(inv.id)} target="_blank" rel="noreferrer"
-                  style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:9, border:`1px solid ${BORD}`, background:BG, color:SKY, fontWeight:600, fontSize:12, textDecoration:'none', transition:'all .15s' }}
-                  onMouseEnter={e=>{e.currentTarget.style.background=SKY;e.currentTarget.style.color='#fff';e.currentTarget.style.borderColor=SKY}}
-                  onMouseLeave={e=>{e.currentTarget.style.background=BG;e.currentTarget.style.color=SKY;e.currentTarget.style.borderColor=BORD}}>
-                  <Download size={13}/> PDF
-                </a>
-              </div>
-            ))}
-          </Section>
-        </>
-      )}
-
-      {/* ── UPGRADE TAB ── */}
-      {tab==='upgrade' && (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:14 }}>
-          {plans.length===0 ? (
-            <p style={{ fontSize:13, color:'#9CA3AF', padding:'32px', textAlign:'center', gridColumn:'1/-1' }}>No plans available</p>
-          ) : plans.map(plan => {
-            const isCurrent = usageSummary?.plan?.id === plan.id
-            const isPopular = plan.popular
-            return (
-              <div key={plan.id} style={{ background:'#fff', borderRadius:18, border:`2px solid ${isCurrent?SKY:isPopular?SKYL:BORD}`, padding:'28px 24px', position:'relative', transition:'all .2s', boxShadow:isCurrent?GLOW:'none' }}
-                onMouseEnter={e=>{if(!isCurrent)e.currentTarget.style.borderColor=SKY}}
-                onMouseLeave={e=>{if(!isCurrent)e.currentTarget.style.borderColor=isPopular?SKYL:BORD}}>
-                {isPopular && !isCurrent && (
-                  <div style={{ position:'absolute', top:-12, left:'50%', transform:'translateX(-50%)', padding:'4px 16px', borderRadius:99, background:GRAD, color:'#fff', fontSize:11, fontWeight:700, whiteSpace:'nowrap', boxShadow:GLOW }}>
-                    Most Popular
-                  </div>
-                )}
-                {isCurrent && (
-                  <div style={{ position:'absolute', top:-12, left:'50%', transform:'translateX(-50%)', padding:'4px 16px', borderRadius:99, background:'#ECFDF5', color:'#065F46', fontSize:11, fontWeight:700, border:'1px solid #A7F3D0', whiteSpace:'nowrap' }}>
-                    ✅ Current Plan
-                  </div>
-                )}
-                <h3 style={{ fontSize:17, fontWeight:800, color:'#0f172a', margin:'0 0 6px' }}>{plan.name}</h3>
-                <p style={{ fontSize:28, fontWeight:900, color:isCurrent?SKY:'#0f172a', margin:'0 0 4px', letterSpacing:'-0.03em' }}>
-                  {plan.price_monthly ? `₹${Number(plan.price_monthly).toLocaleString('en-IN')}` : 'Free'}
-                  {plan.price_monthly && <span style={{ fontSize:13, fontWeight:500, color:'#9CA3AF' }}>/month</span>}
-                </p>
-                <p style={{ fontSize:12, color:'#9CA3AF', margin:'0 0 20px' }}>₹{fmt(plan.rate_per_min)}/min + 18% GST</p>
-                <div style={{ borderTop:`1px solid ${BG}`, paddingTop:16, marginBottom:20 }}>
-                  {[
-                    plan.calls_per_month ? `${fmtInt(plan.calls_per_month)} calls/month` : 'Unlimited calls',
-                    plan.campaigns_limit ? `${plan.campaigns_limit} campaigns` : 'Unlimited campaigns',
-                    `${plan.contacts_per_campaign||'Unlimited'} contacts/campaign`,
-                    `${plan.team_members_limit||'Unlimited'} team members`,
-                  ].map(f => (
-                    <div key={f} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-                      <div style={{ width:18, height:18, borderRadius:'50%', background:BG, border:`1px solid ${BORD}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <Check size={10} color={SKY}/>
+              <>
+                <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:100, marginBottom:12 }}>
+                  {daily.map((d, i) => {
+                    const h = Math.max(4, ((d.amount || 0) / maxSpend) * 90)
+                    return (
+                      <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                        <div title={`${fmtINR(d.amount || 0)}`}
+                          style={{ width:'100%', height:h, borderRadius:'3px 3px 0 0', background:h>20?GRAD:BG, border:`1px solid ${BORD}`, cursor:'pointer', transition:'opacity .15s' }}
+                          onMouseEnter={e=>e.currentTarget.style.opacity='.75'}
+                          onMouseLeave={e=>e.currentTarget.style.opacity='1'}
+                        />
                       </div>
-                      <span style={{ fontSize:13, color:'#374151' }}>{f}</span>
+                    )
+                  })}
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'#9CA3AF' }}>
+                  <span>{daily[0]?.date ? new Date(daily[0].date).toLocaleDateString('en-IN',{day:'numeric',month:'short'}) : 'Day 1'}</span>
+                  <span>Today</span>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginTop:20 }}>
+                  {[
+                    ['Total Spent', fmtINR(daily.reduce((s,d) => s+(d.amount||0), 0))],
+                    ['Avg/Day',     fmtINR(daily.reduce((s,d) => s+(d.amount||0), 0) / (daily.length||1))],
+                    ['Peak Day',    fmtINR(maxSpend)],
+                  ].map(([l, v]) => (
+                    <div key={l} style={{ background:BG, borderRadius:12, padding:'12px', textAlign:'center', border:`1px solid ${BORD}` }}>
+                      <p style={{ fontSize:10, color:'#9CA3AF', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', margin:'0 0 5px' }}>{l}</p>
+                      <p style={{ fontSize:18, fontWeight:800, color:SKY, margin:0, letterSpacing:'-0.02em' }}>{v}</p>
                     </div>
                   ))}
                 </div>
-                {!isCurrent && (
-                  <button onClick={async()=>{
-                    setUpgrading(plan.id)
-                    try { await billingApi.upgrade(plan.id); const us=await billingApi.usageSummary(); setUsageSummary(us.data); toast.success(`Upgraded to ${plan.name}!`); setTab('plan') }
-                    catch(err) { toast.error(err.response?.data?.error||'Upgrade failed') }
-                    finally { setUpgrading(null) }
-                  }} disabled={upgrading===plan.id}
-                    style={{ width:'100%', padding:'12px', borderRadius:11, border:'none', background:GRAD, color:'#fff', fontWeight:700, fontSize:14, cursor:upgrading===plan.id?'not-allowed':'pointer', boxShadow:GLOW, fontFamily:'inherit', transition:'all .15s' }}>
-                    {upgrading===plan.id ? 'Upgrading...' : `Switch to ${plan.name}`}
-                  </button>
-                )}
-              </div>
-            )
-          })}
+              </>
+            )}
+          </div>
         </div>
+      )}
+
+      {/* Top-up modal */}
+      {showTopup && (
+        <TopupModal
+          onClose={() => setShowTopup(false)}
+          onSuccess={refresh}
+        />
       )}
     </div>
   )
