@@ -11,7 +11,7 @@ const MODES = [
     emoji:    '📢',
     title:    'Inform People',
     subtitle: 'Route updates, scheme news, birthday wishes, reminders',
-    color:    '#f5a623',
+    color:    '#0EA5E9',
     bg:       '#fffbf0',
     border:   '#fde59a',
     examples: ['Driver route update', 'Scheme deadline reminder', 'Birthday wishes', 'EMI reminder'],
@@ -21,9 +21,9 @@ const MODES = [
     emoji:    '📋',
     title:    'Ask Questions',
     subtitle: 'Verify, collect feedback, confirm status',
-    color:    '#228248',
+    color:    '#0EA5E9',
     bg:       '#f0faf4',
-    border:   '#b8e6cb',
+    border:   '#BAE6FD',
     examples: ['Scheme beneficiary check', 'Service feedback', 'Appointment confirmation', 'Voting survey'],
   },
   {
@@ -31,9 +31,9 @@ const MODES = [
     emoji:    '⏰',
     title:    'Send Reminders',
     subtitle: 'Appointments, payments, meetings, deadlines',
-    color:    '#4f7ef0',
-    bg:       '#f0f4ff',
-    border:   '#c0d0ff',
+    color:    '#0EA5E9',
+    bg:       '#F0F9FF',
+    border:   '#BAE6FD',
     examples: ['Doctor appointment', 'Court date', 'Loan EMI', 'Meeting reminder'],
   },
 ]
@@ -266,14 +266,14 @@ export default function CreateCampaign() {
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="text-center max-w-sm">
           <div className="text-7xl mb-6 animate-bounce">🚀</div>
-          <h2 className="text-2xl font-bold text-[#1a1a1a] mb-2">Campaign Launched!</h2>
-          <p className="text-[#6b6b6b] mb-1">
-            <span className="font-bold text-[#228248]">{contactCount} calls</span> are starting now
+          <h2 className="text-2xl font-bold text-[#0f172a] mb-2">Campaign Launched!</h2>
+          <p className="text-[#6B7280] mb-1">
+            <span className="font-bold text-[#0EA5E9]">{contactCount} calls</span> are starting now
           </p>
-          <p className="text-sm text-[#8a8a8a] mb-8">Your AI agent is calling everyone on the list</p>
+          <p className="text-sm text-[#9CA3AF] mb-8">Your AI agent is calling everyone on the list</p>
           <div className="flex flex-col gap-3">
             <button onClick={() => navigate(`/dashboard/campaigns/${campaignId}`)}
-              className="w-full py-3.5 bg-[#1a1a1a] text-white rounded-2xl font-semibold text-sm">
+              className="w-full py-3.5 bg-[#0f172a] text-white rounded-2xl font-semibold text-sm">
               Watch Live Results →
             </button>
             <button onClick={() => {
@@ -300,8 +300,8 @@ export default function CreateCampaign() {
     <div className="max-w-2xl mx-auto px-4 py-8 pb-32">
 
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[#1a1a1a] mb-1">New Campaign</h1>
-        <p className="text-[#8a8a8a] text-sm">Set up and launch in under 2 minutes</p>
+        <h1 className="text-2xl font-bold text-[#0f172a] mb-1">New Campaign</h1>
+        <p className="text-[#9CA3AF] text-sm">Set up and launch in under 2 minutes</p>
       </div>
 
       {/* ── STEP 1: Campaign Name ── */}
@@ -317,8 +317,8 @@ export default function CreateCampaign() {
           }
           className={`w-full border-2 rounded-2xl px-4 py-3.5 text-sm outline-none transition-all
             ${!campaignName.trim()
-              ? 'border-[#ede7dc] bg-[#faf8f4] focus:border-[#1a1a1a]'
-              : 'border-[#1a1a1a] bg-white'}`}
+              ? 'border-[#ede7dc] bg-[#F0F9FF] focus:border-[#0f172a]'
+              : 'border-[#0f172a] bg-white'}`}
         />
         <p className="text-xs text-[#aaa] mt-1.5">Give it a specific name so you can find it later</p>
       </Section>
@@ -330,14 +330,14 @@ export default function CreateCampaign() {
             <button key={m.id} onClick={() => setMode(m.id)}
               className={`relative p-4 rounded-2xl border-2 text-left transition-all duration-200 group
                 ${mode === m.id
-                  ? 'border-[#1a1a1a] bg-[#1a1a1a] shadow-lg scale-[1.02]'
+                  ? 'border-[#0f172a] bg-[#0f172a] shadow-lg scale-[1.02]'
                   : 'border-[#ede7dc] bg-white hover:border-[#ccc] hover:shadow-sm'}`}>
               <div className="text-3xl mb-3">{m.emoji}</div>
-              <p className={`font-bold text-sm mb-1 ${mode === m.id ? 'text-white' : 'text-[#1a1a1a]'}`}>{m.title}</p>
-              <p className={`text-xs leading-relaxed ${mode === m.id ? 'text-white/70' : 'text-[#8a8a8a]'}`}>{m.subtitle}</p>
+              <p className={`font-bold text-sm mb-1 ${mode === m.id ? 'text-white' : 'text-[#0f172a]'}`}>{m.title}</p>
+              <p className={`text-xs leading-relaxed ${mode === m.id ? 'text-white/70' : 'text-[#9CA3AF]'}`}>{m.subtitle}</p>
               {mode === m.id && (
                 <div className="absolute top-3 right-3 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 text-[#1a1a1a]" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 text-[#0f172a]" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
@@ -348,7 +348,7 @@ export default function CreateCampaign() {
         {selectedMode && (
           <div className="mt-3 flex flex-wrap gap-2">
             {selectedMode.examples.map(ex => (
-              <span key={ex} className="text-xs px-3 py-1 rounded-full border border-[#e8e0d5] text-[#6b6b6b] bg-[#faf8f4]">{ex}</span>
+              <span key={ex} className="text-xs px-3 py-1 rounded-full border border-[#e8e0d5] text-[#6B7280] bg-[#F0F9FF]">{ex}</span>
             ))}
           </div>
         )}
@@ -362,7 +362,7 @@ export default function CreateCampaign() {
               <button key={l.code} onClick={() => setLang(l.code)}
                 className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all
                   ${lang === l.code
-                    ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
+                    ? 'border-[#0f172a] bg-[#0f172a] text-white'
                     : 'border-[#ede7dc] text-[#525252] hover:border-[#bbb]'}`}>
                 {l.label}
                 <span className={`block text-[10px] font-normal mt-0.5 ${lang === l.code ? 'text-white/60' : 'text-[#aaa]'}`}>{l.full}</span>
@@ -382,25 +382,25 @@ export default function CreateCampaign() {
             onClick={() => !contactFile && fileRef.current?.click()}
             className={`relative border-2 border-dashed rounded-2xl transition-all cursor-pointer
               ${contactFile
-                ? 'border-[#228248] bg-[#f0faf4] p-4 cursor-default'
+                ? 'border-[#0EA5E9] bg-[#f0faf4] p-4 cursor-default'
                 : dragOver
-                  ? 'border-[#1a1a1a] bg-[#f5f5f5] p-8'
-                  : 'border-[#e0d9ce] hover:border-[#bbb] bg-[#faf8f4] p-8'}`}>
+                  ? 'border-[#0f172a] bg-[#f5f5f5] p-8'
+                  : 'border-[#e0d9ce] hover:border-[#bbb] bg-[#F0F9FF] p-8'}`}>
             <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls"
               onChange={e => handleContactFile(e.target.files[0])} className="hidden" />
             {contactFile ? (
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-[#228248] rounded-xl flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-[#0EA5E9] rounded-xl flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-lg">📊</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-[#1c673a] text-sm truncate">{contactFile.name}</p>
                   {contactCols.length > 0
-                    ? <p className="text-xs text-[#228248] mt-1">Columns found: <span className="font-semibold">{contactCols.join(', ')}</span></p>
-                    : <p className="text-xs text-[#228248] mt-1">File ready — contacts will be processed on launch</p>}
+                    ? <p className="text-xs text-[#0EA5E9] mt-1">Columns found: <span className="font-semibold">{contactCols.join(', ')}</span></p>
+                    : <p className="text-xs text-[#0EA5E9] mt-1">File ready — contacts will be processed on launch</p>}
                 </div>
                 <button onClick={e => { e.stopPropagation(); setContactFile(null); setContactCols([]); setPreviewRow(null) }}
-                  className="w-7 h-7 rounded-full bg-[#e0f0e8] flex items-center justify-center text-[#228248] hover:bg-[#228248] hover:text-white transition-all flex-shrink-0">
+                  className="w-7 h-7 rounded-full bg-[#e0f0e8] flex items-center justify-center text-[#0EA5E9] hover:bg-[#0EA5E9] hover:text-white transition-all flex-shrink-0">
                   ✕
                 </button>
               </div>
@@ -408,7 +408,7 @@ export default function CreateCampaign() {
               <div className="text-center">
                 <div className="text-4xl mb-3">📎</div>
                 <p className="font-semibold text-[#3d3d3d] text-sm mb-1">Drop your Excel or CSV file here</p>
-                <p className="text-xs text-[#8a8a8a]">Must have a <strong>phone</strong> column + any other info (name, route, timing...)</p>
+                <p className="text-xs text-[#9CA3AF]">Must have a <strong>phone</strong> column + any other info (name, route, timing...)</p>
                 <p className="text-xs text-[#bbb] mt-2">or click to browse</p>
               </div>
             )}
@@ -428,7 +428,7 @@ export default function CreateCampaign() {
         <Section label="5. Write your message" done={message.trim().length > 10}>
           {contactCols.filter(c => c.toLowerCase() !== 'phone' && c.toLowerCase() !== 'mobile').length > 0 && (
             <div className="mb-3">
-              <p className="text-xs text-[#8a8a8a] mb-2">Tap a column name to insert it into your message ↓</p>
+              <p className="text-xs text-[#9CA3AF] mb-2">Tap a column name to insert it into your message ↓</p>
               <div className="flex flex-wrap gap-2">
                 {contactCols
                   .filter(c => c.toLowerCase() !== 'phone' && c.toLowerCase() !== 'mobile')
@@ -447,7 +447,7 @@ export default function CreateCampaign() {
               : lang === 'hi' ? 'नमस्ते {{Name}}, आपका रूट {{Route}} है, समय {{Timing}} है। समझे?'
               : 'Hello {{Name}}, your route is {{Route}} at {{Timing}}. Got it?'
             }
-            className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#1a1a1a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed font-mono" />
+            className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#0f172a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed font-mono" />
           {missingCols.length > 0 && (
             <div className="mt-2 p-3 bg-[#fff5f0] border border-[#ffc0a0] rounded-xl">
               <p className="text-xs text-[#c0440f] font-semibold">
@@ -459,7 +459,7 @@ export default function CreateCampaign() {
           )}
           {preview && missingCols.length === 0 && (
             <div className="mt-3 p-4 bg-[#f0faf4] border border-[#b8e6cb] rounded-2xl">
-              <p className="text-xs font-semibold text-[#228248] mb-2 uppercase tracking-wide">Preview — first contact</p>
+              <p className="text-xs font-semibold text-[#0EA5E9] mb-2 uppercase tracking-wide">Preview — first contact</p>
               <p className="text-sm text-[#1c673a] leading-relaxed">{preview}</p>
             </div>
           )}
@@ -471,7 +471,7 @@ export default function CreateCampaign() {
         <Section label="5. Upload your question script" done={scriptReady}>
 
           {/* Tabs */}
-          <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ background: '#f5f1ea' }}>
+          <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ background: '#BAE6FD' }}>
             {[
               ['text', <FileText size={12} />, 'Type / Paste'],
               ['url',  <Globe    size={12} />, 'From URL'],
@@ -480,8 +480,8 @@ export default function CreateCampaign() {
               <button key={key} onClick={() => setScriptTab(key)}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all"
                 style={scriptTab === key
-                  ? { background: '#fff', color: '#1a1a1a', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
-                  : { color: '#8a8a8a' }}>
+                  ? { background: '#fff', color: '#0f172a', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
+                  : { color: '#9CA3AF' }}>
                 {icon}{label}
               </button>
             ))}
@@ -504,7 +504,7 @@ export default function CreateCampaign() {
                 }}
                 rows={7}
                 placeholder={`Paste or type your call script here...\n\nExample:\nVerify if the contact received their scheme benefit.\n\nQuestion 1: Did you receive your ₹2000 payment?\nQuestion 2: Was the amount correct?\nIf no → collect their bank account number.`}
-                className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#1a1a1a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed"
+                className="w-full bg-white border-2 border-[#ede7dc] focus:border-[#0f172a] rounded-2xl px-4 py-3.5 text-sm text-[#2c2c2c] placeholder-[#c0b8ae] resize-none outline-none transition-all leading-relaxed"
               />
               {scriptText && (
                 <div className="flex justify-between mt-1.5">
@@ -518,25 +518,25 @@ export default function CreateCampaign() {
           {/* ── URL tab ── */}
           {scriptTab === 'url' && (
             <div className="space-y-3">
-              <p className="text-xs text-[#8a8a8a]">Extract content from any website — product page, scheme info, FAQ</p>
+              <p className="text-xs text-[#9CA3AF]">Extract content from any website — product page, scheme info, FAQ</p>
               <input
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && fetchUrl()}
                 placeholder="https://yourwebsite.com/scheme-details"
-                className="w-full bg-[#faf8f4] border-2 border-[#ede7dc] focus:border-[#1a1a1a] rounded-xl px-4 py-3 text-sm outline-none transition-all"
+                className="w-full bg-[#F0F9FF] border-2 border-[#ede7dc] focus:border-[#0f172a] rounded-xl px-4 py-3 text-sm outline-none transition-all"
               />
               <button
                 onClick={fetchUrl}
                 disabled={urlLoading || !urlInput.trim()}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all text-white"
-                style={{ background: urlLoading || !urlInput.trim() ? '#d0c9be' : '#1a1a1a' }}>
+                style={{ background: urlLoading || !urlInput.trim() ? '#d0c9be' : '#0f172a' }}>
                 {urlLoading
                   ? <><Loader size={14} className="animate-spin" /> Fetching...</>
                   : <><Globe size={14} /> Extract Content</>}
               </button>
               {scriptText && (
-                <div className="p-3 bg-[#f0faf4] border border-[#b8e6cb] rounded-xl text-xs text-[#228248] font-semibold">
+                <div className="p-3 bg-[#f0faf4] border border-[#b8e6cb] rounded-xl text-xs text-[#0EA5E9] font-semibold">
                   ✅ Content extracted ({scriptText.length} chars) — switch to "Type / Paste" tab to review or edit
                 </div>
               )}
@@ -547,7 +547,7 @@ export default function CreateCampaign() {
           {scriptTab === 'pdf' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-[#8a8a8a]">Upload your script as a <strong>Word (.docx)</strong> file</p>
+                <p className="text-xs text-[#9CA3AF]">Upload your script as a <strong>Word (.docx)</strong> file</p>
                 <button onClick={() => setScriptTab('text')}
                   className="text-[11px] text-[#4f7ef0] hover:underline">
                   ✏️ Type instead
@@ -563,18 +563,18 @@ export default function CreateCampaign() {
               </div>
 
               {pdfFile ? (
-                <div className="flex items-center gap-3 p-4 bg-[#f0faf4] border-2 border-[#228248] rounded-2xl">
-                  <div className="w-10 h-10 bg-[#228248] rounded-xl flex items-center justify-center flex-shrink-0">
+                <div className="flex items-center gap-3 p-4 bg-[#f0faf4] border-2 border-[#0EA5E9] rounded-2xl">
+                  <div className="w-10 h-10 bg-[#0EA5E9] rounded-xl flex items-center justify-center flex-shrink-0">
                     <span className="text-white text-lg">📄</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-[#1c673a] text-sm truncate">{pdfFile.name}</p>
-                    <p className="text-xs text-[#228248] mt-0.5">
+                    <p className="text-xs text-[#0EA5E9] mt-0.5">
                       {scriptText ? `${scriptText.length} chars extracted` : 'Will be parsed on launch'}
                     </p>
                   </div>
                   <button onClick={() => { setPdfFile(null); setScriptText('') }}
-                    className="w-7 h-7 rounded-full bg-[#e0f0e8] flex items-center justify-center text-[#228248] hover:bg-[#228248] hover:text-white transition-all flex-shrink-0">
+                    className="w-7 h-7 rounded-full bg-[#e0f0e8] flex items-center justify-center text-[#0EA5E9] hover:bg-[#0EA5E9] hover:text-white transition-all flex-shrink-0">
                     ✕
                   </button>
                 </div>
@@ -583,19 +583,19 @@ export default function CreateCampaign() {
                   onClick={() => pdfRef.current?.click()}
                   disabled={pdfLoading}
                   className="w-full flex flex-col items-center gap-2 py-8 rounded-2xl border-2 border-dashed transition-all hover:border-[#bbb]"
-                  style={{ borderColor: '#e0d9ce', background: '#faf8f4', cursor: 'pointer' }}>
+                  style={{ borderColor: '#e0d9ce', background: '#F0F9FF', cursor: 'pointer' }}>
                   {pdfLoading
-                    ? <><Loader size={20} className="animate-spin text-[#a8a8a8]" /><span className="text-xs text-[#a8a8a8]">Reading PDF...</span></>
-                    : <><Upload size={20} className="text-[#a8a8a8]" /><span className="text-xs font-semibold text-[#6b6b6b]">Click to upload Word doc (.docx)</span><span className="text-[11px] text-[#aaa]">Word .docx only — Max 5MB</span></>}
+                    ? <><Loader size={20} className="animate-spin text-[#9CA3AF]" /><span className="text-xs text-[#9CA3AF]">Reading PDF...</span></>
+                    : <><Upload size={20} className="text-[#9CA3AF]" /><span className="text-xs font-semibold text-[#6B7280]">Click to upload Word doc (.docx)</span><span className="text-[11px] text-[#aaa]">Word .docx only — Max 5MB</span></>}
                 </button>
               )}
             </div>
           )}
         {/* ── Script Generating Spinner ── */}
         {(pdfLoading || scriptGenerating) && (
-          <div className="mt-4 p-4 rounded-2xl border-2 border-[#e0d9ce] bg-[#faf8f4] flex items-center gap-3">
-            <Loader size={16} className="animate-spin text-[#8a8a8a]" />
-            <p className="text-sm text-[#6b6b6b]">Reading script file...</p>
+          <div className="mt-4 p-4 rounded-2xl border-2 border-[#e0d9ce] bg-[#F0F9FF] flex items-center gap-3">
+            <Loader size={16} className="animate-spin text-[#9CA3AF]" />
+            <p className="text-sm text-[#6B7280]">Reading script file...</p>
           </div>
         )}
 
@@ -680,11 +680,11 @@ export default function CreateCampaign() {
                 onClick={() => setAdvanced(a => ({ ...a, schedule_mode: opt.id, schedule_start: opt.id === 'now' ? '' : a.schedule_start }))}
                 className={`p-4 rounded-2xl border-2 text-left transition-all
                   ${advanced.schedule_mode === opt.id
-                    ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
+                    ? 'border-[#0f172a] bg-[#0f172a] text-white'
                     : 'border-[#ede7dc] hover:border-[#bbb] bg-white'}`}>
                 <span className="text-xl block mb-1">{opt.emoji}</span>
-                <p className={`font-bold text-sm ${advanced.schedule_mode === opt.id ? 'text-white' : 'text-[#1a1a1a]'}`}>{opt.label}</p>
-                <p className={`text-xs mt-0.5 ${advanced.schedule_mode === opt.id ? 'text-white/60' : 'text-[#8a8a8a]'}`}>{opt.sub}</p>
+                <p className={`font-bold text-sm ${advanced.schedule_mode === opt.id ? 'text-white' : 'text-[#0f172a]'}`}>{opt.label}</p>
+                <p className={`text-xs mt-0.5 ${advanced.schedule_mode === opt.id ? 'text-white/60' : 'text-[#9CA3AF]'}`}>{opt.sub}</p>
               </button>
             ))}
           </div>
@@ -694,7 +694,7 @@ export default function CreateCampaign() {
               min={new Date().toISOString().slice(0,16)}
               onChange={e => setAdvanced(a => ({ ...a, schedule_start: e.target.value }))}
               className={`w-full border-2 rounded-xl px-4 py-3 text-sm outline-none transition-all
-                ${!advanced.schedule_start ? 'border-orange-300 bg-orange-50' : 'border-[#ede7dc] bg-[#faf8f4] focus:border-[#1a1a1a]'}`} />
+                ${!advanced.schedule_start ? 'border-orange-300 bg-orange-50' : 'border-[#ede7dc] bg-[#F0F9FF] focus:border-[#0f172a]'}`} />
           )}
           {advanced.schedule_mode === 'schedule' && !advanced.schedule_start && (
             <p className="text-xs text-orange-500 mt-1.5 font-medium">⚠️ Please set a date and time</p>
@@ -719,10 +719,10 @@ export default function CreateCampaign() {
                   onClick={() => setAdvanced(a => ({ ...a, persona_tone: t.id }))}
                   className={`p-3 rounded-xl border-2 text-center transition-all
                     ${advanced.persona_tone === t.id
-                      ? 'border-[#1a1a1a] bg-[#1a1a1a] text-white'
+                      ? 'border-[#0f172a] bg-[#0f172a] text-white'
                       : 'border-[#ede7dc] hover:border-[#bbb] bg-white'}`}>
                   <span className="text-xl block mb-1">{t.emoji}</span>
-                  <p className={`font-bold text-xs ${advanced.persona_tone === t.id ? 'text-white' : 'text-[#1a1a1a]'}`}>{t.label}</p>
+                  <p className={`font-bold text-xs ${advanced.persona_tone === t.id ? 'text-white' : 'text-[#0f172a]'}`}>{t.label}</p>
                   <p className={`text-[10px] mt-0.5 ${advanced.persona_tone === t.id ? 'text-white/60' : 'text-[#aaa]'}`}>{t.desc}</p>
                 </button>
               ))}
@@ -731,55 +731,55 @@ export default function CreateCampaign() {
 
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Agent Name</label>
+              <label className="block text-xs font-semibold text-[#6B7280] mb-1.5">Agent Name</label>
               <input value={advanced.persona_name}
                 onChange={e => setAdvanced(a => ({ ...a, persona_name: e.target.value }))}
                 placeholder="Priya"
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Simultaneous Calls</label>
+              <label className="block text-xs font-semibold text-[#6B7280] mb-1.5">Simultaneous Calls</label>
               <input type="number" min={1} max={20} value={advanced.max_concurrent_calls}
                 onChange={e => setAdvanced(a => ({ ...a, max_concurrent_calls: +e.target.value }))}
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call From</label>
+              <label className="block text-xs font-semibold text-[#6B7280] mb-1.5">Call From</label>
               <input type="time" value={advanced.calling_hours_start}
                 onChange={e => setAdvanced(a => ({ ...a, calling_hours_start: e.target.value }))}
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#6b6b6b] mb-1.5">Call Until</label>
+              <label className="block text-xs font-semibold text-[#6B7280] mb-1.5">Call Until</label>
               <input type="time" value={advanced.calling_hours_end}
                 onChange={e => setAdvanced(a => ({ ...a, calling_hours_end: e.target.value }))}
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
+                className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]" />
             </div>
           </div>
 
           <div className="mt-5 pt-5" style={{ borderTop: '1px solid #ede7dc' }}>
-            <label className="block text-xs font-semibold text-[#6b6b6b] mb-1">
+            <label className="block text-xs font-semibold text-[#6B7280] mb-1">
               📊 Save results to Google Sheet <span className="font-normal text-[#aaa]">(optional)</span>
             </label>
             <input value={advanced.google_sheet_url}
               onChange={e => setAdvanced(a => ({ ...a, google_sheet_url: e.target.value }))}
-              className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]"
+              className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]"
               placeholder="https://docs.google.com/spreadsheets/d/..." />
             <p className="text-[11px] mt-1.5 text-[#aaa]">Paste your Google Sheet link — call results will be added as new rows after each call</p>
           </div>
 
           <div className="mt-5 pt-5" style={{ borderTop: '1px solid #ede7dc' }}>
-            <label className="block text-xs font-semibold text-[#6b6b6b] mb-1">
+            <label className="block text-xs font-semibold text-[#6B7280] mb-1">
               📡 Send results to your server <span className="font-normal text-[#aaa]">(optional)</span>
             </label>
             <input value={advanced.webhook_url}
               onChange={e => setAdvanced(a => ({ ...a, webhook_url: e.target.value }))}
-              className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc] mb-2"
+              className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc] mb-2"
               placeholder="https://yourserver.com/api/call-results" />
             {advanced.webhook_url && (
               <input value={advanced.webhook_secret}
                 onChange={e => setAdvanced(a => ({ ...a, webhook_secret: e.target.value }))}
-                className="w-full bg-[#faf8f4] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]"
+                className="w-full bg-[#F0F9FF] border border-[#ede7dc] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ccc]"
                 placeholder="Webhook secret (optional — for signature verification)"
                 type="password" />
             )}
@@ -803,10 +803,10 @@ export default function CreateCampaign() {
                     advanced.schedule_mode === 'now' || !!advanced.schedule_start,
                     !!advanced.persona_tone,
                   ].map((done, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${done ? 'bg-[#228248]' : 'bg-[#ddd]'}`} />
+                    <div key={i} className={`w-2 h-2 rounded-full transition-all ${done ? 'bg-[#0EA5E9]' : 'bg-[#ddd]'}`} />
                   ))}
                 </div>
-                <p className="text-sm text-[#8a8a8a]">
+                <p className="text-sm text-[#9CA3AF]">
                   {!campaignName.trim()                                    ? 'Give your campaign a name (Step 1)'
                     : !mode                                                ? 'Choose what kind of call to make'
                     : !contactFile                                         ? 'Upload your contact list'
@@ -819,7 +819,7 @@ export default function CreateCampaign() {
               </div>
             ) : (
               <button onClick={handleLaunch} disabled={loading}
-                className="w-full py-4 bg-[#1a1a1a] hover:bg-[#2c2c2c] active:scale-[0.98] text-white rounded-2xl font-bold text-base transition-all disabled:opacity-60 flex items-center justify-center gap-3 shadow-xl">
+                className="w-full py-4 bg-[#0f172a] hover:bg-[#2c2c2c] active:scale-[0.98] text-white rounded-2xl font-bold text-base transition-all disabled:opacity-60 flex items-center justify-center gap-3 shadow-xl">
                 {loading ? (
                   <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Starting calls...</>
                 ) : (
@@ -840,7 +840,7 @@ function Section({ label, done, children }) {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2.5 mb-3">
-        <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${done ? 'bg-[#228248]' : 'bg-[#e8e0d5]'}`}>
+        <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${done ? 'bg-[#0EA5E9]' : 'bg-[#e8e0d5]'}`}>
           {done ? (
             <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
