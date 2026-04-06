@@ -30,7 +30,7 @@ const USE_CASES = [
   { icon:'🏥', title:'Healthcare',   color:'#10B981', bg:'#ECFDF5' },
   { icon:'🏦', title:'Finance',      color:'#F59E0B', bg:'#FFFBEB' },
   { icon:'🛒', title:'E-commerce',   color:'#EF4444', bg:'#FEF2F2' },
-  { icon:'🗳️', title:'Political',    color:'#6366F1', bg:'#EEF2FF' },
+  
 ]
 
 const STATS = [
@@ -148,7 +148,7 @@ function PhoneMockup() {
         <p style={{ fontSize:9, color:'#9CA3AF', margin:'1px 0 0', fontWeight:600 }}>Answer rate</p>
       </div>
       <div style={{ position:'absolute', bottom:60, left:-60, background:'#fff', borderRadius:12, padding:'8px 12px', boxShadow:'0 4px 20px rgba(14,165,233,.2)', border:`1px solid ${S.border}` }}>
-        <p style={{ fontSize:11, fontWeight:800, ...S.gradText, margin:0 }}>₹1.00/min</p>
+        <p style={{ fontSize:11, fontWeight:800, ...S.gradText, margin:0 }}>₹7.00/min</p>
         <p style={{ fontSize:9, color:'#9CA3AF', margin:'1px 0 0', fontWeight:600 }}>Pay as you go</p>
       </div>
     </div>
@@ -434,7 +434,7 @@ export default function LandingPage() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:40 }}>
             {[
               { label:'Minimum top-up', val:'₹500', sub:'Add any time', icon:'💳', highlight:false },
-              { label:'Per minute rate', val:'₹1.00', sub:'All languages included', icon:'⏱️', highlight:true },
+              { label:'Per minute rate', val:'₹7.00', sub:'All languages included', icon:'⏱️', highlight:true },
             ].map(p => (
               <div key={p.label} style={{ background:p.highlight?S.grad:'#fff', borderRadius:20, padding:'28px 24px', border:p.highlight?'none':`1px solid ${S.border}`, boxShadow:p.highlight?S.glowLg:'none', textAlign:'center' }}>
                 <div style={{ fontSize:32, marginBottom:12 }}>{p.icon}</div>
