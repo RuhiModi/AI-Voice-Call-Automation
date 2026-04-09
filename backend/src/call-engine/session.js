@@ -370,6 +370,7 @@ class CallSession {
       await contactRepo.updateStatus(this.contact.id, 'completed', outcome)
       await campaignRepo.incrementCompleted(this.campaign.id)
 
+      
       // Write to Google Sheets if connected
       if (this.campaign.google_sheet_id) {
         const user = await userRepo.findById(this.campaign.user_id)
@@ -377,10 +378,19 @@ class CallSession {
           await appendToGoogleSheet(
             user.google_sheets_token,
             this.campaign.google_sheet_id,
-            this.contact, outcome, this.language, duration, this.collectedData
+            this.contact,
+            outcome,
+            this.language,
+            duration,
+            this.collectedData,
+            this.transcript,                           // ← full conversation array
+            this.campaign.name || '',                  // ← campaign name
+            flowSummary?.acknowledged ?? null,         // ← did contact acknowledge?
+            this.flowExecutor?.confusionCount || 0     // ← confusion count
           ).catch(err => console.error('[Sheets] Error:', err.message))
         }
       }
+ 
 
       // Deliver to external webhook if configured
       if (this.campaign.webhook_url) {
