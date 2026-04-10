@@ -11,7 +11,8 @@ const callRepo     = require('../repositories/call.repo')
 const contactRepo  = require('../repositories/contact.repo')
 const campaignRepo = require('../repositories/campaign.repo')
 const userRepo     = require('../repositories/user.repo')
-const { appendToGoogleSheet } = require('../integrations/googleSheets')
+const { appendToGoogleSheet }       = require('../integrations/googleSheets')
+const { translatePromptIfNeeded }   = require('./promptTranslate')
 const { deliverWebhook }      = require('../services/webhookDelivery')
 
 // All active call sessions — key: sessionId, value: CallSession
@@ -39,6 +40,8 @@ class CallSession {
     this.vad           = null
     this.audioBuffer   = Buffer.alloc(0)
     this.agentSpeaking = false  // true while TTS is playing — mutes STT input
+    this.vobizCallUuid  = null   // Set by scheduler after makeOutboundCall
+    this.vobizCreds     = {}     // Set by scheduler — needed for hangup API
   }
 
   // ── Start the call ─────────────────────────────────────────
@@ -196,7 +199,7 @@ class CallSession {
       }
 
       // ── 1. Flow executor (ScriptFlow or AnnouncementFlow) ─────
-      const flowResult = this.flowExecutor.process(userText)
+      const flowResult = this.flowExecutor.process(userText, this.language)
 
       if (!flowResult.useLLM) {
         // Sync collected data
@@ -209,9 +212,15 @@ class CallSession {
           return
         }
 
-        this.transcript.push({ role: 'assistant', content: flowResult.text })
-        console.log(`[Session ${this.sessionId}] 📋 Flow [${flowResult.stateId || 'announcement'}]: "${flowResult.text.substring(0,60)}"`)
-        await this.speak(flowResult.text)
+        // AUTO-LANGUAGE: translate prompt to user's current language if different from script base
+        const promptToSpeak = await translatePromptIfNeeded(
+          flowResult.text,
+          this.language,
+          this.campaign._baseLang || this.campaign.language_priority || 'gu'
+        )
+        this.transcript.push({ role: 'assistant', content: promptToSpeak })
+        console.log(`[Session ${this.sessionId}] 📋 Flow [${flowResult.stateId || ''}] (${this.language}): "${promptToSpeak.substring(0,60)}"`)
+        await this.speak(promptToSpeak)
 
         if (flowResult.action === 'end') {
           // Terminal state — script is done. Wait briefly then end call.
@@ -310,8 +319,8 @@ class CallSession {
       console.log(`[Session ${this.sessionId}] 👋 Saying goodbye: "${goodbye}"`)
       this.transcript.push({ role: 'assistant', content: goodbye })
       await this.speak(goodbye)
-      // Wait for audio to finish playing before hanging up
-      await new Promise(r => setTimeout(r, 1500))
+      // Short wait for audio to finish — hangupCall will cut the line cleanly
+      await new Promise(r => setTimeout(r, 800))
     } catch (err) {
       console.error(`[Session ${this.sessionId}] Goodbye error:`, err.message)
     }
@@ -337,6 +346,25 @@ class CallSession {
   async endCall(outcome = 'completed') {
     if (!this.isActive) return
     this.isActive = false
+
+    // ── Immediately hang up Vobiz call — don't wait for webhook ──────────────
+    if (this.vobizCallUuid) {
+      try {
+        const { hangupCall } = require('../telephony')
+        await hangupCall(this.vobizCallUuid, this.vobizCreds || {})
+        console.log(`[Session ${this.sessionId}] 📵 Vobiz call ${this.vobizCallUuid} hung up via API`)
+      } catch (err) {
+        console.warn(`[Session ${this.sessionId}] ⚠️  hangupCall failed: ${err.message}`)
+      }
+    } else {
+      // Fallback: close WebSocket — Vobiz detects stream end within ~2s
+      try {
+        if (this.wsSocket?.readyState === 1) {
+          this.wsSocket.close()
+          console.log(`[Session ${this.sessionId}] 📵 WebSocket closed (fallback hangup)`)
+        }
+      } catch {}
+    }
 
     const duration   = Math.floor((Date.now() - this.startTime) / 1000)
     // billedSec = full duration from ringing start (billing starts when call is initiated)
@@ -370,7 +398,6 @@ class CallSession {
       await contactRepo.updateStatus(this.contact.id, 'completed', outcome)
       await campaignRepo.incrementCompleted(this.campaign.id)
 
-      
       // Write to Google Sheets if connected
       if (this.campaign.google_sheet_id) {
         const user = await userRepo.findById(this.campaign.user_id)
@@ -378,19 +405,10 @@ class CallSession {
           await appendToGoogleSheet(
             user.google_sheets_token,
             this.campaign.google_sheet_id,
-            this.contact,
-            outcome,
-            this.language,
-            duration,
-            this.collectedData,
-            this.transcript,                           // ← full conversation array
-            this.campaign.name || '',                  // ← campaign name
-            flowSummary?.acknowledged ?? null,         // ← did contact acknowledge?
-            this.flowExecutor?.confusionCount || 0     // ← confusion count
+            this.contact, outcome, this.language, duration, this.collectedData
           ).catch(err => console.error('[Sheets] Error:', err.message))
         }
       }
- 
 
       // Deliver to external webhook if configured
       if (this.campaign.webhook_url) {
