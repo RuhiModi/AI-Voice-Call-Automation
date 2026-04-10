@@ -241,11 +241,20 @@ async function _makeCall(contactId, campaignId, campaignData = null) {
       await contactRepo.updateStatus(contactId, 'failed', 'no_vobiz_creds')
       return
     }
-    await makeOutboundCall(fromNumber, contact.phone, sessionId, {
+    const callResult = await makeOutboundCall(fromNumber, contact.phone, sessionId, {
       authId:    creds.authId,
       authToken: creds.authToken,
     })
-    console.log(`[Scheduler] 📞 Calling ${contact.phone} — session: ${sessionId}`)
+    // Store Vobiz callUuid on session so endCall() can proactively hang up
+    const session = activeSessions.get(sessionId)
+    if (session && callResult) {
+      session.vobizCallUuid = callResult.call_uuid
+        || callResult.objects?.[0]?.call_uuid
+        || null
+      session.vobizCreds = { authId: creds.authId, authToken: creds.authToken }
+    }
+    const uuid = session?.vobizCallUuid || 'pending'
+    console.log(`[Scheduler] 📞 Calling ${contact.phone} | session: ${sessionId} | uuid: ${uuid}`)
   } catch (err) {
     console.error(`[Scheduler] Failed to call ${contact.phone}:`, err.message)
     activeSessions.delete(sessionId)
