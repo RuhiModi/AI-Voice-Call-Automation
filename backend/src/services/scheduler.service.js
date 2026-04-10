@@ -245,8 +245,8 @@ async function _makeCall(contactId, campaignId, campaignData = null) {
       authId:    creds.authId,
       authToken: creds.authToken,
     })
-    // Store Vobiz callUuid on session so endCall() can proactively hang up
-    const session = activeSessions.get(sessionId)
+    // Store Vobiz callUuid on the ALREADY-created session so endCall() can hang up proactively
+    // Note: session was already declared above as `new CallSession(...)` — reuse it here
     if (session && callResult) {
       session.vobizCallUuid = callResult.call_uuid
         || callResult.objects?.[0]?.call_uuid
