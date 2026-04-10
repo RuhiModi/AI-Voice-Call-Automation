@@ -13,6 +13,7 @@ const campaignRepo = require('../repositories/campaign.repo')
 const userRepo     = require('../repositories/user.repo')
 const { appendToGoogleSheet }       = require('../integrations/googleSheets')
 const { translatePromptIfNeeded }   = require('./promptTranslate')
+const { hangupCall, transferCall }  = require('../telephony')
 const { deliverWebhook }      = require('../services/webhookDelivery')
 
 // All active call sessions — key: sessionId, value: CallSession
@@ -332,7 +333,6 @@ class CallSession {
     const agentNumber = process.env.HUMAN_AGENT_NUMBER
     if (agentNumber) {
       try {
-        const { transferCall } = require('../telephony')
         await transferCall(this.sessionId, agentNumber, this.campaign?._vobizCreds || {})
         console.log(`[Session ${this.sessionId}] 👤 Transferred to: ${agentNumber}`)
       } catch (err) {
@@ -350,7 +350,6 @@ class CallSession {
     // ── Immediately hang up Vobiz call — don't wait for webhook ──────────────
     if (this.vobizCallUuid) {
       try {
-        const { hangupCall } = require('../telephony')
         await hangupCall(this.vobizCallUuid, this.vobizCreds || {})
         console.log(`[Session ${this.sessionId}] 📵 Vobiz call ${this.vobizCallUuid} hung up via API`)
       } catch (err) {
