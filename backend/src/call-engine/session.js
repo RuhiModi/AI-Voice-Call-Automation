@@ -12,8 +12,15 @@ const contactRepo  = require('../repositories/contact.repo')
 const campaignRepo = require('../repositories/campaign.repo')
 const userRepo     = require('../repositories/user.repo')
 const { appendToGoogleSheet }       = require('../integrations/googleSheets')
-const { translatePromptIfNeeded }   = require('./promptTranslate')
 const { hangupCall, transferCall }  = require('../telephony')
+
+// Optional: auto-translate script prompts to user's detected language
+// Requires promptTranslate.js to be deployed — falls back gracefully if missing
+let translatePromptIfNeeded = async (text) => text  // no-op default
+try {
+  const pt = require('./promptTranslate')
+  if (pt?.translatePromptIfNeeded) translatePromptIfNeeded = pt.translatePromptIfNeeded
+} catch { /* promptTranslate.js not deployed yet — translation disabled */ }
 const { deliverWebhook }      = require('../services/webhookDelivery')
 
 // All active call sessions — key: sessionId, value: CallSession
