@@ -11,8 +11,8 @@ const MIN_RECHARGE = 500   // ₹500 minimum top-up
 router.get('/', auth, async (req, res, next) => {
   try {
     const [wallet, stats, rate] = await Promise.all([
-      walletRepo.getWallet(req.user.id),
-      walletRepo.getUsageStats(req.user.id),
+      walletRepo.getWallet(req.userId),
+      walletRepo.getUsageStats(req.userId),
       walletRepo.getRate(),
     ])
     res.json({ ...wallet, stats, rate_per_min: rate })
@@ -24,7 +24,7 @@ router.get('/transactions', auth, async (req, res, next) => {
   try {
     const limit  = Math.min(parseInt(req.query.limit  || 50), 200)
     const offset = parseInt(req.query.offset || 0)
-    const txns = await walletRepo.getTransactions(req.user.id, limit, offset)
+    const txns = await walletRepo.getTransactions(req.userId, limit, offset)
     res.json(txns)
   } catch (err) { next(err) }
 })
@@ -32,7 +32,7 @@ router.get('/transactions', auth, async (req, res, next) => {
 // ── GET /wallet/recharge-history ─────────────────────────────────
 router.get('/recharge-history', auth, async (req, res, next) => {
   try {
-    const history = await walletRepo.getRechargeHistory(req.user.id)
+    const history = await walletRepo.getRechargeHistory(req.userId)
     res.json(history)
   } catch (err) { next(err) }
 })
@@ -41,7 +41,7 @@ router.get('/recharge-history', auth, async (req, res, next) => {
 router.get('/daily-spend', auth, async (req, res, next) => {
   try {
     const days = Math.min(parseInt(req.query.days || 30), 90)
-    const data = await walletRepo.getDailySpend(req.user.id, days)
+    const data = await walletRepo.getDailySpend(req.userId, days)
     res.json(data)
   } catch (err) { next(err) }
 })
@@ -56,7 +56,7 @@ router.post('/recharge', auth, async (req, res, next) => {
       return res.status(400).json({ error: `Minimum recharge amount is ₹${MIN_RECHARGE}` })
     }
 
-    const request = await walletRepo.createRechargeRequest(req.user.id, amount)
+    const request = await walletRepo.createRechargeRequest(req.userId, amount)
 
     // ── DEMO / MANUAL MODE ──────────────────────────────────────
     // Remove this block and replace with Razorpay order creation in production.
